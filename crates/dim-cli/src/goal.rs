@@ -601,7 +601,7 @@ mod tests {
     #[test]
     fn an_objective_block_without_a_kind_folds_like_goal() {
         // Goal reads every block that opens with a marker, whatever its
-        // `kind` attribute says (goal.ts `:393`).
+        // `kind` attribute says (`text::marker` in the Goal crate).
         let mut fold = Fold::default();
         fold.apply(&input(
             10,

@@ -8,6 +8,284 @@ use std::sync::Arc;
 use support::*;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrency_is_not_editable_and_job_mutations_preserve_the_legacy_document() {
+    let home = home();
+    std::fs::write(
+        home.path().join("schedule.json"),
+        json!({"jobs": [], "max_concurrent_runs": 17}).to_string(),
+    )
+    .unwrap();
+    let model = Arc::new(Script::default());
+    let server = start(home.path(), model.clone()).await;
+    let mut client = connect(&server).await;
+    let saver = create_session(&mut client, home.path(), true).await;
+    let saved: Value = client
+        .typed(
+            "schedule.save",
+            json!({"job": {"name": "legacy", "mode": "reuse",
+            "schedule": {"at": "2030-01-01T00:00:00Z"}, "prompt": "Check the inbox.",
+            "cwd": home.path()}}),
+        )
+        .await
+        .unwrap();
+    let job_id = saved["job"]["id"].as_str().unwrap().to_owned();
+    let stored = || {
+        rusqlite::Connection::open(home.path().join("dimcode.sqlite"))
+            .unwrap()
+            .query_row(
+                "SELECT version, document FROM settings_documents WHERE source = 'user/schedule'",
+                [],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+            )
+            .unwrap()
+    };
+    let before = stored();
+
+    for (id, input) in [
+        (
+            "root-create",
+            json!({"action": "create", "max_concurrent_runs": 32,
+            "job": {"name": "bad", "schedule": {"at": "2030-01-01T00:00:00Z"}, "prompt": "p"}}),
+        ),
+        (
+            "job-create",
+            json!({"action": "create", "job": {"name": "bad",
+            "schedule": {"at": "2030-01-01T00:00:00Z"}, "prompt": "p", "max_concurrent_runs": 32}}),
+        ),
+        (
+            "root-update",
+            json!({"action": "update", "job_id": job_id,
+            "max_concurrent_runs": 32, "job": {"name": "bad"}}),
+        ),
+        (
+            "job-update",
+            json!({"action": "update", "job_id": job_id,
+            "job": {"name": "bad", "max_concurrent_runs": 32}}),
+        ),
+    ] {
+        model.push(vec![call(id, input)]);
+        client
+            .rpc(
+                "session.submit",
+                json!({"sessionId": saver, "branchId": "main", "text": id}),
+            )
+            .await
+            .unwrap();
+        client
+            .rpc(
+                "session.idle",
+                json!({"sessionId": saver, "branchId": "main"}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            stored(),
+            before,
+            "rejected tool {id} changes neither bytes nor revision"
+        );
+    }
+    let history = client
+        .rpc(
+            "session.history",
+            json!({"sessionId": saver, "branchId": "main"}),
+        )
+        .await
+        .unwrap();
+    let events: Vec<dim_agent_types::AgentEvent> =
+        serde_json::from_value(history["events"].clone()).unwrap();
+    let results: Vec<_> = events
+        .into_iter()
+        .filter_map(|event| match event.kind {
+            dim_agent_types::EventKind::ToolResult(data) => Some(data.results),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    assert_eq!(
+        results.len(),
+        4,
+        "all invalid calls produce a result: {results:?}"
+    );
+    assert!(
+        results
+            .iter()
+            .all(|result| result.result.is_error == Some(true)),
+        "{results:?}"
+    );
+
+    for params in [
+        json!({"max_concurrent_runs": 32, "job": {"name": "bad",
+            "schedule": {"at": "2030-01-01T00:00:00Z"}, "prompt": "p", "cwd": home.path()}}),
+        json!({"job": {"id": job_id, "name": "bad", "max_concurrent_runs": 32}, "revision": 1}),
+    ] {
+        assert!(client.rpc("schedule.save", params).await.is_err());
+        assert_eq!(
+            stored(),
+            before,
+            "rejected management writes preserve the document"
+        );
+    }
+    for (method, params) in [
+        (
+            "settings.read",
+            json!({"source": "schedule", "scope": "user"}),
+        ),
+        (
+            "settings.update",
+            json!({"source": "schedule", "scope": "user",
+            "expectedRevision": format!("native:user/schedule:{}", before.0),
+            "document": {"jobs": [], "max_concurrent_runs": 32}}),
+        ),
+    ] {
+        let error = client.rpc(method, params).await.unwrap_err();
+        assert!(
+            error.to_string().contains("settings_unknown_source"),
+            "{error}"
+        );
+        assert_eq!(stored(), before);
+    }
+
+    model.push(vec![call(
+        "rename",
+        json!({"action": "update", "job_id": job_id,
+        "job": {"name": "renamed"}}),
+    )]);
+    client
+        .rpc(
+            "session.submit",
+            json!({"sessionId": saver, "branchId": "main", "text": "rename"}),
+        )
+        .await
+        .unwrap();
+    client
+        .rpc(
+            "session.idle",
+            json!({"sessionId": saver, "branchId": "main"}),
+        )
+        .await
+        .unwrap();
+    let listed: Value = client.typed("schedule.list", json!({})).await.unwrap();
+    assert_eq!(listed["jobs"][0]["name"], "renamed", "{listed}");
+    for enabled in [false, true] {
+        client
+            .rpc(
+                "schedule.set_enabled",
+                json!({"job_id": job_id, "enabled": enabled}),
+            )
+            .await
+            .unwrap();
+    }
+    let accepted: Value = client
+        .typed("schedule.run_now", json!({"job_id": job_id}))
+        .await
+        .unwrap();
+    let run = settled(&mut client, &job_id, accepted["run_id"].as_str().unwrap()).await;
+    assert_eq!(run["state"], "completed", "{run}");
+    let listed: Value = client.typed("schedule.list", json!({})).await.unwrap();
+    assert_eq!(
+        listed["jobs"][0]["session_id"], run["session_id"],
+        "{listed}"
+    );
+    let document: Value = serde_json::from_str(&stored().1).unwrap();
+    assert_eq!(document["max_concurrent_runs"], 17, "{document}");
+    client
+        .rpc("schedule.delete", json!({"job_id": job_id}))
+        .await
+        .unwrap();
+    let document: Value = serde_json::from_str(&stored().1).unwrap();
+    assert_eq!(document, json!({"jobs": [], "max_concurrent_runs": 17}));
+
+    drop(client);
+    server.shutdown();
+    server.join().await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn active_runs_skip_overlap_and_capacity_and_release_their_slots_on_completion() {
+    for legacy_limit in [2, 32] {
+        let home = home();
+        std::fs::write(
+            home.path().join("schedule.json"),
+            json!({"jobs": [], "max_concurrent_runs": legacy_limit}).to_string(),
+        )
+        .unwrap();
+        let model = Arc::new(Script::default());
+        model.hold("Hold the capacity slot.");
+        let server = start(home.path(), model.clone()).await;
+        let mut client = connect(&server).await;
+        let mut jobs = Vec::new();
+        let mut active = Vec::new();
+
+        for index in 0..9 {
+            let saved: Value = client
+                .typed(
+                    "schedule.save",
+                    json!({"job": {"name": format!("capacity-{index}"),
+                    "schedule": {"at": "2030-01-01T00:00:00Z"},
+                    "prompt": "Hold the capacity slot.", "cwd": home.path()}}),
+                )
+                .await
+                .unwrap();
+            jobs.push(saved["job"]["id"].as_str().unwrap().to_owned());
+        }
+
+        for job in jobs.iter().take(8) {
+            let accepted: Value = client
+                .typed("schedule.run_now", json!({"job_id": job}))
+                .await
+                .unwrap();
+            assert_eq!(
+                accepted["state"], "launching",
+                "eight slots regardless of legacy limit {legacy_limit}: {accepted}"
+            );
+            let run_id = accepted["run_id"].as_str().unwrap().to_owned();
+            run_where(&mut client, job, &run_id, |run| run["state"] == "running").await;
+            active.push(run_id);
+        }
+
+        for (job, reason) in [(&jobs[0], "overlap"), (&jobs[8], "capacity")] {
+            let accepted: Value = client
+                .typed("schedule.run_now", json!({"job_id": job}))
+                .await
+                .unwrap();
+            let run = settled(&mut client, job, accepted["run_id"].as_str().unwrap()).await;
+            assert_eq!(run["state"], "skipped", "{run}");
+            assert_eq!(run["detail"], reason, "{run}");
+            assert!(
+                run["session_id"].is_null(),
+                "no extra Session is launched: {run}"
+            );
+            assert!(
+                run["input_event_id"].is_null(),
+                "no extra input is submitted: {run}"
+            );
+        }
+
+        model.release();
+        for (job, run_id) in jobs.iter().zip(&active) {
+            let run = settled(&mut client, job, run_id).await;
+            assert_eq!(run["state"], "completed", "{run}");
+        }
+
+        for job in [&jobs[0], &jobs[8]] {
+            let accepted: Value = client
+                .typed("schedule.run_now", json!({"job_id": job}))
+                .await
+                .unwrap();
+            let run = settled(&mut client, job, accepted["run_id"].as_str().unwrap()).await;
+            assert_eq!(
+                run["state"], "completed",
+                "the released slot accepts work: {run}"
+            );
+        }
+
+        drop(client);
+        server.shutdown();
+        server.join().await.unwrap();
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_skipped_tool_run_keeps_history_and_sends_no_report() {
     let home = home();
     let model = Arc::new(Script::default());

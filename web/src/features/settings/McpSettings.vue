@@ -1,23 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useSettingsText } from "../../i18n/settings-general"
-import { readMcp, readMcpAuthStart, readMcpEditableEntry, readMcpInspection, readMcpTest, type McpConfigurationPatch, type McpEntry, type McpInspection, type McpInvalidEntry, type McpOAuthInput, type McpProbe, type McpServerInput, type McpView } from "../../rpc/general-settings"
+import { readMcp, readMcpAuthStart, readMcpEditableEntry, readMcpInspection, readMcpTest, type McpConfigurationPatch, type McpEntry, type McpInspection, type McpInvalidEntry, type McpProbe, type McpServerInput, type McpView } from "../../rpc/general-settings"
+import { configuration, patch, type Draft } from "./mcp-form"
 import { readAck } from "../../rpc/read"
 import { useConnectionStore } from "../../stores/connection"
 import GeneralSettingsStatus from "./GeneralSettingsStatus.vue"
 import { bindSettingsDirty, messageFrom, reloadSettingsOnReconnect } from "./context"
 
-type SecretField = { name: string; action: "keep" | "set" | "remove"; value: string; stored?: boolean }
-type Draft = {
-  id: string; source: "user" | "project"; type: "stdio" | "http" | "sse"
-  command: string; args: string[]; cwd: string; url: string; endpoint?: string
-  argsAction: "keep" | "replace"; storedArgsCount: number
-  secrets: SecretField[]; enabled: boolean; token: string; authConfigured: boolean
-  bearerAction: "keep" | "set" | "remove"; oauth: boolean; oauthAction: "keep" | "set" | "remove"
-  clientId: string; callbackPort: string; scopes: string; metadataUrl: string
-  metadataConfigured: boolean; metadataAction: "keep" | "set" | "remove"
-  secretsInUserScope: boolean
-}
 const s = useSettingsText()
 const connection = useConnectionStore()
 const catalog = ref<McpView>()
@@ -99,7 +89,7 @@ async function load(): Promise<void> {
 }
 function create(): void {
   if (dirty.value && !window.confirm(s('Discard unsaved MCP configuration?', '放弃未保存的 MCP 配置？'))) return
-  draft.value = { id: "", source: "user", type: "stdio", command: "", args: [], argsAction: "replace", storedArgsCount: 0, cwd: "", url: "", secrets: [], enabled: false, oauth: false, clientId: "", token: "", bearerAction: "keep", authConfigured: false, oauthAction: "keep", callbackPort: "", scopes: "", metadataUrl: "", metadataConfigured: false, metadataAction: "keep", secretsInUserScope: false }
+  draft.value = { id: "", source: "user", type: "stdio", command: "", args: [], argsAction: "replace", storedArgsCount: 0, cwd: "", url: "", secrets: [], enabled: false, oauth: false, clientId: "", token: "", bearerAction: "keep", authConfigured: false, oauthAction: "keep", callbackPort: "", scopes: "", metadataUrl: "", metadataConfigured: false, metadataAction: "keep", secretsInUserScope: false, timeout: "" }
   baseline.value = JSON.stringify(draft.value)
   editing.value = false
   editorRevision.value = revision("user")
@@ -125,6 +115,7 @@ async function edit(server: McpEntry): Promise<void> {
       scopes: config.type !== "stdio" ? config.oauth?.scopes ?? "" : "",
       metadataConfigured: config.type !== "stdio" && (config.oauth?.metadataConfigured ?? false),
       metadataUrl: "", metadataAction: "keep", token: "", bearerAction: "keep", oauthAction: "keep",
+      timeout: config.timeout === undefined ? "" : String(config.timeout),
       secretsInUserScope: entry.secretsInUserScope,
     }
     editing.value = true
@@ -136,39 +127,6 @@ async function edit(server: McpEntry): Promise<void> {
 function closeEditor(): void {
   if (dirty.value && !window.confirm(s('Discard unsaved MCP configuration?', '放弃未保存的 MCP 配置？'))) return
   draft.value = undefined
-}
-function configuration(form: Draft): McpServerInput {
-  const values = Object.fromEntries(form.secrets.filter((secret) => secret.action === "set").map((secret) => [secret.name.trim(), secret.value]))
-  const enabled = form.source === "user" && form.enabled
-  if (form.type === "stdio") return { type: "stdio", command: form.command, args: form.args, ...(form.cwd ? { cwd: form.cwd } : {}), env: values, enabled }
-  const oauth: McpOAuthInput = {
-    ...(form.clientId.trim() ? { clientId: form.clientId.trim() } : {}),
-    ...(form.callbackPort ? { callbackPort: Number(form.callbackPort) } : {}),
-    ...(form.scopes.trim() ? { scopes: form.scopes.trim() } : {}),
-    ...(form.metadataUrl.trim() ? { authServerMetadataUrl: form.metadataUrl.trim() } : {}),
-  }
-  return { type: form.type, url: form.url.trim(), headers: values, enabled, ...(form.token ? { auth: { type: "bearer", token: form.token } as const } : {}), ...(form.oauth ? { oauth } : {}) }
-}
-function patch(form: Draft): McpConfigurationPatch {
-  if (form.secretsInUserScope) {
-    if (form.type === "stdio") return { command: form.command, cwd: form.cwd }
-    const value: McpConfigurationPatch = {}
-    if (form.oauthAction === "remove") value.oauth = { action: "remove" }
-    if (form.oauthAction === "set") value.oauth = {
-      action: "set", clientId: form.clientId.trim() || null, callbackPort: form.callbackPort ? Number(form.callbackPort) : null, scopes: form.scopes.trim() || null,
-    }
-    return value
-  }
-  const secrets = Object.fromEntries(form.secrets.filter((secret) => secret.action !== "keep").map((secret) => [secret.name.trim(), secret.action === "remove" ? null : secret.value]))
-  if (form.type === "stdio") return { command: form.command, ...(form.argsAction === "replace" ? { args: form.args } : {}), cwd: form.cwd, env: secrets }
-  const value: McpConfigurationPatch = { ...(form.url.trim() ? { url: form.url.trim() } : {}), headers: secrets }
-  if (form.bearerAction !== "keep") value.bearer = form.bearerAction === "remove" ? { action: "remove" } : { action: "set", token: form.token }
-  if (form.oauthAction === "remove") value.oauth = { action: "remove" }
-  if (form.oauthAction === "set") value.oauth = {
-    action: "set", clientId: form.clientId.trim() || null, callbackPort: form.callbackPort ? Number(form.callbackPort) : null, scopes: form.scopes.trim() || null,
-    ...(form.metadataAction === "remove" ? { authServerMetadataUrl: null } : form.metadataAction === "set" ? { authServerMetadataUrl: form.metadataUrl.trim() } : {}),
-  }
-  return value
 }
 function validDraft(form: Draft): boolean {
   const names = form.secrets.map((secret) => secret.name.trim())
@@ -345,6 +303,7 @@ onBeforeUnmount(() => {
       <p>{{ detail.server.source }} · {{ detail.server.transport }} · {{ detail.inspection.enabled ? s('Enabled', '已启用') : s('Disabled', '已禁用') }}</p>
       <template v-if="detail.inspection.configuration.type === 'stdio'"><p>{{ s('Executable', '可执行程序') }}: <code>{{ detail.inspection.configuration.command }}</code></p><p>{{ s('Stored arguments (hidden)', '已存参数（隐藏）') }}: {{ detail.inspection.configuration.argsCount }}</p><p>{{ s('Working directory', '工作目录') }}: {{ detail.inspection.configuration.cwd || s('Daemon directory', '守护进程目录') }}</p><p>{{ s('Environment names', '环境变量名') }}: {{ detail.inspection.configuration.envNames.join(', ') || '—' }}</p><p>{{ s('Variables', '变量') }}: {{ detail.inspection.configuration.referencedVariables.join(', ') || '—' }}</p><p>{{ s('Unset variables', '未设置变量') }}: {{ detail.inspection.configuration.unsetVariables.join(', ') || '—' }}</p></template>
       <template v-else><p>{{ s('Endpoint (origin only)', '端点（仅来源）') }}: <code>{{ detail.inspection.configuration.endpoint }}</code></p><p>{{ s('Header names', '请求头名称') }}: {{ detail.inspection.configuration.headerNames.join(', ') || '—' }}</p><p>{{ s('Stored bearer token', '已存储的 Bearer 令牌') }}: {{ detail.inspection.configuration.authConfigured ? s('Configured', '已配置') : s('None', '无') }}</p><p v-if="detail.inspection.configuration.oauth?.clientId">OAuth client ID: {{ detail.inspection.configuration.oauth.clientId }}</p><p>{{ s('Variables', '变量') }}: {{ detail.inspection.configuration.referencedVariables.join(', ') || '—' }}</p><p>{{ s('Unset variables', '未设置变量') }}: {{ detail.inspection.configuration.unsetVariables.join(', ') || '—' }}</p></template>
+      <p v-if="detail.inspection.configuration.timeout !== undefined">{{ s('Tool call timeout', '工具调用超时') }}: {{ detail.inspection.configuration.timeout }} ms</p>
       <p>{{ s('Connection snapshots do not open a connection. Tool lists are the last successful discovery for each live connection generation.', '查看快照不会打开连接。工具列表来自每个活动连接代次最近一次成功的发现。') }}</p>
       <p v-if="!detail.inspection.connections.length" role="status">{{ s('No live session connections. Use Test connection to discover tools without creating a session.', '没有活动会话连接。可通过“测试连接”发现工具，无需创建会话。') }}</p>
       <section v-for="(runtime, index) in detail.inspection.connections" :key="index" class="runtime-detail"><h4>{{ s('Connection', '连接') }} {{ index + 1 }} · {{ runtime.state }}<template v-if="runtime.expired"> · {{ s('Credential expired', '凭据已过期') }}</template></h4><ul v-if="runtime.tools"><li v-for="tool in runtime.tools" :key="tool.name"><strong>{{ tool.name }}</strong><p v-if="tool.description">{{ tool.description }}</p></li></ul><p v-if="runtime.tools === undefined">{{ s('Tools have not been discovered.', '尚未发现工具。') }}</p><p v-else-if="!runtime.tools.length">{{ s('The server exposes no tools.', '服务器没有提供工具。') }}</p></section>
@@ -352,6 +311,7 @@ onBeforeUnmount(() => {
       <div class="settings-actions"><button class="ui-button" data-size="md" data-variant="secondary" :disabled="busy" @click="inspect(detail.server)">{{ s('Refresh details', '刷新详情') }}</button><button class="ui-button" data-size="md" data-variant="secondary" :disabled="busy || !connection.supports('mcp.test') || (detail.server.source !== 'user' && !detail.server.enabled)" @click="testServer(detail.server)">{{ s('Test connection', '测试连接') }}</button><button v-if="detail.server.transport !== 'stdio'" class="ui-button" data-size="md" data-variant="secondary" :disabled="busy || !!authorization || !detail.server.enabled || !connection.supports('mcp.auth.start')" @click="action('mcp.auth.start', detail.server)">{{ s('Sign in', '登录') }}</button></div>
     </section>
     <form v-if="draft" ref="editorForm" class="settings-card settings-form" autocomplete="off" @submit.prevent="save"><h3>{{ editing ? s('Edit server', '编辑服务器') : s('New server', '新服务器') }}</h3><p v-if="editing && draft.secretsInUserScope" class="ui-banner settings-banner" data-tone="warning">{{ s('Withheld arguments, environment, headers, URL parts and OAuth metadata are stored in your user-scope configuration. They cannot be edited here; non-secret fields still save through the owner.', '隐藏的参数、环境变量、请求头、URL 部分和 OAuth 元数据存储在用户范围配置中。此处无法编辑；非机密字段仍可通过所有者保存。') }} <button class="ui-button" data-size="sm" data-variant="secondary" type="button" :disabled="busy || !connection.supports('mcp.move')" @click="moveToUser(draft.id)">{{ s('Move to user to edit', '移到用户范围编辑') }}</button></p><fieldset :disabled="busy"><label><span>{{ s('Server ID', '服务器 ID') }}</span><input v-model="draft.id" class="ui-field" data-size="md" :disabled="editing" required /></label><label><span>{{ s('Source', '来源') }}</span><select v-model="draft.source" class="ui-field" data-size="md" :disabled="editing"><option value="user">{{ s('User', '用户') }}</option><option v-if="loadedCwd" value="project">{{ s('Project', '项目') }}</option></select></label><p v-if="editing">{{ s('The source and transport are fixed. Changes write only this source. Use Move to change the source; a move into a project keeps withheld values in your user-scope configuration.', '来源和传输方式固定。更改只写入此来源。使用“移动”更改来源；移入项目时隐藏值保留在用户范围配置中。') }}</p><label><span>{{ s('Transport', '传输方式') }}</span><select v-model="draft.type" class="ui-field" data-size="md" :disabled="editing"><option value="stdio">stdio</option><option value="http">HTTP</option><option value="sse">SSE</option></select></label>
+      <label><span>{{ s('Tool call timeout (optional, milliseconds)', '工具调用超时（可选，毫秒）') }}</span><input v-model="draft.timeout" class="ui-field" data-size="md" type="number" min="1000" max="86400000" step="1" placeholder="600000" /></label>
       <template v-if="draft.type === 'stdio'">
         <label><span>{{ s('Executable', '可执行程序') }}</span><input v-model="draft.command" class="ui-field" data-size="md" required /></label>
         <label><span>{{ s('Working directory (optional)', '工作目录（可选）') }}</span><input v-model="draft.cwd" class="ui-field" data-size="md" /></label>

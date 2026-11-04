@@ -534,6 +534,7 @@ impl Connection {
                 return Err(RpcError::wire(-32603, "Connection closed"));
             }
         }
+        self.hub.notify_clients(&session_id);
         crate::approval::replay(&session, |branch_id, request| {
             self.notify(
                 &session_id,
@@ -563,6 +564,7 @@ impl Connection {
             {
                 attachments.remove(&session_id);
                 this.hub.ui.detach(&this.id, &session_id);
+                this.hub.notify_clients(&session_id);
             }
         });
         Ok(())

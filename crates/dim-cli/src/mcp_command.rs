@@ -4,7 +4,6 @@
 
 use crate::{
     Result,
-    args::Options,
     client::Client,
     input::Input,
     management::mcp,
@@ -20,8 +19,8 @@ use std::{
 use tokio::{io::AsyncWriteExt, time::Instant};
 use url::Url;
 
-pub async fn list(client: &mut Client, options: &Options) -> Result<()> {
-    let (rows, notes) = catalog_report(client, options).await?;
+pub async fn list(client: &mut Client, cwd: &str) -> Result<()> {
+    let (rows, notes) = catalog_report(client, cwd).await?;
     print_report(rows, notes);
     Ok(())
 }
@@ -73,18 +72,14 @@ async fn hidden(input: &mut Input, prompt: &str) -> Result<Option<String>> {
 
 pub async fn sign_in(
     client: &mut Client,
-    options: &Options,
+    cwd: &str,
     input: &mut Input,
     id: &str,
     source: Option<&str>,
     no_browser: bool,
     secret: bool,
 ) -> Result<i32> {
-    let (params, interrupted) = settle(
-        mcp::target_params(client, options.workspace().as_str(), id, source),
-        None,
-    )
-    .await?;
+    let (params, interrupted) = settle(mcp::target_params(client, cwd, id, source), None).await?;
     if interrupted {
         restart(id);
         return Ok(130);
@@ -234,7 +229,7 @@ fn restart(id: &str) {
 
 pub async fn sign_out(
     client: &mut Client,
-    options: &Options,
+    cwd: &str,
     id: &str,
     source: Option<&str>,
 ) -> Result<i32> {
@@ -242,7 +237,7 @@ pub async fn sign_out(
     struct LoggedOut {
         revoked: bool,
     }
-    let params = mcp::target_params(client, options.workspace().as_str(), id, source).await?;
+    let params = mcp::target_params(client, cwd, id, source).await?;
     let (result, _) = settle(client.typed::<LoggedOut>("mcp.auth.logout", params), None).await?;
     let result = result.map_err(error)?;
     println!("Signed out of {id:?}. Revoked: {}.", result.revoked);
@@ -253,11 +248,11 @@ pub async fn sign_out(
 /// entry reconnects on next use.
 pub async fn disconnect(
     client: &mut Client,
-    options: &Options,
+    cwd: &str,
     id: &str,
     source: Option<&str>,
 ) -> Result<i32> {
-    let params = mcp::target_params(client, options.workspace().as_str(), id, source).await?;
+    let params = mcp::target_params(client, cwd, id, source).await?;
     client.rpc("mcp.disconnect", params).await?;
     println!("Disconnected {}.", safe(id));
     Ok(0)
@@ -272,7 +267,7 @@ pub async fn session_status(client: &mut Client, session: &str) -> Result<()> {
 
 pub async fn command(
     client: &mut Client,
-    options: &Options,
+    cwd: &str,
     input: &mut Input,
     session: &str,
     text: &str,
@@ -283,7 +278,7 @@ pub async fn command(
         .expect("MCP command")
         .trim();
     if rest.is_empty() || rest == "list" {
-        list(client, options).await?;
+        list(client, cwd).await?;
         return session_status(client, session).await;
     }
     const USAGE: &str = "Usage: /mcp [list|login [--no-browser] [--client-secret] ID|logout ID|disconnect ID|enable ID|disable ID] [--source SOURCE]";
@@ -311,30 +306,25 @@ pub async fn command(
                         .into(),
                 );
             }
-            sign_in(client, options, input, id, source, no_browser, secret).await?;
+            sign_in(client, cwd, input, id, source, no_browser, secret).await?;
             Ok(())
         }
         "logout" if !id.is_empty() && !id.split_whitespace().any(|word| word.starts_with("--")) => {
-            sign_out(client, options, &id, source).await?;
+            sign_out(client, cwd, &id, source).await?;
             Ok(())
         }
         "disconnect"
             if !id.is_empty() && !id.split_whitespace().any(|word| word.starts_with("--")) =>
         {
-            disconnect(client, options, &id, source).await?;
+            disconnect(client, cwd, &id, source).await?;
             Ok(())
         }
         "enable" | "disable"
             if !id.is_empty() && !id.split_whitespace().any(|word| word.starts_with("--")) =>
         {
-            let state = crate::management::mcp::set_enabled(
-                client,
-                options.workspace().as_str(),
-                &id,
-                source,
-                action == "enable",
-            )
-            .await?;
+            let state =
+                crate::management::mcp::set_enabled(client, cwd, &id, source, action == "enable")
+                    .await?;
             print_report(vec![state.sentence()], state.notes);
             Ok(())
         }

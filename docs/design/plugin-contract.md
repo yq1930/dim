@@ -358,8 +358,8 @@ design is merged. R4–R7 concern how Dim uses rutis and are in
 
 ### R1. Ordered consumption with rebuild as one Dispatcher registration
 
-- **Blocked:** the subscribe-and-rebuild steps of the [capability reload protocol](../architecture/rust-agent/single-tree.md#能力重载协议). Every Capability repeats them by hand. Examples are
-  `crates/dim-agent-capabilities/src/wait.rs:361-380` and `runtime/plugins/goal/branch.ts:120-128`.
+- **Blocked:** the subscribe-and-rebuild steps of the [capability reload protocol](../architecture/rust-agent/single-tree.md#能力重载协议). Every Capability states them for itself. Examples are
+  `crates/dim-agent-capabilities/src/wait.rs:395-413` and `crates/dim-goal/src/branch.rs:167-182`.
   A mistake (a cutoff read before subscribing, reading the chain instead of the branch) silently
   loses or double-counts events.
 - **Existing mechanisms considered:** `subscribe`/`listen` plus `committed` and a query are correct
@@ -399,10 +399,10 @@ design is merged. R4–R7 concern how Dim uses rutis and are in
 
 ### R3. Rpc maps service errors of contributed methods to wire errors
 
-- **Blocked:** ADR 002 D5 (errors are data). `runtime/plugins/goal/session.ts:15` maps native error variants (`InvalidInput`,
-  `UnknownBranch`, `Closed`, `Reloading`) to JSON-RPC `appError` codes. Every method provider that
-  forwards a native error would have to repeat the mapping, and a new native code needs a change in
-  every plugin.
+- **Blocked:** ADR 002 D5 (errors are data). Goal's TypeScript Session part mapped native error variants (`InvalidInput`,
+  `UnknownBranch`, `Closed`, `Reloading`) to JSON-RPC `appError` codes itself; the native part forwards them through
+  `RpcError::from` (`crates/dim-goal/src/session.rs:164`). Every method provider that forwards a native error would
+  otherwise repeat the mapping, and a new native code needs a change in every plugin.
 - **Existing mechanisms considered:** the `MethodReply` error form `{code, appError, message}` puts the
   wire code into the plugin contract.
 - **Needed:** contributed methods return `{code, message}` data, or rethrow the service error they

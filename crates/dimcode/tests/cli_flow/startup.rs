@@ -37,12 +37,21 @@ fn direct_startup_reaches_each_creation_entry_without_persisting_secrets() {
         "xai",
         "xai-responses",
     ] {
+        let (params, observed) = std::sync::mpsc::channel();
         for (tui, leaf) in [(false, false), (true, false), (true, true)] {
             let home = Home::new();
             let original = fs::read(home.0.join("config.json")).unwrap();
+            let params = params.clone();
             let daemon = home.daemon(move |wire| {
                 wire.hello(if leaf { &["ui.leaf.2"] } else { &[] });
                 let create = wire.read("session.create");
+                params
+                    .send(serde_json::to_vec(&create["params"]).unwrap())
+                    .unwrap();
+                assert_eq!(
+                    create["params"]["permissionPolicy"],
+                    json!({"preset":"read-only"})
+                );
                 assert_eq!(create["params"]["model"], json!({"modelId":"flag-model"}));
                 assert_eq!(
                     create["params"]["modelPreferences"],
@@ -80,6 +89,8 @@ fn direct_startup_reaches_each_creation_entry_without_persisting_secrets() {
                     "high",
                     "--autocompact",
                     "128k",
+                    "--permission",
+                    "read-only",
                 ]);
             let text = if tui {
                 let mut terminal = Terminal::launch_tui(command);
@@ -104,6 +115,17 @@ fn direct_startup_reaches_each_creation_entry_without_persisting_secrets() {
             assert!(!text.contains("secret:header:value"), "{text}");
             assert_eq!(fs::read(home.0.join("config.json")).unwrap(), original);
         }
+        let line = observed.recv().unwrap();
+        assert_eq!(
+            line,
+            observed.recv().unwrap(),
+            "line and TUI creation params"
+        );
+        assert_eq!(
+            line,
+            observed.recv().unwrap(),
+            "line and leaf creation params"
+        );
     }
 }
 

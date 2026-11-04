@@ -292,10 +292,11 @@ A `/pursue` form is Pursuit's later option (§10) and is not part of this contra
 A.3's rule: the latest live `goal:objective` block is the objective, the latest live `goal:status`
 block is the status, `clear` retires both, `edit` keeps the judge, and an input the InputQueue
 deleted leaves the fold. It adds no query method and asks Goal no question. `/goal` with no
-arguments prints usage before that fold. Before it picks between `set` and `edit` the client reads the line up
-to its published head, and after a write it reads again before printing: the state shown and the
-method chosen come from the events, never from a guess taken from the reply. The fold starts over
-at the line's own opening — its
+arguments prints usage before that fold. Before it picks between `set` and `edit` the client reads the line
+up to its published head. After a write, it folds the events that write produced before printing: the
+line prompt reads them again, and the terminal UI waits for them among the line's live events. The
+state shown and the method chosen come from the events, never from a guess taken from the reply. The
+fold starts over at the line's own opening — its
 `branch/start`, or the `session/forked` a fork writes after the facts it copied — so a new line has
 no goal and a forked Session's `main` never shows the copied one (Goal §2, A11). A v3 client
 receives that opening, so a fork reads the same here as it does in Goal.
@@ -445,7 +446,7 @@ when it is on, and the status `runtime.list` gives: `off`, `acquiring`, `startin
 
 Below the rows the panel names what waits on the runtime — the plugin rows that are Pending because
 one is `off` or `down` ([PluginManager §2.5](plugins/PluginManager.md#25-runtimes)) — so "why is
-goal not working" is answered in the same place as its fix. A failure prints one line per source,
+workflow not working" is answered in the same place as its fix. A failure prints one line per source,
 as `runtime.list` reports it.
 
 ```text
@@ -454,7 +455,7 @@ as `runtime.list` reports it.
 │ › node      download  24.21.0    ready                                    │
 │   python    system    3.12.15    off      not installed                   │
 │                                                                           │
-│   3 plugins wait for node: goal, scheduler, workflow                      │
+│   1 plugin waits for node: workflow                                       │
 ╰─ Enter install or apply · s source · a auto · r retry · Esc close ────────╯
 ```
 
@@ -472,7 +473,7 @@ as `runtime.list` reports it.
 │               https://npmmirror.com/mirrors/node/v24.21.0/…: 404         │
 │   python    system    3.12.15    off      not installed                   │
 │                                                                           │
-│   3 plugins wait for node: goal, scheduler, workflow                      │
+│   1 plugin waits for node: workflow                                       │
 ╰─ Enter retry · s switch node to system · Esc close ───────────────────────╯
 ```
 
@@ -526,9 +527,9 @@ with that runtime selected. Today the row says only `pending`.
 ```text
 /plugins
 ╭─ Plugins ─────────────────────────────────────────────────────────────────╮
-│ › goal           on     pending · waits for the node runtime              │
+│ › goal           on     ready · built-in                                  │
 │   session-title  on     ready · built-in                                  │
-│   scheduler      on     pending · waits for the node runtime              │
+│   scheduler      on     ready · built-in                                  │
 │   workflow       on     pending · waits for the node runtime              │
 ╰─ Enter open /runtime · o on/off · r reload · Esc close ───────────────────╯
 ```
@@ -548,7 +549,7 @@ The typed forms are the whole area, so a caller needs no panel:
 $ dimcode runtime list
 node    download  24.21.0   ready
 python  system    3.12.15   off       not installed
-3 plugins wait for node: goal, scheduler, workflow
+1 plugin waits for node: workflow
 $ dimcode runtime install node
 node    download  24.21.0   acquiring
 $ dimcode runtime config python --source system --auto on
@@ -1084,7 +1085,9 @@ disabled because only the toggle or `dimcode mcp enable|disable` turns it on. An
 round trip would erase them.
 
 The edit document is the patch: an omitted field keeps its stored value, a present value replaces
-it, and `env` or `headers` changes only the keys it names. The seed names the command and working
+it, and `env` or `headers` changes only the keys it names. It may also state `timeout`, the
+entry's tool-call limit in milliseconds from 1000 to 86400000; `null` clears it and the ten-minute
+default applies ([MCP management §D20](appserver/mcp-management.md#d20-a-tool-call-waits-as-long-as-its-entry-allows)). The seed names the command and working
 directory, empty `env` and `headers`, and a configured OAuth's reported fields; it never names a
 stored argument, environment value, header value, bearer token or URL, because those are withheld
 or wholesale-replaced. The document carries no transport, since the stored entry's transport is
@@ -1102,6 +1105,8 @@ stored.
 ```json
 {"url": "https://mcp.example.com/mcp", "headers": {"X-Key": "value"}}
 ```
+
+A definition states `timeout` the same way, and the inspection shows a stated one.
 
 Add writes `mcp.save` with the catalog's source revision — `userRevision`, or `projectRevision`
 for a source of `project` — and refuses an id the catalog already lists, since a save would replace
@@ -1306,7 +1311,7 @@ whole rule as one quoted argument, so global options stay unambiguous.
 | `dimcode mcp disconnect ID [--source SOURCE]` | Close the entry's live connections over `mcp.disconnect`; it writes no configuration, and the entry reconnects on next use. |
 | `dimcode mcp login\|logout\|enable\|disable ID [--source SOURCE]` | Keep their behavior: browser or device sign-in, sign-out, and the enablement both `/mcp` clients share. |
 | `/mcp` | Open the MCP panel of the Session's workspace ([management surfaces](#management-surfaces)): an entry per server, grouped `user`, `project` and `plugin`, with the toggle, edit, add, remove, test and inspect kinds. |
-| `/mcp list\|login\|callback\|logout\|disconnect\|enable\|disable` | The line commands: `list` prints the catalog and the Session's server states, `disconnect` closes one entry's live connections, and the rest sign in, complete a callback, sign out or toggle. Every command that names one stored entry (`login`, `logout`, `disconnect`, `enable`, `disable`) takes an optional `--source SOURCE`, as `dimcode mcp` does; an id more than one source lists requires it. |
+| `/mcp list\|login\|callback\|logout\|disconnect\|enable\|disable` | The line commands: `list` prints the catalog and the Session's server states, `disconnect` closes one entry's live connections, and the rest sign in, complete a callback, sign out or toggle. They use the attached Session's workspace, like the panel; without a Session, or when an older daemon omits its workspace, they use the launch workspace. One-shot `dimcode mcp` commands always use the launch workspace. Every command that names one stored entry (`login`, `logout`, `disconnect`, `enable`, `disable`) takes an optional `--source SOURCE`, as `dimcode mcp` does; an id more than one source lists requires it. |
 
 | `dimcode permissions list` | List the user's command rules over `permission.rules`: each rule's decision, match and command, then the columns and what deny means. |
 | `dimcode permissions add PATH` | Add one rule from `PATH`, or from stdin for `-`, over `permission.rules` and `permission.set_rules`: an equal rule writes nothing; a conflict re-reads and retries, at most three attempts. |

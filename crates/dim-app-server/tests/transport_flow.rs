@@ -119,8 +119,6 @@ mod runtime_manager;
 mod agent_models;
 #[path = "transport_flow/foreign_rows.rs"]
 mod foreign_rows;
-#[path = "transport_flow/goal.rs"]
-mod goal;
 #[path = "transport_flow/guide_entries.rs"]
 mod guide_entries;
 #[path = "transport_flow/modality.rs"]

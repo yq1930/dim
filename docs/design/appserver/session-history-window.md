@@ -19,11 +19,12 @@ and is served by `Connection::history`
    value beyond the branch's dispatched position fails `invalid`; the call then
    waits until the branch dispatches up to `through`.
 2. It reads the page through `AgentIndex::history_page`
-   ([agents.rs](../../../crates/dim-app-server/src/agents.rs)): a loaded line
-   pages through the branch's query and the store's `batch_end`, a line that
-   has ended through `TreeCommands.page`, and a line the process does not hold
-   through the App Server's page read
-   ([storage/timeline.rs](../../../crates/dim-app-server/src/storage/timeline.rs)).
+   ([agents.rs](../../../crates/dim-app-server/src/agents.rs)): the call acquires
+   the Session first, so a Session that unloaded is loaded again before the
+   read; a live line pages through the branch's query and the store's
+   `batch_end`, and a line that has ended goes through `TreeCommands.page` at
+   its fixed head. The client protocol has no page read of stored facts for a
+   Session the process does not hold (ADR 021 D3).
    `after` and `through` must end a batch. `limit` is required and must be positive; the v3
    method sets no upper bound today, and clients send 256 or 512. A page takes
    `limit` events and then runs to the end of that batch, so it can exceed
@@ -303,7 +304,7 @@ Consequences:
 
 ### 5.2 Queries
 
-The anchors are selections over the loaded branch, so they are the Timeline
+The anchors are selections over the branch's facts, so they are the Timeline
 query ([plugin contract §5.4](../plugin-contract.md#54-the-event-query)) over
 this branch, each with the kind named and `through` as the start of its read:
 
@@ -316,28 +317,37 @@ this branch, each with the kind named and `through` as the start of its read:
   request, then each `input_id`, which is an event id, as one `input/event_id`
   read. A few events, not a scan of the turn.
 
-The backward page stays the App Server's own read: rows are read from the
-primary key `(session_id, branch_id, sequence)` downward from the top, whole
-batches, so the read does not use `timeline_events_by_end`, which v25 removed
+The backward page is the loaded branch's own read too: the Timeline query
+returns the events of `window_start..=through` ascending, and `batch_end` fixes
+both ends — the greatest batch edge at or below `before - 1` and the start of
+the batch holding the oldest taken event ([ADR 021](../../adr/021-reads-follow-the-state-owner.md) D1).
+The read does not use `timeline_events_by_end`, which v25 removed
 ([#596](https://github.com/arcships/dim/issues/596)). The row model already
-allows a physical row to hold several events (`last_sequence`); the page
-respects row boundaries and returns events in ascending order, and its ends are
-batch edges, which the query does not carry ([ADR 020](../../adr/020-timeline-read-convergence.md) D4).
+allows a physical row to hold several events (`last_sequence`); the query
+returns events in ascending order, and the page is whole batches at both ends
+(§4.4).
 
 ### 5.3 Where the reads live
 
-The anchors are queried through the Session's tree service: it forwards an open
-line to its Timeline and reads an ended line at the fixed head it owns. A line
-ending during a history read therefore keeps the same anchor selection. The
-backward page is a persistence read of the Session's own branch through
-`AgentIndex`. Collaboration peer reads use an acquired Session's query, while
-summaries retain their metadata reads. The window
-requires the native store: a host without one (`ServerConfig.database_path:
-None`) advertises no `session.history.latestTurn` and answers a window request
+The anchors and the page are served by the owner of the line's facts: while the
+line is open, the branch's Timeline, which `Connection::history` already has the
+loaded Session for — each anchor is a kind selection and the page is a range
+selection, both through `Session::query`, with `Session::batch_end` for the
+page's ends. An ended line's Timeline is gone, so its anchors and its page are
+the tree's read at the fixed head it owns: `TreeCommands::query` for both
+directions and `TreeCommands::batch_end` for the page's ends
+([ADR 021](../../adr/021-reads-follow-the-state-owner.md) D2,
+[timeline read ownership §2](../timeline-read-ownership.md#2-owners-and-their-reads)).
+A line that ends while its window is read is served by the tree: the owner is
+chosen when the read starts, and an answer of `BranchEnded` re-runs the same
+request through the tree at the fixed head.
+The App Server has no store read on this path. The window requires the native store: a host without one
+(`ServerConfig.database_path: None`) advertises no
+`session.history.latestTurn` and answers a window request
 `invalid`, as `session.catalog` is advertised only with a database path. No
-second paging implementation is added. Neither the anchors nor the page rebuild
-the request bodies of `context/prepare` and `model/call`; those records do not
-reach the reply
+second paging implementation is added. The query rebuilds the requests of the
+rows it returns ([ADR 020](../../adr/020-timeline-read-convergence.md) D6);
+those records do not reach the reply
 ([request delta storage §7.5](request-delta-storage.md#75-reads-that-do-not-use-request-bodies)).
 
 The runtime, the Session facade and `sessions.history` are untouched;
@@ -391,8 +401,8 @@ window pages, as it already does after forward pages.
 | --- | --- |
 | [#601](https://github.com/arcships/dim/issues/601) skips full revalidation when the stored head is unchanged | Independent and complementary. The window's anchors come from indexes, so a skipped validation does not remove them; [#601](https://github.com/arcships/dim/issues/601) removes the restore scan before the read, and this design removes the client scan after it |
 | [#713](https://github.com/arcships/dim/issues/713) profiles the cold first `session.attach` | Independent. The read stays after attach and acquires the Session like every Session method; if attach already restored it, the window is served from the loaded branch. If #713 later bounds the first attach, the window contract does not change |
-| [#588](https://github.com/arcships/dim/issues/588) / [#596](https://github.com/arcships/dim/issues/596) read-path audit | The backward page reads the primary key (§5.2) and does not depend on the removed `by_end` index. The two lookups add partial indexes; they do not change how history pages are read |
-| [Restore-scoped shared read](restore-shared-read.md) | The window reads after publication, when the opening's copy is released; it is an ordinary committed-history read |
+| [#588](https://github.com/arcships/dim/issues/588) / [#596](https://github.com/arcships/dim/issues/596) read-path audit | The backward page is a range query (§5.2) and does not depend on the removed `by_end` index. The two anchors add partial indexes; they do not change how history pages are read |
+| [Restore-scoped shared read](restore-shared-read.md) | The window reads committed facts only; the Timeline reads the store on every read, with no opening copy ([ADR 021](../../adr/021-reads-follow-the-state-owner.md) D6) |
 | [Idle unload](idle-unload.md) | Unchanged: `session.history` acquires the Session, and a read during an unload waits for the restore and then serves the window |
 | [sessions service](sessions-service.md#67-history) | Unchanged (D8) |
 | `session.catalog`, `session.summaries`, `session.event` | Unchanged; none reads the indexes |

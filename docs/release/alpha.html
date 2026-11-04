@@ -76,7 +76,7 @@
 
 使用 $dim-alpha-release，仅在本机 Mac 做 dry run，允许编译和校验。
 不发布 npm，不创建 GitHub tag 或 Release。</code></pre>
-  <p>CI 路径先把统一版本号提交到 <code>Cargo.toml</code>、<code>Cargo.lock</code>、npm 外壳和 runtime 元数据，再合入 <code>main</code>、打对应的 <code>vX.Y.Z-alpha.N</code> tag；CI 不会自动递增或回写版本。完整字段见<a href="README.md#version-preparation">版本准备</a>。本机脚本则临时改版本、结束时还原，两条路径不能混用。</p>
+  <p>手动准备版本 PR 时，先把统一版本号提交到 <code>Cargo.toml</code>、<code>Cargo.lock</code>、npm 外壳和 runtime 元数据，再合入 <code>main</code>、打对应的 <code>vX.Y.Z-alpha.N</code> tag。完整字段见<a href="README.md#version-preparation">版本准备</a>。本机脚本则临时改版本、结束时还原，两条路径不能混用。</p>
 
   <h2>通道规则</h2>
   <div class="table-wrap">
@@ -102,9 +102,11 @@
   </div>
   <p>只有想去掉上面那条「alpha 必须低于 beta」的限制时，才需要在 TS 仓库改 <code>packages/cli/src/core/upgrade/update-version.ts</code>，让预发布轨道只选同一标识的版本，然后发一版 beta。这个改动只对升级到新 beta 的用户生效，没升级的老版本仍按旧逻辑选。</p>
 
-  <h2>GitHub CI：自有 runner 构建，官方 runner 发布</h2>
-  <p><a href="README.md#alpha-npm-publication">CI 配置与 npm Trusted Publisher 配置</a>是 GitHub 发布入口。只接受 <code>vX.Y.Z-alpha.N</code>：自有 runner 构建六个平台和 Web，生成 GitHub Release 草稿；维护者发布该 prerelease 后，<code>npm-publish.yml</code> 默认只在自有 Linux runner 上校验原始包。</p>
-  <p>只有仓库变量 <code>NPM_ALPHA_PUBLISH_ENABLED=true</code> 且手动输入 <code>publish=true</code> 时，才会启动官方 Ubuntu runner，通过 OIDC 发布同一份包。官方 runner 不编译、不跑测试；没有配置 npm token。未设置变量或不传 <code>publish=true</code> 都不会启动官方 runner。必须为 alpha 主包、Web 和六个平台包分别配置 Trusted Publisher。</p>
+  <h2>GitHub 托管 runner 构建和发布</h2>
+  <p>手动从 <code>main</code> 准备下一个 GitHub alpha。若该提交已有 alpha tag，或等于 npm 上一个 alpha 的源提交，工作流就跳过。否则它自动取号，由 GitHub 托管 runner 按目标系统和架构构建六个平台，并在 Ubuntu 构建 Web，把原始压缩包、清单和校验和上传到 prerelease 草稿。</p>
+  <pre><code>gh workflow run release.yml --ref main</code></pre>
+  <p>检查附件并在 GitHub 发布 prerelease，然后用它的真实 tag 运行 npm 工作流。GitHub 托管 runner 通过 OIDC 发布 Release 附件。验收任务安装 <code>dima</code>、核对旧包标签，并确认八个包在阿里 npm 镜像上可用。见<a href="README.md#alpha-npm-publication">发布配置与重试说明</a>。</p>
+  <pre><code>gh workflow run npm-publish.yml --ref main -f release_tag=vX.Y.Z-alpha.N -f publish=true</code></pre>
 
   <h2>本机替代方案：一条命令 build + 发布</h2>
   <p>和 TS 版的 <code>bun publish:bin</code> 一样，在本机 Mac 上一次完成编译、打包和发布：</p>

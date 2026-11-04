@@ -195,7 +195,7 @@ fn a_pending_question_keeps_the_interface_from_asking() {
     arm.send(()).unwrap();
     settle.recv_timeout(PATIENCE).unwrap();
     terminal.raw(b"\x1b");
-    thread::sleep(Duration::from_millis(150));
+    terminal.until("Ask anything...");
     terminal.write(b"/exit\r");
     terminal.until("Bye!");
     assert!(terminal.wait().success());
@@ -450,7 +450,7 @@ fn settings_shows_no_suggestion_row_without_the_methods() {
     settle.recv_timeout(PATIENCE).unwrap();
     terminal.until("Startup UI form");
     terminal.raw(b"\x1b");
-    thread::sleep(Duration::from_millis(150));
+    terminal.until("Ask anything...");
     terminal.write(b"/exit\r");
     terminal.until("Bye!");
     assert!(terminal.wait().success());
@@ -502,7 +502,7 @@ fn settings_toggles_the_switch_through_the_daemon() {
     }
     terminal.raw(b"\r");
     terminal.raw(b"\x1b");
-    thread::sleep(Duration::from_millis(150));
+    terminal.until("Ask anything...");
     terminal.write(b"/exit\r");
     terminal.until("Bye!");
     assert!(terminal.wait().success());

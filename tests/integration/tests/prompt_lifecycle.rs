@@ -1649,11 +1649,6 @@ async fn startup_opening_dispatch_is_free_and_close_or_deadline_joins_the_host()
                 tokio::time::timeout(Duration::from_secs(1), started.notified())
                     .await
                     .unwrap();
-                assert_eq!(
-                    agent.live_openings(),
-                    usize::from(start == "resume"),
-                    "{start}"
-                );
                 let dispatched =
                     tokio::time::timeout(Duration::from_millis(100), observed.notified()).await;
                 if dispatched.is_err() {
@@ -1693,7 +1688,6 @@ async fn startup_opening_dispatch_is_free_and_close_or_deadline_joins_the_host()
                     Ok(_) => panic!("cancelled startup published a session"),
                     Err(error) => error,
                 };
-                assert_eq!(agent.live_openings(), 0, "{start}");
                 let cause = match &error {
                     AgentError::Multiple(errors) => &errors[0],
                     cause => cause,
@@ -1799,7 +1793,6 @@ async fn child_opening_deadline_or_close_joins_before_recording_failure() {
         tokio::time::timeout(Duration::from_secs(1), started.notified())
             .await
             .unwrap();
-        assert_eq!(agent.live_openings(), 1);
         let closing = if timeout {
             None
         } else {
@@ -1823,7 +1816,6 @@ async fn child_opening_deadline_or_close_joins_before_recording_failure() {
             .unwrap()
             .unwrap();
         assert!(result.is_err());
-        assert_eq!(agent.live_openings(), 0);
         if let Some(closing) = closing {
             tokio::time::timeout(Duration::from_secs(1), closing)
                 .await

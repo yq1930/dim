@@ -1685,9 +1685,13 @@ impl App {
     /// Time-driven changes: the pulse of a running turn, notice and arm
     /// expiry. True when the screen needs a frame.
     fn tick(&mut self) -> bool {
+        self.tick_at(Instant::now())
+    }
+
+    /// [`Self::tick`] at `now`, so a test crosses a poll without waiting.
+    fn tick_at(&mut self, now: Instant) -> bool {
         self.sync_sessions();
         self.sync_task_details();
-        let now = Instant::now();
         let mut changed = false;
         if now.duration_since(self.git_checked) >= GIT_BRANCH_POLL {
             self.git_checked = now;
@@ -2270,6 +2274,9 @@ impl App {
                 }
             }
             Update::Models(models) => {
+                if let Err(error) = &models {
+                    self.set_notice(error.clone());
+                }
                 if let Some(Prompt::Models(panel)) = &mut self.prompt {
                     panel.set_models(models);
                 }
@@ -8228,9 +8235,14 @@ mod tests {
             )
         );
         let count = sent.borrow().len();
-        std::thread::sleep(std::time::Duration::from_millis(1050));
-        assert!(app.tick(), "an acquiring row is read again");
+        let now = Instant::now() + Duration::from_millis(1050);
+        assert!(app.tick_at(now), "an acquiring row is read again");
         assert_eq!(last(&sent), "list", "the rows are read once a second");
+        assert_eq!(sent.borrow().len(), count + 1);
+        assert!(
+            !app.tick_at(now + Duration::from_millis(150)),
+            "a read inside the second waits"
+        );
         assert_eq!(sent.borrow().len(), count + 1);
         app.apply(Update::Runtimes {
             result: None,

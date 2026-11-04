@@ -91,6 +91,9 @@ impl ModelsPanel {
     }
 
     pub fn set_models(&mut self, models: Result<ModelList, String>) {
+        if models.is_err() && self.listed.as_ref().is_some_and(Result::is_ok) {
+            return;
+        }
         // A replaced list keeps the choices its rows still offer: a cycled
         // effort survives a later read, while a row that is gone, or no longer
         // advertises it, drops it.
@@ -756,6 +759,9 @@ mod tests {
         assert_eq!(panel.handle_key(key_of(KeyCode::Right)), Effect::None);
         assert!(drawn(&panel).contains("‹ low ›"));
         assert_eq!(panel.handle_key(key_of(KeyCode::Left)), Effect::None);
+        assert!(drawn(&panel).contains("‹ high ›"));
+        panel.set_models(Err("account.providers: discovery failed".into()));
+        assert!(drawn(&panel).contains("flash"));
         assert!(drawn(&panel).contains("‹ high ›"));
         assert!(matches!(
             panel.handle_key(key_of(KeyCode::Enter)),

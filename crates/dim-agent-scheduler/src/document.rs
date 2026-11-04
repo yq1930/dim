@@ -18,6 +18,7 @@ pub const DEFAULT_MAX_CONCURRENT_RUNS: u32 = 4;
 #[serde(deny_unknown_fields, default)]
 pub struct ScheduleDocument {
     pub jobs: Vec<Job>,
+    /// Retained for document compatibility; it does not control run admission.
     pub max_concurrent_runs: u32,
 }
 

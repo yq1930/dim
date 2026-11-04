@@ -177,11 +177,11 @@ export interface TreeCommands {
    */
   end(id: string, source: BranchSource): Promise<void>
   /**
-   * One page of `id`'s committed batches; an ended line reads at its
-   * fixed head.
+   * One page of `id`'s committed batches up to `through`; an ended line
+   * reads at its fixed head and `through` must end an atomic batch.
    * @throws {AgentErrorThrown}
    */
-  page(id: string, after: number | bigint, limit: number | bigint): Promise<import('./plugin.js').BranchEvent[]>
+  page(id: string, after: number | bigint, limit: number | bigint, through: number | bigint): Promise<import('./plugin.js').BranchEvent[]>
   /**
    * Queries one line's own facts, forwarding to its Timeline while open
    * and reading at the tree's fixed head after it ends. Chain scope is

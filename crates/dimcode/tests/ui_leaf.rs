@@ -562,7 +562,8 @@ async fn refusing_daemon(
                 "protocolVersion": 3,
                 "daemonProfile": {"kind": "configured", "modelConfigSha256": profile},
                 "features": ["session.create", "session.history", "ui.attach", "ui.leaf.2"]}),
-            "session.create" => json!({"sessionId": "session", "sequence": 0}),
+            "session.create" => json!({"sessionId": "session", "sequence": 0,
+                "model": {"providerId": "test", "modelId": "model"}}),
             "session.attach" => json!({"sessionId": "session", "cwd": "/workspace", "createdAt": 1,
                 "running": false, "sequence": 0, "attachedClients": 1}),
             "ui.open" => {

@@ -46,6 +46,7 @@ Each catalog name a part of the assembly provides or injects. A name that crosse
 | `rutis/loader` | process | rutis-loader | yes | `create` async, `reload` async, `remove` async, `status` async |
 | `selectableModelsHost` | process | Provider | Rust-only | — |
 | `serverControl` | process | ServerControl | Rust-only | — |
+| `sessionClientsHost` | process | Connection | Rust-only | — |
 | `sessionFilesHost` | process | SessionStore | Rust-only | — |
 | `sessionMetadata` | process | SessionStore | yes | `read` async, `setTitle` async |
 | `sessionPermissions` | process | AgentDirectory | yes | `permission` async, `permissionDefaults` async |
@@ -123,13 +124,16 @@ The parts that inject `dispatcher` or `timeline` ([plugin contract §6](../../..
 | BranchLine | branch | `dispatcher`, `timeline` |
 | CollaborationTimeline | branch | `dispatcher`, `timeline` |
 | ContextPreparation | branch | `dispatcher`, `timeline` |
+| EnvironmentClientsBranch | branch | `timeline` |
 | FileReads | branch | `timeline` |
+| GoalBranch | branch | `dispatcher`, `timeline` |
 | InputQueue | branch | `dispatcher`, `timeline` |
 | Loop | branch | `dispatcher`, `timeline` |
 | ModelProvider | branch | `dispatcher`, `timeline` |
 | Permission | branch | `dispatcher`, `timeline` |
 | Prompt | branch | `dispatcher`, `timeline` |
 | SessionBroadcast | branch | `dispatcher` |
+| SettingsSnapshotBranch | branch | `timeline` |
 | ToolBinding | branch | `dispatcher`, `timeline` |
 | ToolExecutor | branch | `dispatcher`, `timeline` |
 | TreeTimeline | branch | `dispatcher`, `timeline` |

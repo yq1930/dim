@@ -1,4 +1,4 @@
-use crate::wire::{Event, Progress};
+use crate::wire::{Attached, Created, Event, Progress};
 use crate::{
     Result,
     args::{Action, Options},
@@ -13,7 +13,7 @@ use crate::{
     permission, permission_command,
     question::line::Questions,
 };
-use dim_agent_types::{ApprovalCallData, ContentBlock, ModelId, PermissionPolicy, UserInput};
+use dim_agent_types::{ApprovalCallData, ContentBlock, PermissionPolicy, UserInput};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
@@ -21,13 +21,6 @@ use std::{
     future::{Future, pending},
     io::Write,
 };
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Created {
-    session_id: String,
-    model: ModelId,
-}
 
 enum Submission {
     Message(UserInput),
@@ -232,28 +225,14 @@ pub async fn chat(
     let session_id = if let Some(id) = &options.resume {
         id.clone()
     } else {
-        let mut params = json!({"cwd": options.workspace().as_str()});
-        options.creation_startup(&mut params);
-        let mut preferences = options.creation_preferences(None);
-        let mut target = None;
-        if let (Some(provider), Some(model)) = (&options.provider, &options.model) {
-            preferences = options.creation_preferences(
-                crate::session_host::saved_model_preferences(client, provider, model).await?,
-            );
-            target = Some((provider.clone(), model.clone()));
-        }
-        if let Some(preferences) = &preferences {
-            params["modelPreferences"] = preferences.clone();
-        }
-        if let Some(preset) = options.permission {
-            params["permissionPolicy"] = json!({"preset":preset});
-        }
+        let params = crate::session_create_from_options(client, options).await?;
+        let preferences = params.get("modelPreferences").cloned();
         let created: Created = match client.typed("session.create", params).await {
             Ok(created) => created,
             Err(error) => {
                 let error = crate::model_adoption_error(
                     client,
-                    target.as_ref().map(|(p, m)| (p.as_str(), m.as_str())),
+                    options.provider.as_deref().zip(options.model.as_deref()),
                     error,
                     preferences.as_ref().filter(|_| options.effort.is_none()),
                 )
@@ -314,9 +293,10 @@ pub async fn chat(
         Some(Err(error)) => display.record(&format!("permission: unavailable ({error})"))?,
         None => {}
     }
-    client
-        .rpc("session.attach", json!({"sessionId":session_id}))
+    let attached: Attached = client
+        .typed("session.attach", json!({"sessionId":session_id}))
         .await?;
+    let session_cwd = attached.cwd;
     if options.resume.is_some() {
         crate::session_host::adopt_startup(client, options, &session_id).await?;
     }
@@ -355,7 +335,8 @@ pub async fn chat(
                 Some("/mcp") => {
                     let text = text.as_deref().expect("plain MCP command");
                     drop(interrupts);
-                    let result = crate::mcp_command::command(client, options, reader, &session_id, text).await;
+                    let cwd = session_cwd.as_deref().unwrap_or_else(|| options.workspace().as_str());
+                    let result = crate::mcp_command::command(client, cwd, reader, &session_id, text).await;
                     #[cfg(unix)]
                     { interrupts = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?; }
                     #[cfg(windows)]

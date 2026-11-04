@@ -427,10 +427,11 @@ C4、SessionTitle、Scheduler 和 Workflow 不需要改动。不向 rutis 提需
 实现 PR 的流程测试，在一次性的原生存储上进行，`idle_unload_after` 设为几百毫秒。每个测试都等待一个可观察的转变（被释放实例的
 `Session::closed()`、`agent.list` 中的已装载数、某次调用的回复）并设超时，从不只靠 sleep。
 
-1. **#126 的测量场景。** 一个测试插件经 `sessions` 启动 50 个 Session，每个运行一次输入、`idle` 和 `history` 分页，然后释放。宽限期之后全部卸载：
-   `agent.list` 显示没有已装载的 Session，而 `session.summaries` 列出全部 50 个，其历史可以完整读取。之后对其中一个调用 `sessions.input` 会恢复它，并运行其 turn。
+1. **#126 的测量场景。** 一个测试插件经 `sessions` 启动 50 个 Session，每个运行一次输入、`idle` 和 `history` 分页，然后释放。宽限期过后，
+   `session.summaries` 列出全部 50 个 Session 及其已存储的 head，此时 `agent.list` 显示已装载数为 0。随后对其中一个调用 `sessions.input` 会恢复它并运行其 turn。
+   `sessions.history` 每读一页都会取得对应的 Session，若已卸载则先恢复。读到各次运行原有的截止序号，所得事件与卸载前相同。
    实现 PR 还要给出前后的 `xtask measure` 数据、已装载数和任务数。
-2. **一次运行之内不恢复。** 在一次运行中（`input`、`idle`、三页 `history`），调用之间不恢复 Session：`main` 上没有新增 `branch/resume`。
+2. **一次运行之内不恢复。** 若 `input`、`idle` 和三页 `history` 的相邻调用间隔均短于宽限期，每次调用都取得同一个已装载的 Session，`main` 上没有新增 `branch/resume`。
 3. **卸载期间的 acquire。** 一个测试 Session 部件把自己的卸载扣住，直到测试放行，于是在释放进行中时 `sessions.history` 和 Rpc 的 `session.history`
    到来。两者都等待，然后在恢复后的 Session 上成功；都不回复 `session_closed`。
 4. **卸载不是关闭。** 卸载不改变任何分支的存储头部，不写 `stop/interrupt`；恢复只增加 `branch/resume`。Session 仍在 `session.summaries` 中，

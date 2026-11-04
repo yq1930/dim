@@ -851,37 +851,93 @@ async fn running(client: &mut Client, names: &[&str]) -> Value {
     }
 }
 
-/// Acceptance 1 and 10: the default configuration file loads the default
-/// plugins, and a default plugin's Settings source is there while it runs.
+/// Acceptance 1 and 10: the default configuration loads no process plugin,
+/// and Workflow runs only once it is installed and enabled, with its
+/// Settings source there while it runs.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "requires DIM_TEST_NODE and DIM_TEST_JS_RUNTIME"]
-async fn node_default_plugins_load_and_their_settings_follow_them() {
+async fn node_workflow_runs_only_when_enabled_and_its_settings_follow_it() {
     let home = home();
     let mut config = config(&home);
+    let workflow_settings = home.join("workflow.json");
+    let workflow_runs = home.join("workflow/runs.json");
+    let settings_bytes = b"{\"definitions\":{},\"projectEnabled\":{}}\n";
+    let runs_bytes = br#"{"version":1,"text":"{\"version\":2,\"runs\":[]}"}"#;
+    std::fs::create_dir_all(workflow_runs.parent().unwrap()).unwrap();
+    std::fs::write(&workflow_settings, settings_bytes).unwrap();
+    std::fs::write(&workflow_runs, runs_bytes).unwrap();
     let mut parts = fixture();
     parts.rows.clear();
+    let workflow = parts.anchor.parent().unwrap().join("plugins/workflow");
     config.plugin_defaults = Some(parts.anchor.with_file_name("default-plugins.json"));
     config.session_typescript = Some(parts);
-    let (server, _requests, _) = start(config).await;
+    let (server, _requests, _) = start(config.clone()).await;
     let mut client = Client::new_version(&server, false, 3).await;
-    let defaults = ["goal", "workflow"];
-    let list = running(&mut client, &defaults).await;
-    for name in defaults {
-        assert_eq!(item(&list, name)["use"], "default", "{list}");
-    }
+    // No process plugin runs by default: `web` and `Agents` are built in,
+    // and Workflow is absent until it is installed.
+    let list = call(&mut client, "plugin.list", json!({})).await;
     assert_eq!(item(&list, "web")["use"], "builtin", "{list}");
     assert_eq!(item(&list, "Agents")["use"], "builtin", "{list}");
+    assert!(
+        list["result"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["name"] != "workflow"),
+        "{list}"
+    );
+    let absent = client.rpc("workflow.status", json!({})).await;
+    assert_eq!(absent["error"]["code"], -32601, "{absent}");
+    assert_eq!(std::fs::read(&workflow_settings).unwrap(), settings_bytes);
+    assert_eq!(std::fs::read(&workflow_runs).unwrap(), runs_bytes);
 
-    let read = json!({"source": "goal", "scope": "user"});
+    // Installed without being enabled, Workflow stays absent across a
+    // restart and leaves its files alone.
+    assert_ok(
+        &call(
+            &mut client,
+            "plugin.install",
+            json!({"source":{"path":workflow},"enable":false}),
+        )
+        .await,
+    );
+    drop(client);
+    server.shutdown();
+    server.join().await.unwrap();
+
+    let (server, _requests, _) = start(config).await;
+    let mut client = Client::new_version(&server, false, 3).await;
+    let list = call(&mut client, "plugin.list", json!({})).await;
+    assert!(item(&list, "workflow")["use"].is_null(), "{list}");
+    let absent = client.rpc("workflow.status", json!({})).await;
+    assert_eq!(absent["error"]["code"], -32601, "{absent}");
+    assert_eq!(std::fs::read(&workflow_settings).unwrap(), settings_bytes);
+    assert_eq!(std::fs::read(&workflow_runs).unwrap(), runs_bytes);
+
+    // Enabling the installed plugin runs it, and its Settings source
+    // follows it.
+    assert_ok(
+        &call(
+            &mut client,
+            "plugin.enable",
+            json!({"name":"workflow","use":"workflow"}),
+        )
+        .await,
+    );
+    let list = running(&mut client, &["workflow"]).await;
+    assert_eq!(item(&list, "workflow")["use"], "workflow", "{list}");
+    assert_ok(&call(&mut client, "workflow.status", json!({})).await);
+
+    let read = json!({"source": "workflow", "scope": "user"});
     assert_ok(&call(&mut client, "settings.read", read.clone()).await);
-    assert_ok(&call(&mut client, "plugin.disable", json!({"name": "goal"})).await);
+    assert_ok(&call(&mut client, "plugin.disable", json!({"name": "workflow"})).await);
     let gone = client.rpc("settings.read", read.clone()).await;
     assert_eq!(app_error(&gone), "settings_unknown_source", "{gone}");
-    assert_ok(&call(&mut client, "plugin.enable", json!({"name": "goal"})).await);
-    running(&mut client, &["goal"]).await;
+    assert_ok(&call(&mut client, "plugin.enable", json!({"name": "workflow"})).await);
+    running(&mut client, &["workflow"]).await;
     assert_ok(&call(&mut client, "settings.read", read).await);
 
-    // §6 `config`: goal's Settings source through the `plugin` tool.
+    // §6 `config`: the enabled plugin's Settings source through the `plugin` tool.
     select_fixture_model(&mut client).await;
     let tools = json!(["plugin"]);
     let mut params = create(tools.clone());
@@ -889,31 +945,34 @@ async fn node_default_plugins_load_and_their_settings_follow_them() {
     let created = client.rpc("session.create", params).await;
     assert_ok(&created);
     let session = created["result"]["sessionId"].as_str().unwrap().to_owned();
-    let shown = plugin_reply(&mut client, &server, &session, "config goal").await;
+    let shown = plugin_reply(&mut client, &server, &session, "config workflow").await;
     let source = &shown["sources"][0];
-    assert_eq!(source["source"], "goal", "{shown}");
-    assert_eq!(source["document"]["maxContinuations"], 20, "{shown}");
+    assert_eq!(source["source"], "workflow", "{shown}");
+    assert_eq!(source["document"]["max_concurrent_runs"], 4, "{shown}");
     assert_eq!(
-        source["schema"]["properties"]["maxContinuations"]["maximum"],
-        1000
+        source["schema"]["properties"]["max_concurrent_runs"]["maximum"],
+        9007199254740991_u64
     );
-    let set = "config goal set maxContinuations 5";
+    let set = "config workflow set max_concurrent_runs 5";
     let updated = plugin_reply(&mut client, &server, &session, set).await;
-    assert_eq!(updated["document"]["maxContinuations"], 5, "{updated}");
-    let read = json!({"source": "goal", "scope": "user"});
+    assert_eq!(updated["document"]["max_concurrent_runs"], 5, "{updated}");
+    let read = json!({"source": "workflow", "scope": "user"});
     let stored = call(&mut client, "settings.read", read).await;
     assert_eq!(
-        stored["result"]["document"]["maxContinuations"], 5,
+        stored["result"]["document"]["max_concurrent_runs"], 5,
         "{stored}"
     );
     let (refused, error) = plugin(
         &mut client,
         &server,
         &session,
-        "config goal set maxContinuations 0",
+        "config workflow set max_concurrent_runs 0",
     )
     .await;
-    assert!(error && refused.contains("maxContinuations"), "{refused}");
+    assert!(
+        error && refused.contains("max_concurrent_runs"),
+        "{refused}"
+    );
 
     // A `writeOnly` member (web's search key and proxy) is a secret toward
     // the agent: never returned, never written through the tool.

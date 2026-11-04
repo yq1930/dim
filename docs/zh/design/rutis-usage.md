@@ -497,4 +497,4 @@ export default definePlugin({
 不读取历史的部件用 `listen` 注册，它只投递实时事实；需要重建的部件用 `consume`。
 
 仓库的 fixture 展示了两种语言的同一形式：`runtime/fixtures/branch-part.ts`、
-`runtime/fixtures/python/python_branch_part.py` 与 `runtime/plugins/goal/branch.ts` 都这样消费分支。
+`runtime/fixtures/python/python_branch_part.py` 与 `crates/dim-goal/src/branch.rs` 都这样消费分支。

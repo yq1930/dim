@@ -4062,6 +4062,9 @@ async fn the_idle_unload_pass_keeps_a_leader_with_an_open_request() {
         first.to_string().contains("Echo: again"),
         "the read holds the second request: {first}"
     );
+    // Every read acquires the member, and it may unload and restore between
+    // reads: `branch/resume` then advances `nextCursor` legitimately, so only
+    // the visible events must stay the same.
     for read in &reads {
         assert_eq!(read["events"], first["events"]);
         assert!(read["nextCursor"].as_u64().unwrap() >= first["nextCursor"].as_u64().unwrap());

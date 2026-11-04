@@ -6,6 +6,8 @@ use tokio_util::sync::CancellationToken;
 
 pub const SOURCE: &str = "execution";
 
+pub mod prompt;
+
 /// The document form of the `execution` settings source, and the switches the
 /// host reads at process start.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize)]

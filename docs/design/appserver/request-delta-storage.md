@@ -511,9 +511,8 @@ its row holds, and no content row it references is loaded, hashed or checked. Th
 history paging discards both kinds, `session.summaries` reads only input text and the last event's time, the context
 projection projects input and output facts, and collaboration reads tool calls, results and turn outcomes.
 Collaboration queries an acquired peer Session for only the event kinds it consumes, without selecting model request rows.
-The reader that still pages through `TimelineStore::read_page_without_request_bodies` is the App
-Server's page read of a line this process does not hold or that has ended; its default is `read_page`, and a store
-may implement it with no request walk at all. A history page of a loaded line reads through the branch's query, which
+The port keeps one page read, `TimelineStore::read_page`, which rebuilds the requests of the rows it
+returns; the body-less variant is gone, because no caller serves stored facts around a Session any more. A history page of a loaded line reads through the branch's query, which
 rebuilds the requests of the rows it returns ([ADR 020](../adr/020-timeline-read-convergence.md) D6). Every read that uses a request (`local`, `history`, `context`, `trace`,
 `validate_session`, export) still rebuilds and checks each one as §7.1–§8 state.
 

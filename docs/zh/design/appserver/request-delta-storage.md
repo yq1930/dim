@@ -321,7 +321,7 @@ node body      = { parent: string | null, message: Message }                    
 
 ### 7.5 不使用请求正文的读取
 
-分页或投影读取只返回事件所说的内容，不还原 `context/prepare` 与 `model/call` 存储的请求：这类记录中的请求保持其行所持有的空消息列表、缺席的 `tools` 与缺席的 `system`，它引用的内容行一律不加载、不校验 hash、不校验种类。这些读取从不查看这些请求：历史分页丢弃这两种记录，`session.summaries` 只读输入文本与最后一个事件的时间，上下文投影只投影输入与输出事实，协作只读工具调用、结果与轮次结局。协作取得对端 Session，通过其 query 只选择自己消费的事件种类，不选择模型请求行。仍通过 `TimelineStore::read_page_without_request_bodies` 分页的是 App Server 读取本进程不持有或已结束的线；其默认实现就是 `read_page`；存储实现可以完全不遍历请求。已装载线的历史分页改为经过该分支的 query，它会还原所返回行的请求（[ADR 020](../adr/020-timeline-read-convergence.md) D6）。使用请求的读取（`local`、`history`、`context`、`trace`、`validate_session`、导出）仍按 §7.1–§8 逐个还原并校验。
+分页或投影读取只返回事件所说的内容，不还原 `context/prepare` 与 `model/call` 存储的请求：这类记录中的请求保持其行所持有的空消息列表、缺席的 `tools` 与缺席的 `system`，它引用的内容行一律不加载、不校验 hash、不校验种类。这些读取从不查看这些请求：历史分页丢弃这两种记录，`session.summaries` 只读输入文本与最后一个事件的时间，上下文投影只投影输入与输出事实，协作只读工具调用、结果与轮次结局。协作取得对端 Session，通过其 query 只选择自己消费的事件种类，不选择模型请求行。端口只保留一个页读 `TimelineStore::read_page`，它会还原所返回行的请求；不读正文的变体已删除，因为不再有调用方绕过 Session 去提供存储事实。已装载线的历史分页改为经过该分支的 query，它会还原所返回行的请求（[ADR 020](../adr/020-timeline-read-convergence.md) D6）。使用请求的读取（`local`、`history`、`context`、`trace`、`validate_session`、导出）仍按 §7.1–§8 逐个还原并校验。
 
 - 读取仍校验每条记录及其 before 轨迹的每个草稿是否带有其种类要求的引用，以及非请求记录是否没有引用；但它从不跟随这些引用。
 - 因此损坏的节点不会让分页读取失败，因为该读取本来就不会加载它。恢复和每个使用请求的读取仍会在它上面失败，列表损坏的 Session 在恢复时仍被拒绝（§8）。

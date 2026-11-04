@@ -113,9 +113,9 @@
 //!
 //! A source checkout installs those packages first: `npm ci --prefix
 //! runtime --ignore-scripts` for the rutis runtime, and `npm ci --prefix
-//! runtime/plugins/<name> --ignore-scripts` for `goal`,
-//! `workflow` and `scheduler`, the default plugins that ship a
-//! `package.json` (`plugin-authoring` ships only a Skill).
+//! runtime/plugins/<name> --ignore-scripts` for `workflow`, the default
+//! plugin that ships a `package.json` (`plugin-authoring` ships only a
+//! Skill).
 //!
 //! A candidate for a TypeScript plugin's text replaces a member of that
 //! plugin's factory configuration, which is its manifest `config`: the
@@ -277,6 +277,12 @@ enum TextMember {
     /// member inside the manifest's `config`. The harness patches that
     /// plugin's row, so both arms run the same plugin code (model-prompts
     /// §8.1).
+    ///
+    /// The `eval-tests` text-injector fixture is its only constructor: no
+    /// shipped text is a TypeScript plugin member any more. The attribute is
+    /// unconditional because the fixture is a test target: with the feature
+    /// on, the bin target still never constructs the variant.
+    #[allow(dead_code)]
     Plugin {
         plugin: &'static str,
         member: &'static str,
@@ -307,17 +313,11 @@ const TEXTS: &[(&str, TextMember)] = &[
     ),
     (
         "goal/objective",
-        TextMember::Plugin {
-            plugin: "goal",
-            member: "texts.objective",
-        },
+        TextMember::Rust(|overrides, text| overrides.goal_objective = Some(text)),
     ),
     (
         "goal/continuation",
-        TextMember::Plugin {
-            plugin: "goal",
-            member: "texts.continuation",
-        },
+        TextMember::Rust(|overrides, text| overrides.goal_continuation = Some(text)),
     ),
 ];
 
@@ -2105,6 +2105,8 @@ async fn drive(
     // The declines whose `ask_user` call the Session had not registered when
     // they were sent, kept until the call's `step/tool-result` closes it.
     let mut declines: Vec<Decline> = Vec::new();
+    // The idle requests the quiet check keeps outstanding, one per line.
+    let mut calls = IdleCalls::default();
     loop {
         match fire_due(client, &session, &mut steers, started).await {
             Ok(submitted) => awaiting |= submitted,
@@ -2131,7 +2133,7 @@ async fn drive(
             break;
         }
         if !pending && !awaiting && last_event.elapsed() >= QUIET {
-            match idle(client, &session, &branches).await {
+            match idle(client, &session, &branches, &mut calls).await {
                 Ok(true) => break,
                 Ok(false) => last_event = Instant::now(),
                 Err(error) => {
@@ -2147,6 +2149,9 @@ async fn drive(
                 last_event = Instant::now();
                 match notice(&method, &params) {
                     Notice::Event { branch, event } => {
+                        if let Some(sequence) = event["sequence"].as_u64() {
+                            calls.read(&branch, sequence);
+                        }
                         if event["type"] == "branch"
                             && event["name"] == "create"
                             && let Some(branch) = event["data"]["branch"].as_str()
@@ -2203,7 +2208,22 @@ async fn drive(
                     Notice::Other => {}
                 }
             }
-            Ok(Ok(_)) => {}
+            Ok(Ok(WireMessage::Response { id, result })) => {
+                // A reply the quiet check left outstanding is read here the
+                // way the check reads it: the check could wait for it no
+                // longer, and the line's state still owes its answer.
+                let branch = branches
+                    .iter()
+                    .find(|branch| calls.outstanding(branch) == Some(id))
+                    .cloned();
+                if let Some(branch) = branch
+                    && let Err(error) = calls.reply(&branch, result.map_err(Into::into))
+                {
+                    driven.stop = "error";
+                    driven.error = Some(format!("{branch}: {error}"));
+                    return driven;
+                }
+            }
             Ok(Err(error)) => {
                 driven.stop = "error";
                 driven.error = Some(format!("the Session connection failed: {error}"));
@@ -2489,26 +2509,103 @@ fn notice(method: &str, params: &Value) -> Notice {
     }
 }
 
+/// The quiet check's state for every known line: the one `session.idle`
+/// request the line may have outstanding, and the highest event sequence the
+/// driver has read from its notices.
+#[derive(Default)]
+pub(crate) struct IdleCalls {
+    lines: BTreeMap<String, IdleCall>,
+}
+
+/// One line's outstanding idle request and the latest event read on it.
+#[derive(Default)]
+struct IdleCall {
+    /// The line's `session.idle` request, kept until its reply is read: a
+    /// sent request is never dropped, so a line whose request is unanswered
+    /// is busy and the next check waits on the same one.
+    request: Option<u64>,
+    /// The highest event sequence the driver has read from the line.
+    read: u64,
+}
+
+impl IdleCalls {
+    /// The line's outstanding request, or `None` when it has none and the
+    /// caller sends one, recording it with [`Self::sent`].
+    pub(crate) fn outstanding(&self, branch: &str) -> Option<u64> {
+        self.lines.get(branch).and_then(|line| line.request)
+    }
+    /// Records the request sent for the line.
+    pub(crate) fn sent(&mut self, branch: &str, id: u64) {
+        self.lines.entry(branch.to_owned()).or_default().request = Some(id);
+    }
+    /// Records the event `sequence` read from the line's notices.
+    pub(crate) fn read(&mut self, branch: &str, sequence: u64) {
+        let line = self.lines.entry(branch.to_owned()).or_default();
+        line.read = line.read.max(sequence);
+    }
+    /// Records the line's reply and takes its request. `Ok(true)` counts the
+    /// line as idle: the reply is at or after every event read on the line,
+    /// or the line has ended. `Ok(false)` is a stale reply — one below an
+    /// event the driver has read — so the request is spent and the line is
+    /// busy. `Err` fails the run with the reply's text.
+    pub(crate) fn reply(
+        &mut self,
+        branch: &str,
+        result: dim_client::Result<Value>,
+    ) -> std::result::Result<bool, String> {
+        let line = self.lines.entry(branch.to_owned()).or_default();
+        line.request = None;
+        match result {
+            Ok(value) => value
+                .get("sequence")
+                .and_then(Value::as_u64)
+                .ok_or_else(|| "session.idle replied with no sequence".to_owned())
+                .map(|sequence| sequence >= line.read),
+            // An ended line has no turn to wait for.
+            Err(error) if dim_client::app_error(&error) == Some("branch_ended") => Ok(true),
+            Err(error) => Err(error.to_string()),
+        }
+    }
+}
+
 /// Whether every known line is idle and no notice arrived while it asked.
 /// `session.idle` returns when the line is idle; a short deadline keeps a busy
-/// line from holding the driver. A notice that arrives while a call waits is
-/// left in the client's queue, and the driver reads every queued notice before
-/// its next quiet check, so `false` here means the quiet period follows that
-/// notice's read.
+/// line from holding the driver, and a call whose deadline passes stays
+/// outstanding, so the connection holds at most one idle request per line. A
+/// notice that arrives while a call waits is left in the client's queue, and
+/// the driver reads every queued notice before its next quiet check, so
+/// `false` here means the quiet period follows that notice's read.
 async fn idle(
     client: &mut Client,
     session: &str,
     branches: &BTreeSet<String>,
+    calls: &mut IdleCalls,
 ) -> std::result::Result<bool, String> {
     for branch in branches {
-        let call = client.rpc(
-            "session.idle",
-            json!({"sessionId": session, "branchId": branch}),
-        );
-        match tokio::time::timeout(IDLE_WAIT, call).await {
-            // An ended line has no turn to wait for.
-            Ok(Ok(_)) | Ok(Err(_)) => {}
+        let request = match calls.outstanding(branch) {
+            Some(request) => request,
+            None => {
+                let request = client
+                    .send(
+                        "session.idle",
+                        json!({"sessionId": session, "branchId": branch}),
+                    )
+                    .await
+                    .map_err(|error| format!("{branch}: session.idle failed: {error}"))?;
+                calls.sent(branch, request);
+                request
+            }
+        };
+        match tokio::time::timeout(IDLE_WAIT, client.response(request)).await {
+            // The line has not gone idle: the request stays outstanding and
+            // the next check waits on the same one.
             Err(_) => return Ok(false),
+            Ok(reply) => match calls.reply(branch, reply) {
+                Ok(true) => {}
+                // The reply is below an event already read on the line.
+                Ok(false) => return Ok(false),
+                Err(error) => return Err(format!("{branch}: {error}")),
+            },
         }
     }
     Ok(!client
@@ -3476,35 +3573,20 @@ mod tests {
         assert_eq!(roster.roster_closing.as_deref(), Some("candidate"));
     }
 
-    /// Goal's two texts are its manifest `config` members, patched into the
-    /// plugin's row by name; two pairs of one plugin are two members of one
-    /// configuration, not two configurations (Goal A.5.1, model-prompts §8.1).
+    /// Goal's two texts are members of its native crate's policy sentences,
+    /// applied through the same injection (Goal A.5.1, model-prompts §8.1).
     #[test]
-    fn the_goal_texts_are_manifest_config_members() {
-        for (id, member) in [
-            ("goal/objective", "objective"),
-            ("goal/continuation", "continuation"),
-        ] {
-            let overrides = overrides(&pairs(&[(id, "candidate")])).unwrap();
-            assert_eq!(
-                overrides.plugin_configs["goal"]["texts"][member],
-                json!("candidate"),
-                "{id}"
-            );
-        }
+    fn the_goal_texts_are_native_policy_members() {
+        let objective = overrides(&pairs(&[("goal/objective", "candidate")])).unwrap();
+        assert_eq!(objective.goal_objective.as_deref(), Some("candidate"));
+        assert_eq!(objective.goal_continuation, None);
         let both = overrides(&pairs(&[
             ("goal/objective", "first"),
             ("goal/continuation", "second"),
         ]))
         .unwrap();
-        assert_eq!(
-            both.plugin_configs["goal"]["texts"]["objective"],
-            json!("first")
-        );
-        assert_eq!(
-            both.plugin_configs["goal"]["texts"]["continuation"],
-            json!("second")
-        );
+        assert_eq!(both.goal_objective.as_deref(), Some("first"));
+        assert_eq!(both.goal_continuation.as_deref(), Some("second"));
     }
 
     /// A scenario's steers are the operator's: they go out in Steer mode, so
@@ -6820,6 +6902,100 @@ mod tests {
         }
     }
 
+    /// A line that stays busy across many checks is asked once: its request
+    /// is still outstanding, so no check sends a second one.
+    #[test]
+    fn a_busy_line_keeps_one_idle_request_outstanding() {
+        let mut calls = IdleCalls::default();
+        let mut sent = 0;
+        for _ in 0..64 {
+            if calls.outstanding("main").is_none() {
+                sent += 1;
+                calls.sent("main", sent);
+            }
+        }
+        assert_eq!(sent, 1, "one request for every check the line stayed busy");
+        assert_eq!(calls.outstanding("main"), Some(1));
+    }
+
+    /// A reply below an event the driver has read is stale: the request is
+    /// spent, and the next check sends one new request.
+    #[test]
+    fn a_reply_below_the_latest_event_is_stale() {
+        let mut calls = IdleCalls::default();
+        calls.read("main", 7);
+        calls.sent("main", 1);
+        assert_eq!(calls.reply("main", Ok(json!({"sequence": 6}))), Ok(false));
+        assert_eq!(calls.outstanding("main"), None);
+        calls.sent("main", 2);
+        assert_eq!(
+            calls.outstanding("main"),
+            Some(2),
+            "the next check has one new request to wait on"
+        );
+    }
+
+    /// A reply at the line's latest event counts as idle: nothing happened
+    /// after the line's idle point.
+    #[test]
+    fn a_current_reply_counts_as_idle() {
+        let mut calls = IdleCalls::default();
+        calls.read("main", 7);
+        calls.sent("main", 1);
+        assert_eq!(calls.reply("main", Ok(json!({"sequence": 7}))), Ok(true));
+        assert_eq!(calls.outstanding("main"), None);
+    }
+
+    /// An ended line answers `session.idle` with the `branch_ended` code, and
+    /// it counts as idle: no turn is left to wait for.
+    #[test]
+    fn the_branch_ended_code_counts_as_ended() {
+        let mut calls = IdleCalls::default();
+        calls.read("main", 7);
+        calls.sent("main", 1);
+        let ended = Box::new(dim_client::RpcError {
+            code: -32000,
+            message: "main has ended".to_owned(),
+            data: Some(json!({"appError": "branch_ended"})),
+        });
+        assert_eq!(calls.reply("main", Err(ended)), Ok(true));
+        assert_eq!(calls.outstanding("main"), None);
+    }
+
+    /// `connection_busy` and every other refusal end the run: a busy line is
+    /// not an ended one, and only the ended code may close a run early.
+    #[test]
+    fn connection_busy_and_any_other_code_is_an_error() {
+        for code in ["connection_busy", "service_reloading"] {
+            let mut calls = IdleCalls::default();
+            calls.sent("main", 1);
+            let refused = Box::new(dim_client::RpcError {
+                code: -32000,
+                message: "Connection request limit reached".to_owned(),
+                data: Some(json!({"appError": code})),
+            });
+            let error = calls.reply("main", Err(refused)).expect_err(code);
+            assert!(error.contains(code), "{error}");
+            assert_eq!(
+                calls.outstanding("main"),
+                None,
+                "the request is spent even when it fails the run"
+            );
+        }
+    }
+
+    /// A successful reply that carries no sequence proves nothing about the
+    /// line's idle point, so it fails the run instead of counting as idle.
+    #[test]
+    fn a_reply_without_a_sequence_fails_the_run() {
+        let mut calls = IdleCalls::default();
+        calls.sent("main", 1);
+        let error = calls
+            .reply("main", Ok(json!({})))
+            .expect_err("a reply with no sequence");
+        assert!(error.contains("no sequence"), "{error}");
+    }
+
     /// What a scripted App Server peer plays for `session.question.respond`.
     #[cfg(unix)]
     enum PeerScript {
@@ -6851,17 +7027,33 @@ mod tests {
         /// both at first, takes the first call's resend, and fails the
         /// second call's, so the run ends on that error after one resend.
         RetryFails,
+        /// The line stays busy for [`HELD`] from the first `session.idle`
+        /// call: the peer reads every call and answers none while it holds,
+        /// then answers that one and every later one as idle at
+        /// [`PEER_SEQUENCE`].
+        HeldIdle,
     }
 
     /// What a scripted peer read: the `requestId` of every decline, in order,
-    /// and how many it had read when it first wrote a call's
-    /// `step/tool-result`.
+    /// how many it had read when it first wrote a call's `step/tool-result`,
+    /// and how many `session.idle` calls it read while it held the line busy.
     #[cfg(unix)]
     #[derive(Default)]
     struct PeerReads {
         declines: Mutex<Vec<String>>,
         settled_at: AtomicUsize,
+        idles: AtomicUsize,
     }
+
+    /// How long [`PeerScript::HeldIdle`] keeps the line busy: five quiet
+    /// checks, one quiet period apart, the last one's deadline included.
+    #[cfg(unix)]
+    const HELD: Duration = Duration::from_secs(10);
+
+    /// The sequence a scripted peer reports as its next dispatched one: above
+    /// every event it writes, so its `session.idle` reply is never stale.
+    #[cfg(unix)]
+    const PEER_SEQUENCE: u64 = 1_000;
 
     /// A scripted App Server peer for the driver: it answers the Session
     /// methods the driver calls and plays the `ask_user` `step/tool-call`
@@ -6960,11 +7152,43 @@ mod tests {
             // way a running turn is: `session.idle` stays unanswered and the
             // driver's own deadline reports the line busy.
             let mut settled = false;
-            while let Some(line) = lines.next_line().await.unwrap() {
+            // [`PeerScript::HeldIdle`]'s hold: the calls it kept, and the
+            // deadline it answers them at. The deadline stands after the
+            // release, so a later call starts no second hold.
+            let mut held: Vec<Value> = Vec::new();
+            let mut hold_until: Option<Instant> = None;
+            loop {
+                let line = match hold_until {
+                    Some(at) if !held.is_empty() => {
+                        match tokio::time::timeout_at(at.into(), lines.next_line()).await {
+                            Ok(line) => line,
+                            // The hold ended: every call it kept is answered
+                            // at the peer's next sequence.
+                            Err(_) => {
+                                for call in held.drain(..) {
+                                    let body = json!({"result": {"sequence": PEER_SEQUENCE}});
+                                    write.write_all(&frame(&call, body)).await.unwrap();
+                                }
+                                continue;
+                            }
+                        }
+                    }
+                    _ => lines.next_line().await,
+                };
+                let Some(line) = line.unwrap() else { break };
                 let request: Value = serde_json::from_str(&line).unwrap();
                 let method = request["method"].as_str().unwrap_or_default();
-                if method == "session.idle" && !settled {
-                    continue;
+                if method == "session.idle" {
+                    if matches!(script, PeerScript::HeldIdle) {
+                        let at = *hold_until.get_or_insert_with(|| Instant::now() + HELD);
+                        if Instant::now() < at {
+                            recorded.idles.fetch_add(1, Ordering::SeqCst);
+                            held.push(request);
+                            continue;
+                        }
+                    } else if !settled {
+                        continue;
+                    }
                 }
                 if method == "session.question.respond" {
                     recorded.declines.lock().unwrap().push(
@@ -6980,6 +7204,8 @@ mod tests {
                     // and a refused one only where the script has the Session
                     // close the call by other means.
                     let closed = match &script {
+                        // No question is asked, so no decline arrives.
+                        PeerScript::HeldIdle => None,
                         PeerScript::Replies(_) => {
                             let body = replies
                                 .get(declines - 1)
@@ -7075,16 +7301,22 @@ mod tests {
                 let body = match method {
                     "session.create" => json!({"result": {"sessionId": "peer"}}),
                     "session.context.usage" => json!({"result": {"contextWindow": window}}),
+                    "session.idle" => json!({"result": {"sequence": PEER_SEQUENCE}}),
                     _ => json!({"result": {}}),
                 };
                 write.write_all(&frame(&request, body)).await.unwrap();
                 if method == "session.submit" {
                     write
                         .write_all(&notice(
-                            json!({"type": "turn", "name": "start", "data": {}}),
+                            json!({"type": "turn", "name": "start", "sequence": 1, "data": {}}),
                         ))
                         .await
                         .unwrap();
+                    // The held line asks nothing: the run's only work is the
+                    // turn the peer holds open.
+                    if matches!(script, PeerScript::HeldIdle) {
+                        continue;
+                    }
                     let request = match &script {
                         PeerScript::Unkeyed => None,
                         _ => Some("r1"),
@@ -7343,6 +7575,36 @@ mod tests {
         assert!(
             reads.declines.lock().unwrap().is_empty(),
             "the run sends no decline for the call"
+        );
+    }
+
+    /// A line that stays busy for many quiet checks holds one idle request,
+    /// not one per check: the peer reads exactly one `session.idle` while it
+    /// holds the line, and the run stops idle once the line answers it
+    /// (issue #1032).
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_busy_line_holds_one_idle_request_across_many_checks() {
+        let directory =
+            std::env::temp_dir().join(format!("dim-scenario-eval-held-{}", std::process::id()));
+        let (socket, reads) = scripted_peer(&directory, 8_000, PeerScript::HeldIdle).await;
+        let mut client = driver_client(socket).await;
+        let mut scenario = scenario(Vec::new());
+        scenario.budget.seconds = 30.;
+        let started = Instant::now();
+        let driven = drive(&mut client, &scenario, &std::env::temp_dir(), &peer_model()).await;
+        let elapsed = started.elapsed();
+        let _ = std::fs::remove_dir_all(directory);
+        assert_eq!(driven.stop, "idle", "{:?}", driven.error);
+        assert!(
+            elapsed >= HELD,
+            "the line stayed busy for the hold: {} ms",
+            elapsed.as_millis()
+        );
+        assert_eq!(
+            reads.idles.load(Ordering::SeqCst),
+            1,
+            "one idle request for every check the line stayed busy"
         );
     }
 

@@ -679,7 +679,8 @@ async fn run_mcp(
         request.action,
         ManagementAction::List | ManagementAction::Reload
     ) {
-        let (rows, notes) = crate::mcp::catalog_report(client, options).await?;
+        let (rows, notes) =
+            crate::mcp::catalog_report(client, options.workspace().as_str()).await?;
         print_report(rows, notes);
         return Ok(0);
     }

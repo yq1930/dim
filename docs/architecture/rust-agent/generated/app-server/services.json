@@ -23,7 +23,7 @@
         "reads": []
       },
       {
-        "id": 64,
+        "id": 65,
         "parent": 2,
         "name": "Attachments",
         "state": "Active",
@@ -47,6 +47,53 @@
           {
             "service": "dim_agent_runtime::parts::PartRegistry",
             "provider": 40,
+            "declared": true,
+            "external": true
+          }
+        ]
+      },
+      {
+        "id": 64,
+        "parent": 2,
+        "name": "goal",
+        "state": "Active",
+        "generation": 1,
+        "injects": [
+          {
+            "service": "dim_agent_runtime::parts::PartRegistry",
+            "scope": null,
+            "status": "Ready"
+          },
+          {
+            "service": "dim_app_server::settings::SettingsService",
+            "scope": null,
+            "status": "Ready"
+          }
+        ],
+        "resolved": [
+          {
+            "service": "dim_agent_runtime::parts::PartRegistry",
+            "scope": null,
+            "provider": 40,
+            "generation": 1
+          },
+          {
+            "service": "dim_app_server::settings::SettingsService",
+            "scope": null,
+            "provider": 16,
+            "generation": 1
+          }
+        ],
+        "reads": [
+          {
+            "service": "dim_agent_runtime::parts::PartRegistry",
+            "provider": 40,
+            "declared": true,
+            "external": true
+          },
+          {
+            "service": "dim_app_server::settings::SettingsService",
+            "provider": 16,
             "declared": true,
             "external": true
           }
@@ -944,6 +991,11 @@
         "generation": 1,
         "injects": [
           {
+            "service": "dim_agent_runtime::parts::PartRegistry",
+            "scope": null,
+            "status": "Ready"
+          },
+          {
             "service": "dim_app_server::control::ServerControl",
             "scope": null,
             "status": "Ready"
@@ -955,6 +1007,12 @@
           }
         ],
         "resolved": [
+          {
+            "service": "dim_agent_runtime::parts::PartRegistry",
+            "scope": null,
+            "provider": 40,
+            "generation": 1
+          },
           {
             "service": "dim_app_server::control::ServerControl",
             "scope": null,
@@ -969,6 +1027,12 @@
           }
         ],
         "reads": [
+          {
+            "service": "dim_agent_runtime::parts::PartRegistry",
+            "provider": 40,
+            "declared": true,
+            "external": true
+          },
           {
             "service": "dim_app_server::control::ServerControl",
             "provider": 3,
@@ -1691,12 +1755,23 @@
         "generation": 1,
         "injects": [
           {
+            "service": "dim_agent_runtime::parts::PartRegistry",
+            "scope": null,
+            "status": "Ready"
+          },
+          {
             "service": "dim_app_server::settings::SettingsService",
             "scope": null,
             "status": "Ready"
           }
         ],
         "resolved": [
+          {
+            "service": "dim_agent_runtime::parts::PartRegistry",
+            "scope": null,
+            "provider": 40,
+            "generation": 1
+          },
           {
             "service": "dim_app_server::settings::SettingsService",
             "scope": null,
@@ -1705,6 +1780,12 @@
           }
         ],
         "reads": [
+          {
+            "service": "dim_agent_runtime::parts::PartRegistry",
+            "provider": 40,
+            "declared": true,
+            "external": true
+          },
           {
             "service": "dim_app_server::settings::SettingsService",
             "provider": 16,
@@ -2539,6 +2620,12 @@
       }
     ],
     "bindings": [
+      {
+        "service": "dim_agent_capabilities::environment_clients::SessionClientsHost",
+        "provider": 37,
+        "generation": 1,
+        "removing": false
+      },
       {
         "service": "dim_agent_capabilities::execution_settings::ExecutionSettingsHost",
         "provider": 22,

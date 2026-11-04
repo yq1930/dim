@@ -479,9 +479,9 @@ fn model_catalog_lists_safe_ids_and_availability_and_refreshes_explicitly() {
             let request = wire.read(if refresh { "provider.refresh" } else { "provider.catalog" });
             assert_eq!(request["params"], json!({"providerId":"fixture"}));
             let catalog = json!({"account":{"accessToken":"must-not-print"},"version":1,"disabledModelIds":["disabled"],"models":[
-                {"id":"model\u{1b}[2J-id","name":"Model\nName\tvalue","unavailableReason":null},
-                {"id":"disabled","name":"Disabled","unavailableReason":null},
-                {"id":"missing","name":"Missing","unavailableReason":"private diagnostic must-not-print"}
+                {"id":"model\u{1b}[2J-id","name":"Model\nName\tvalue","unavailableReason":null,"capabilities":dim_agent_types::CatalogCapabilities::with_limits(128_000, 16_384)},
+                {"id":"disabled","name":"Disabled","unavailableReason":null,"capabilities":dim_agent_types::CatalogCapabilities::with_limits(128_000, 16_384)},
+                {"id":"missing","name":"Missing","unavailableReason":"private diagnostic must-not-print","capabilities":dim_agent_types::CatalogCapabilities::default()}
             ]});
             wire.reply(&request, if refresh { catalog } else { json!({"catalog":catalog}) });
         });
@@ -591,8 +591,8 @@ fn model_catalog_marks_undeclared_limits_and_names_the_declaring_command() {
         wire.reply(
             &catalog,
             json!({"catalog":{"version":1,"disabledModelIds":[],"models":[
-                {"id":"narrow","name":"Narrow","unavailableReason":"limits_undeclared","missingLimits":["contextWindow","maxOutputTokens"]},
-                {"id":"ready","name":"Ready","unavailableReason":null,"missingLimits":[]}
+                {"id":"narrow","name":"Narrow","unavailableReason":"limits_undeclared","missingLimits":["contextWindow","maxOutputTokens"],"capabilities":dim_agent_types::CatalogCapabilities::default()},
+                {"id":"ready","name":"Ready","unavailableReason":null,"missingLimits":[],"capabilities":dim_agent_types::CatalogCapabilities::with_limits(128_000, 16_384)}
             ]}}),
         );
     });
@@ -638,7 +638,7 @@ fn model_adoption_names_the_declaring_command_for_undeclared_limits() {
         wire.reply(
             &catalog,
             json!({"catalog":{"version":1,"disabledModelIds":[],"models":[
-                {"id":"narrow","name":"Narrow","unavailableReason":"limits_undeclared","missingLimits":["contextWindow","maxOutputTokens"]}
+                {"id":"narrow","name":"Narrow","unavailableReason":"limits_undeclared","missingLimits":["contextWindow","maxOutputTokens"],"capabilities":dim_agent_types::CatalogCapabilities::default()}
             ]}}),
         );
     });
@@ -679,7 +679,7 @@ fn model_catalog_declares_limits_for_one_model() {
         wire.reply(
             &catalog,
             json!({"catalog":{"version":1,"disabledModelIds":[],"models":[
-                {"id":"narrow","name":"Narrow","unavailableReason":"limits_undeclared","missingLimits":["contextWindow","maxOutputTokens"]}
+                {"id":"narrow","name":"Narrow","unavailableReason":"limits_undeclared","missingLimits":["contextWindow","maxOutputTokens"],"capabilities":dim_agent_types::CatalogCapabilities::default()}
             ]}}),
         );
         let edit = wire.read("provider.models.edit");
@@ -696,7 +696,7 @@ fn model_catalog_declares_limits_for_one_model() {
         wire.reply(
             &catalog,
             json!({"catalog":{"version":2,"disabledModelIds":[],"models":[
-                {"id":"narrow","name":"Narrow","unavailableReason":null,"missingLimits":[]}
+                {"id":"narrow","name":"Narrow","unavailableReason":null,"missingLimits":[],"capabilities":dim_agent_types::CatalogCapabilities::with_limits(64_000, 8_000)}
             ]}}),
         );
     });
@@ -742,11 +742,11 @@ fn model_catalog_declares_missing_limits_for_every_model() {
         wire.reply(
             &catalog,
             json!({"catalog":{"version":1,"disabledModelIds":["gone"],"models":[
-                {"id":"narrow","name":"Narrow","unavailableReason":"limits_undeclared","missingLimits":["contextWindow","maxOutputTokens"]},
-                {"id":"ready","name":"Ready","unavailableReason":null,"missingLimits":[]},
-                {"id":"wide","name":"Wide","unavailableReason":"limits_undeclared","missingLimits":["maxOutputTokens"]},
-                {"id":"gone","name":"Gone","unavailableReason":null,"missingLimits":["contextWindow","maxOutputTokens"]},
-                {"id":"blocked","name":"Blocked","unavailableReason":"provider_unavailable","missingLimits":["contextWindow"]}
+                {"id":"narrow","name":"Narrow","unavailableReason":"limits_undeclared","missingLimits":["contextWindow","maxOutputTokens"],"capabilities":dim_agent_types::CatalogCapabilities::default()},
+                {"id":"ready","name":"Ready","unavailableReason":null,"missingLimits":[],"capabilities":dim_agent_types::CatalogCapabilities::with_limits(128_000, 16_384)},
+                {"id":"wide","name":"Wide","unavailableReason":"limits_undeclared","missingLimits":["maxOutputTokens"],"capabilities":dim_agent_types::CatalogCapabilities { context_window: Some(128_000), ..Default::default() }},
+                {"id":"gone","name":"Gone","unavailableReason":null,"missingLimits":["contextWindow","maxOutputTokens"],"capabilities":dim_agent_types::CatalogCapabilities::default()},
+                {"id":"blocked","name":"Blocked","unavailableReason":"provider_unavailable","missingLimits":["contextWindow"],"capabilities":dim_agent_types::CatalogCapabilities { max_output_tokens: Some(16_384), ..Default::default() }}
             ]}}),
         );
         let first = wire.read("provider.models.edit");
@@ -767,9 +767,9 @@ fn model_catalog_declares_missing_limits_for_every_model() {
         wire.reply(
             &catalog,
             json!({"catalog":{"version":3,"disabledModelIds":[],"models":[
-                {"id":"narrow","name":"Narrow","unavailableReason":null,"missingLimits":[]},
-                {"id":"ready","name":"Ready","unavailableReason":null,"missingLimits":[]},
-                {"id":"wide","name":"Wide","unavailableReason":null,"missingLimits":[]}
+                {"id":"narrow","name":"Narrow","unavailableReason":null,"missingLimits":[],"capabilities":dim_agent_types::CatalogCapabilities::with_limits(64_000, 8_000)},
+                {"id":"ready","name":"Ready","unavailableReason":null,"missingLimits":[],"capabilities":dim_agent_types::CatalogCapabilities::with_limits(128_000, 16_384)},
+                {"id":"wide","name":"Wide","unavailableReason":null,"missingLimits":[],"capabilities":dim_agent_types::CatalogCapabilities::with_limits(128_000, 8_000)}
             ]}}),
         );
     });
@@ -4041,7 +4041,7 @@ fn interactive_configuration_commands_route_and_recover_without_submitting_comma
         capabilities["reasoning"] = json!(true);
         wire.reply(
             &request,
-            json!({"catalog":{"models":[{"id":"model","capabilities":capabilities,
+            json!({"catalog":{"version":1,"disabledModelIds":[],"models":[{"id":"model","name":"Model","capabilities":capabilities,
             "metadata":{"reasoning":{"supported":true,"effortOptions":["high","low"]},
                 "serviceTier":{"supported":true,"options":["priority","default"]}}}]}}),
         );
@@ -4344,7 +4344,7 @@ fn a_new_session_shows_the_effort_its_creation_adopted() {
                     "provider.management" => json!({"providers":[{"providerId":"test","source":"custom",
                         "displayName":"Test","enabled":true,"version":1,"connection":null,
                         "preferences":{"model":{"reasoningEffort":"high"}}}],"errors":[]}),
-                    "provider.catalog" => json!({"catalog":{"models":[{"id":"model",
+                    "provider.catalog" => json!({"catalog":{"version":1,"disabledModelIds":[],"models":[{"id":"model","name":"Model",
                         "capabilities":capabilities}]}}),
                     "session.create" => json!({"sessionId":"session","sequence":8,
                         "model":{"providerId":"test","modelId":"model"},
@@ -4476,7 +4476,7 @@ fn home_after_new_drops_the_previous_sessions_effort() {
         capabilities["reasoning"] = json!(true);
         wire.reply(
             &catalog,
-            json!({"catalog":{"models":[{"id":"model","capabilities":capabilities,
+            json!({"catalog":{"version":1,"disabledModelIds":[],"models":[{"id":"model","name":"Model","capabilities":capabilities,
                 "metadata":{"reasoning":{"supported":true,"effortOptions":["high","low"]}}}]}}),
         );
         let effort = wire.read("session.model.update");
@@ -4941,10 +4941,10 @@ fn tui_effort_dialog_selects_the_current_models_effort_and_cancels_without_writi
         capabilities["reasoning"] = json!(true);
         wire.reply(
             &request,
-            json!({"catalog":{"models":[
-                {"id":"other","capabilities":capabilities,"metadata":{"reasoning":{
+            json!({"catalog":{"version":1,"disabledModelIds":[],"models":[
+                {"id":"other","name":"Other","capabilities":capabilities,"metadata":{"reasoning":{
                     "supported":true,"effortOptions":["invalid-neighbor"]}}},
-                {"id":"model","capabilities":capabilities,"metadata":{"reasoning":{
+                {"id":"model","name":"Model","capabilities":capabilities,"metadata":{"reasoning":{
                     "supported":true,"effortOptions":["low","high"],
                     "off":{"kind":"enable_thinking","value":false}}}}
             ]}}),
@@ -5054,7 +5054,7 @@ fn tui_mcp_and_configuration_commands_use_session_methods() {
         assert_eq!(request["params"], json!({"providerId":"test"}));
         let mut capabilities = serde_json::to_value(dim_agent_types::CatalogCapabilities::with_limits(128_000, 16_384)).unwrap();
         capabilities["reasoning"] = json!(true);
-        wire.reply(&request, json!({"catalog":{"models":[{"id":"model","capabilities":capabilities,
+        wire.reply(&request, json!({"catalog":{"version":1,"disabledModelIds":[],"models":[{"id":"model","name":"Model","capabilities":capabilities,
             "metadata":{"reasoning":{"supported":true,"effortOptions":["high","low"]}}}]}}));
         let effort = wire.read("session.model.update");
         assert_eq!(effort["params"], json!({"sessionId":"session","branchId":"main","modelPreferences":{"reasoningEffort":"high"}}));
@@ -5552,7 +5552,7 @@ fn tui_sends_dropped_files_as_links_and_images_by_model_capability() {
         let catalog = wire.read("provider.catalog");
         assert_eq!(catalog["params"], json!({"providerId":"test"}));
         let capabilities = json!({"modalities":["text"],"toolCalling":true,"streaming":true,"structuredOutput":true,"vision":false,"audio":false,"reasoning":false,"contextWindow":128000,"maxOutputTokens":16384});
-        wire.reply(&catalog, json!({"catalog":{"models":[{"id":"model","capabilities":capabilities}]}}));
+        wire.reply(&catalog, json!({"catalog":{"version":1,"disabledModelIds":[],"models":[{"id":"model","name":"Model","capabilities":capabilities}]}}));
         wire.no_context();
         let providers = wire.read("account.providers");
         wire.reply(&providers, json!([]));
@@ -7268,7 +7268,7 @@ fn daemon_start_waits_for_private_permissions_without_trusting_existing_public_s
     let catalog = wire.read("provider.catalog");
     wire.reply(
         &catalog,
-        json!({"catalog":{"models":[],"disabledModelIds":[]}}),
+        json!({"catalog":{"version":1,"models":[],"disabledModelIds":[]}}),
     );
     let output = wait(child);
     fs::remove_file(&server).unwrap();

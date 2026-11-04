@@ -854,7 +854,6 @@ async fn a_steered_turn_offers_and_input_after_its_end_refuses() {
     // An appended input starts no turn, so the completed turn stays the
     // latest one; the input that followed its end refuses it.
     send(&mut client, &id, "a note", Some("append")).await;
-    tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(
         suggest(&mut client, &id, &turn).await,
         json!({"accepted": false, "reason": "not_latest_turn"})

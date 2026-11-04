@@ -327,7 +327,7 @@ Not in this contract: `createdBy` (the Session's origin) and the `client` parame
 
 ### A.5 Fixed-prefix read
 
-`sessions.history` with `atLeast` fixes `through` as the published head at call time. It fails with `future_sequence` if that head is below `atLeast`, and otherwise returns the branch's own events through that head, paged by `after` and `limit`. It is composed from the existing facade: read the head with `Session::sequence(branch)`, then page with `AgentIndex::history_page`, which pages a loaded line through the branch's query and one that has ended or is not loaded through the App Server's page read. A branch part that needs the ancestor prefix reads the chain with the same query (§9.2). Every event delivered by the branch Dispatcher or the Session broadcast is published, so `atLeast = event.sequence` succeeds while the branch exists.
+`sessions.history` acquires and holds the Session, restoring it when unloaded. With `atLeast` it fixes `through` as the published head at call time. It fails with `future_sequence` if that head is below `atLeast`, and otherwise returns the branch's own events through that head, paged by `after` and `limit`. It is composed from the existing facade: read the head with `Session::sequence(branch)`, then page with `AgentIndex::history_page`. A live line pages through its query; an ended line pages through `TimelineTree` at its fixed head and batch boundaries. This entry has no store-read fallback for a Session the process does not hold. A branch part that needs the ancestor prefix reads the chain with the same query (§9.2). Every event delivered by the branch Dispatcher or the Session broadcast is published, so `atLeast = event.sequence` succeeds while the branch exists.
 
 ### A.6 Errors
 

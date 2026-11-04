@@ -161,7 +161,7 @@ Index of plugin design documents: [plugins/README.md](plugins/README.md).
 | ShellInput | Session | `!command` / `!!command` as `shell.run/stop/list` Session methods | P1 | Rust | [ShellInput](plugins/ShellInput.md) |
 | Attachments | Session | `attachment.put` for large text; Session files | P1 | Rust | [Attachments](plugins/Attachments.md) |
 | SessionTitle | Session | Title from the first adopted user input; `session.rename` | P1 | Rust | [SessionTitle](plugins/SessionTitle.md) |
-| Goal | Session + branch | Goal state folded from `goal:objective` and `goal:status` input blocks; continuation; `goal_update`; `session.goal.*` | P2 | TypeScript first | [Goal](plugins/Goal.md) |
+| Goal | Session + branch | Goal state folded from `goal:objective` and `goal:status` input blocks; continuation; `goal_update`; `session.goal.*` | P2 | Rust | [Goal](plugins/Goal.md) |
 | Web | Session | `web_search`, `web_fetch` | P2 | TypeScript first | [Web](plugins/Web.md) |
 | Hooks | Process + Session + branch | Command hooks in Dim's own configuration, with a Claude Code / Codex compatible document shape and script protocol, attached to business owners: Permission (pre-tool advice), Approval (permission requests), the operator-input entries (prompt check), branch inputs (post-tool, Stop, Session start) | M1 | Rust | [Hooks](plugins/Hooks.md) |
 | Scheduler | Process + Session | Scheduled jobs; `schedule` tool; run-outcome report | P2 | TypeScript first | [Scheduler](plugins/Scheduler.md) |

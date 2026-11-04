@@ -3,7 +3,7 @@
 //! catches a browser callback. Commands that print or prompt are in
 //! `mcp_command` (line client) and `session_host` (TUI).
 
-use crate::{Result, args::Options, client::Client, sanitize::safe_line};
+use crate::{Result, client::Client, sanitize::safe_line};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -63,13 +63,8 @@ pub struct Application {
 }
 
 /// What `mcp list` prints: the rows on stdout, then the notes on stderr.
-pub async fn catalog_report(
-    client: &mut Client,
-    options: &Options,
-) -> Result<(Vec<String>, Vec<String>)> {
-    let catalog: Catalog = client
-        .typed("mcp.catalog", json!({"cwd": options.workspace().as_str()}))
-        .await?;
+pub async fn catalog_report(client: &mut Client, cwd: &str) -> Result<(Vec<String>, Vec<String>)> {
+    let catalog: Catalog = client.typed("mcp.catalog", json!({"cwd": cwd})).await?;
     let mut rows = Vec::new();
     for server in catalog.servers {
         rows.push(format!(

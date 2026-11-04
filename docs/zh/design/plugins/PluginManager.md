@@ -15,7 +15,7 @@ PluginManager 保存一个宿主的插件配置：装了哪些插件，它们从
 | 插件代码：创建、打开/关闭、替换、重新加载 loader 行（§3） | 是，TypeScript 和 Python，前提是运行时已经提供（§2.5） | |
 | `plugin.*` 管理方法和 `dimcode plugin` 命令（§6、A.1） | 是 | 变更的客户端通知 |
 | 通过 Session 部件提供的 agent 工具（§6） | 是 | |
-| 默认 CLI 加载内置 SessionTitle、Scheduler 和配置的默认插件（goal、web、workflow、plugin-authoring） | 是 | |
+| 默认 CLI 加载内置 SessionTitle、Scheduler、Goal 和 Web 以及配置的默认插件（plugin-authoring） | 是 | |
 | 每个插件在运行时自己登记 Settings 来源（§9 R1） | 是，内置插件和 TypeScript 插件一起 | |
 | 内容种类：skill、MCP 配置、hook（§3、§9 R2） | skill 和 MCP，前提是它们的所有者按时落地；hook（Hooks 属于 M1） | |
 
@@ -143,8 +143,6 @@ flowchart LR
 ```json
 {
   "plugins": {
-    "goal": "plugins/goal",
-    "workflow": "plugins/workflow",
     "plugin-authoring": "plugins/plugin-authoring"
   },
   "locked": ["PluginManager", "Rpc", "Transport"]
@@ -152,7 +150,7 @@ flowchart LR
 ```
 
 - `plugins` 把每个默认插件的名字映射到它的目录，路径相对于这个文件。默认插件和其他插件一样是一个插件目录（§2.1）。
-- 内置 SessionTitle 和 Scheduler 由原生产品 profile 安装，在这个文件中没有条目。
+- 内置 SessionTitle、Scheduler 和 Goal 由原生产品 profile 安装，在这个文件中没有条目。
 - `locked` 列出不能关闭、也不能切换所用插件的名字。锁定名字的其他插件仍然可以安装。锁定是产品配置；PluginManager 执行它。
 
 ### 2.4 PluginManager 不保存的状态
@@ -382,7 +380,7 @@ PluginManager 不是 Capability：它没有 Timeline 状态，不写 Timeline �
 
 ## 附录 C. 验收（M1）
 
-1. 使用隔离的 home，`dimcode` 启动时已加载 goal、web、workflow 和 plugin-authoring；`dimcode plugin list` 显示它们和包括 SessionTitle、Scheduler 的内置插件。
+1. 使用隔离的 home，`dimcode` 启动时已加载 plugin-authoring。`dimcode plugin list` 显示它和包括 SessionTitle、Scheduler、Goal、Web 的内置插件。Workflow 仅在显式安装和启用后出现。
 2. `dimcode plugin install ./my-tool`（一个登记一个工具的 TypeScript 插件）使该工具在新的轮次中对模型可见，不需要重启。
 3. 编辑 `index.ts` 并运行 `dimcode plugin reload my-tool`，会改变该工具在已打开 Session 中的行为。
 4. agent 通过 `plugin` 工具完成步骤 2–3，每次调用都由 Permission 决定；`plugin config goal set maxContinuations 5` 不用重启就改变 goal 的设置。

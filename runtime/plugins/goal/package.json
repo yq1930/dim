@@ -1,8 +1,0 @@
-{
-  "name": "@dimcode/goal",
-  "private": true,
-  "version": "0.1.0",
-  "type": "module",
-  "dependencies": { "@arcships/rutis": "0.19.3", "zod": "4.4.3" },
-  "devDependencies": { "@types/node": "24.10.0" }
-}

@@ -65,7 +65,7 @@ flowchart LR
 | Session 工具 | 由进程行经 partRegistry 注册的 C4 Session 定义注入 toolRegistry，在 apply 中以其声明和异步 execute 注册 schedule，注册不做 I/O；注册和提供者代际变化遵循当前 C4 绑定（§1.1）。 |
 | 进程包 / `scheduleJobs` | 经 `AgentBuilder::optional_plugin` 注册的可选进程行 `Scheduler` 装载进程 owner；其 `apply` 经 `partRegistry` 注册 `SchedulerSession` 部分。Session 部分经 `names.key()` 读取 `scheduleJobs`（§1.1）。 |
 | 管理命名空间 | 进程行先恢复运行存储，再把 schedule 注册到 managementMethods 并发布 scheduleJobs。恢复失败时保留 fault，仍注册命名空间后使行失败，让后续调用返回该行的失败状态。原生按调用准入及 report/drain 跟随注册行的生命周期和状态。 |
-| Settings | owner settings.read/update、settings/schedule 已实现（#175/#177）。仅进程 row 登记来源 schedule、用户文件 schedule.json、无 projectFile，以及 userOnly /max_concurrent_runs（§7.1）。使用时读取已校验/默认化文档，以 expectedRevision 做 CAS。整份文档的本地写入沿用 Settings 信任边界（§7），不证明经过 Scheduler 保存。 |
+| Settings | 仅进程 row 登记来源 schedule、用户文件 schedule.json、无 projectFile（§7.1）。使用时读取已校验/默认化文档，以文档 revision 做 CAS。原生绑定使用类型化 owner 读写；客户端通过 schedule.* 管理任务，而不是通用 settings.*。 |
 | 存储 | [公开绑定](../../../design/process-typescript.md#52-public-pluginfiles-binding)在宿主授权 product root 提供 pluginFiles。宿主在启用行前创建 `scheduler/`；父目录缺失时在事务回调前返回 `io`。Scheduler 内部 v1（A.7）与宿主外层 v1 不变。 |
 | Sessions | 既有信封 {ok:true,value} / {ok:false,error:{code,message,retryable}}；launch 返回 {sessionId,policy}，input 返回 {inputId,sequence}，lookup 返回 accepted/unknown，直接使用既有形状。 |
 | 原生生命周期 | S2 调用各自持有租约。[#126](https://github.com/arcships/dim/issues/126) 的 Agents 自动空闲卸载由 [#331](https://github.com/arcships/dim/pull/331) 提供。Scheduler 不把断开当作关闭，不自建卸载循环。 |
@@ -387,11 +387,11 @@ policy 文本是出厂配置成员：`description` 替换声明的 description�
 
 ## 7. 安全
 
-schedule 声明 persistent_configuration，Permission 按未分类处理：FullAccess 允许（E1）、WorkspaceWrite 询问、ReadOnly 拒绝，不改 Permission（#45）。运行只写输入，工具按运行 Session policy 准入，不预授审批。工具任务记录 created_by。owner settings.update 不能改变 userOnly /max_concurrent_runs；已实现的受保护客户端 settings.update 可以。任务不存凭据。工具可访问本宿主 Scheduler 的全局任务：已准入的交互 leader 能跨 Session/工作区 list/get 任务提示词，并更新另一分支的任务。授权更新按 §3.3 接管后续权限和报告路由，不通知之前的保存分支；管理权限同样能读取全部任务提示词。这不提供 Session/cwd 隔离。
+schedule 声明 persistent_configuration，Permission 按未分类处理：FullAccess 允许（E1）、WorkspaceWrite 询问、ReadOnly 拒绝，不改 Permission（#45）。运行只写输入，工具按运行 Session policy 准入，不预授审批。工具任务记录 created_by。Scheduler 跨任务最多准入八个活动运行，工具和管理方法均不配置此上限（A13）。任务不存凭据。工具可访问本宿主 Scheduler 的全局任务：已准入的交互 leader 能跨 Session/工作区 list/get 任务提示词，并更新另一分支的任务。授权更新按 §3.3 接管后续权限和报告路由，不通知之前的保存分支；管理权限同样能读取全部任务提示词。这不提供 Session/cwd 隔离。
 
-schedule 来源沿用 [Settings 的信任边界](../appserver/settings-service.md#7-安全)：受保护的本地客户端和用户自身配置均为受信任写入者。整份文档的 settings.update 或直接编辑用户文件可以指定 created_by 与 policy_cap；Scheduler 使用这些声明值决定未来的权限上限与报告路由。这些值是配置，不是 Scheduler 确实捕获过分支权限的证明。这类写入不视为 schedule.save，不将来源归一为 user，不合成权限上限，也不重定向报告。写入者负责文档语义一致性，包括修改任务时递增 revision；A.5 的 revision 比较无法识别复用同一 revision 的编辑。需要 Scheduler 捕获来源/上限并管理任务 revision 时使用 schedule.save。
+schedule 来源沿用 [Settings 的信任边界](../appserver/settings-service.md#7-安全)：用户自身持久化配置受信任。原生客户端使用 schedule.*；此 Rust 来源不经通用 settings.read/update 暴露。持久化文档可以指定 created_by 与 policy_cap；Scheduler 使用这些声明值决定未来的权限上限与报告路由。这些值是配置，不是 Scheduler 确实捕获过分支权限的证明。这类写入不视为 schedule.save，不将来源归一为 user，不合成权限上限，也不重定向报告。写入者负责文档语义一致性，包括修改任务时递增 revision；A.5 的 revision 比较无法识别复用同一 revision 的编辑。需要 Scheduler 捕获来源/上限并管理任务 revision 时使用 schedule.save。
 
-写入整份用户文档是运维方行为，可以修改所有任务和报告目标；它的范围大于始终捕获 user 且只记历史的管理 schedule.save。项目来源不得提供这些权限。进程内插件仍受信任（AGENTS.md 规则 11）；userOnly 是既有 owner 写入限制，不是针对这类插件的沙箱。来源编辑不修改已接受运行固定的 report_to 或已启动权限。未来运行仍应用 §3.3 的实时 starter/宿主上限及 reuse 检查；配置的 cap 不授予超出这些上限的权限。包须在 launch 或 reuse 输入前执行这些实时权限检查。不增加来源证明服务、签名、额外元数据存储、Settings 限制或 core 协议。
+写入整份用户文档是运维方行为，可以修改所有任务和报告目标；它的范围大于始终捕获 user 且只记历史的管理 schedule.save。项目来源不得提供这些权限。进程内插件仍受信任（AGENTS.md 规则 11），不受 Settings 沙箱隔离。来源编辑不修改已接受运行固定的 report_to 或已启动权限。未来运行仍应用 §3.3 的实时 starter/宿主上限及 reuse 检查；配置的 policy cap 不授予超出这些上限的权限。包须在 launch 或 reuse 输入前执行这些实时权限检查。不增加来源证明服务、签名、额外元数据存储、Settings 限制或 core 协议。
 
 ### 7.1 Settings 来源
 
@@ -402,8 +402,8 @@ Scheduler 进程 row 在其 apply 中登记唯一来源（[Settings §3.1](../ap
 | source | schedule |
 | userFile | schedule.json；原生 profile 改用 Settings 既有 user/schedule 行 |
 | projectFile | 缺省：仅用户 scope，无项目作用域或合并 |
-| userOnly | ["/max_concurrent_runs"]；Scheduler 的 owner 写入保留此值 |
-| schema 根 | 对象，含 jobs（数组，默认 []）及 max_concurrent_runs（整数，最小 1，默认 4）；任务字段与约束见 A.1/A.4 |
+| 文档根 | 对象，含 jobs（数组，默认 []）；任务字段与约束见 A.1/A.4 |
+| 旧字段 | max_concurrent_runs（整数，最小 1，默认 4）仅为持久化文档兼容而保留读取，任务写入保留其值，不影响准入。固定上限为八（A13），不要求可配置的并发字段或 userOnly 声明。 |
 
 Settings 在外部边界统一应用默认值并校验文档。非法文档返回错误，不视为空任务列表。来源只保存任务；A.7 内部 v1 运行历史仍保存在 pluginFiles 中。读取或修改该文档不触发包的结构重载。
 
@@ -442,7 +442,7 @@ Settings 在外部边界统一应用默认值并校验文档。非法文档返�
 | Job | `id`、`name`、`schedule`（A.4）、`prompt`（文本 ≤ 32 KiB）、`cwd`、`resource_node`（仅 P3；当前包不含该字段，使用控制节点）、`model`（`None` = profile 的模型）、`agent_id`（可选；`None` = Agents 的默认 profile）、`mode`（`create` \| `reuse`）、`session_id`（`reuse` 在首次运行时绑定）、`policy`（可选预设，只收窄）、`policy_cap`（最近一次授权保存时与 created_by 一起捕获）、`enabled`、`enabled_at?`（启用时必须存在，禁用时不存在）、`max_run_minutes`（默认 60，A7）、`revision`、`created_by`（`user` \| `tool{session_id,branch_id}`；最近一次授权保存） |
 | Run | `run_id`、`job_id`、`window`（时刻或 `manual`）、`state`、`deadline_at?`、`session_id?`、`session_origin?`（`launch` \| `reuse`）、`policy?`（运行 Session 的实际权限）、`input_event_id?`、`submission_id`、`report_to`（工具保存任务的保存方分支；管理保存任务无此字段）、`created_at`、`ended_at`（仅终态）、`detail`。终态 `state` 即运行结果；时间戳使用 UTC `YYYY-MM-DDTHH:mm:ss.sssZ`，固定三位小数，使时间顺序与字典序一致。 |
 
-运行状态：`skipped`（重叠、容量、禁用、节点不可用、policy、任务改变、`settings_read_failed` 和 `binding_unconfirmed`）、`missed`、`launching`、`submitted`、`running`，终态 `completed`/`failed`/`cancelled`/`timed_out`/`lost`。A.5.1 的 `binding_conflict` 是继续运行时的 Run.detail 诊断，不是跳过结果。每个任务保留最近 100 次终态运行，活动运行、自持 Session 清理尚未结算的记录，以及每个仍被引用 Session 的最后一条 launch 所有权记录另行保留（A8、A.7）。Settings 来源 `schedule` 保存一个文档 `{ jobs: [Job], max_concurrent_runs }`（A13），由 Settings 在写入和读取持久化文件时按 Scheduler 的 schema 校验并填充默认值；Scheduler 按交付的样子使用。任务写入是 Scheduler 对该文档的类型化写入，按文档 revision 做 CAS，因此工具保存和管理保存绝不会静默互相覆盖，但不认证其他客户端/文件写入（§7）。Job.revision 是选中任务的 revision，由 Scheduler 每次任务变更时推进；它不同于 CAS 使用的 Settings 不透明文档 revision。运行记录使用现有 `pluginFiles` 事务（A.7）。
+运行状态：`skipped`（重叠、容量、禁用、节点不可用、policy、任务改变、`settings_read_failed` 和 `binding_unconfirmed`）、`missed`、`launching`、`submitted`、`running`，终态 `completed`/`failed`/`cancelled`/`timed_out`/`lost`。A.5.1 的 `binding_conflict` 是继续运行时的 Run.detail 诊断，不是跳过结果。每个任务保留最近 100 次终态运行，活动运行、自持 Session 清理尚未结算的记录，以及每个仍被引用 Session 的最后一条 launch 所有权记录另行保留（A8、A.7）。Settings 来源 `schedule` 保存一个任务文档及 §7.1 的旧兼容字段。Settings 在写入和读取持久化数据时应用 Scheduler 的文档默认值与校验；Scheduler 直接使用交付的任务。任务写入是 Scheduler 对该文档的类型化写入，按文档 revision 做 CAS，因此工具保存和管理保存绝不会静默互相覆盖，但不认证其他客户端/文件写入（§7）。Job.revision 是选中任务的 revision，由 Scheduler 每次任务变更时推进；它不同于 CAS 使用的 Settings 不透明文档 revision。运行记录使用现有 `pluginFiles` 事务（A.7）。
 
 以下字段是重启后仍需使用的事实，保留在上述既有记录中，不增所有权存储或调度状态文档。
 
@@ -591,7 +591,7 @@ Session，在记录仍属于任务最近 100 条终态运行时保持被引用�
 launch 一个 Session。不增加立即删除策略，也不从旧运行推断绑定。
 
 同一窗口到期的未绑定 reuse 任务会并发写同一个 Settings 文档，最多同时有
-`max_concurrent_runs` 个，因而可能彼此冲突。后续窗口若 launch 新 Session，不会继承
+八个（A13），因而可能彼此冲突。后续窗口若 launch 新 Session，不会继承
 首次窗口的历史。
 
 一次性禁用使用 A.4 的既有已记录窗口检查：已有准入输入或终态运行时，由定时器普通
@@ -719,7 +719,7 @@ launch 一个 Session。不增加立即删除策略，也不从旧运行推断�
 
    跨来源编辑：从工具分支 A 保存一个没有显式 policy 的 create 模式任务，启动运行并观察其输入已发布。随后管理 schedule.save 将来源/上限一起替换为 user/宿主最大值，后续运行采用管理只读默认值且只记历史；再从 FullAccess 工具分支 B 省略 policy 只改名时，两者一起替换为 B/其当前上限，后续运行采用 FullAccess 并报告给 B。验证工具描述说明接管，结果展示 ReadOnly → FullAccess 及来源/上限/报告目标变化。已接受运行仍报告给 A，已启动权限不变。policy 超过新上限、CAS 过期或必需权限读取失败均保留旧任务及字段对；run_now 和 set_enabled 不改来源/上限字段对。在 launching 记录提交后、launch 前挂起运行、修改其任务，验证 skipped: changed 且不 launch/input；在 launch 后 input 前重复，保留自持 Session 供清理。修改另一任务不跳过本运行。授权保存沿用不重试 CAS 的规则。A.5.1 覆盖另一任务引起的一次绑定冲突及重读/复核重试；第二次明确冲突时，符合条件的未变任务仍输入一次、detail 记录 binding_conflict、任务保持未绑定，包含一次性 at 任务。任务改变/禁用/已有绑定/create、读取失败、明确拒绝及可能已提交回复沿各自结果。绑定前/期间重启结算 lost 并按来源报告，不重复 launch/input。验证下次运行只从 Settings 得知绑定，未使用 Session 遵循最近 100 条终态引用的保留规则。覆盖全局跨工作区工具可见性。
 
-15. 经受保护的本地 settings.update 和用户配置存储修改任务来源/上限，并递增 revision。未来运行使用配置的报告目标，仍受实时 starter/宿主上限约束，不替换字段或虚构 Scheduler 保存。已接受运行保留原目标和权限。展示同 revision 的原始编辑不会被已接受运行的 revision 复核识别（§7）。缺少配置时使用 schema 默认值；非法文档保持非法；拒绝项目 scope；owner 写入不能更改 /max_concurrent_runs，本地受保护客户端可以更改。
+15. 经用户自身持久化配置修改任务来源/权限上限，并递增 revision。未来运行使用配置的报告目标，仍受实时 starter/宿主上限约束，不替换字段或虚构 Scheduler 保存。已接受运行保留原目标和权限。展示同 revision 的原始编辑不会被已接受运行的 revision 复核识别（§7）。缺少配置时使用文档默认值；非法文档保持非法；拒绝项目 scope。工具和管理方法配置并发的尝试被拒绝，不改变任务。旧 max_concurrent_runs 小于或大于八时，仍准入八个不同任务的活动运行，第九个因容量跳过。任务写入保留旧字段；此 Rust 来源仍不经通用 settings.* 暴露。
 
 ## 附录 E. 假设
 
@@ -735,7 +735,7 @@ launch 一个 Session。不增加立即删除策略，也不从旧运行推断�
 | A9 | 工具只在交互式 leader Session 中可用；在其他 Session 中处理函数拒绝 | [Overview §6.2](../overview.md#62-约束) 约束 15；判断 | 运行可创建任务 |
 | A10 | 所有动作使用一个风险类别 | [Overview §6.2](../overview.md#62-约束) 约束 7 | 拆分出只读工具 |
 | A11 | 工具创建的任务使用调用方的资源节点 | 判断（overview §6.3） | 允许其他节点 |
-| A13 | 最大并发运行数 = 4，即 `schedule` 文档中仅限用户的字段 `max_concurrent_runs`，在每个窗口读取 | 判断；ADR 002 D4 | 其他上限 |
+| A13 | 跨任务最多八个活动运行，由 Scheduler 固定，不供用户配置。同一任务仍在活动时，后续窗口跳过，不排队补跑。 | 维护者决定 | 其他上限 |
 | A14 | 删除任务不停止其活动运行 | 判断 | 删除即停止运行 |
 | A15 | 每次授权保存时一起捕获来源/上限（§3.3） | E2 范围内的用户决定 | 其他保存授权语义 |
 
@@ -759,7 +759,7 @@ launch 一个 Session。不增加立即删除策略，也不从旧运行推断�
 | 记录完整性 | A.1 在既有 Job/Run 中明确启用锚点、接受时截止时间、实际权限与 Session 来源；A.7 明确首次生产的完整内部 v1。记录合同已由 #270 接受；实施后按附录 D 验收重启、超时与所有权保留；不提出 core/协议需求。 |
 | 原生空闲生命周期 | [#126](https://github.com/arcships/dim/issues/126) 已由 #331 合入。Scheduler 复用 S2 租约，不实现宿主卸载。 |
 
-已知首次复用限制（A.5.1）：同一窗口到期的未绑定 reuse 任务会并发写同一个 Settings 文档，最多同时有 `max_concurrent_runs` 个，因而可能彼此冲突。两次明确冲突时，首次窗口仍可执行并在 detail 记录 binding_conflict，但任务保持未绑定。这些运行及 `failed: binding_rejected`、`lost` 和跳过运行引用的 Session 均沿最近 100 条终态记录的引用保留规则。任务未绑定时，后续每个窗口都可能分配另一个 Session，不继承首次窗口的历史，不承诺更紧分配上限。未确认绑定回复仍跳过且不输入，只记历史，并由普通结算禁用一次性 `at` 任务而不运行。输入前重启时，已知 Session 的运行经 lookup 结算 lost，不修复绑定；工具保存任务的 lost 沿用 A.6 报告。
+已知首次复用限制（A.5.1）：同一窗口到期的未绑定 reuse 任务会并发写同一个 Settings 文档，最多同时有八个（A13），因而可能彼此冲突。两次明确冲突时，首次窗口仍可执行并在 detail 记录 binding_conflict，但任务保持未绑定。这些运行及 `failed: binding_rejected`、`lost` 和跳过运行引用的 Session 均沿最近 100 条终态记录的引用保留规则。任务未绑定时，后续每个窗口都可能分配另一个 Session，不继承首次窗口的历史，不承诺更紧分配上限。未确认绑定回复仍跳过且不输入，只记历史，并由普通结算禁用一次性 `at` 任务而不运行。输入前重启时，已知 Session 的运行经 lookup 结算 lost，不修复绑定；工具保存任务的 lost 沿用 A.6 报告。
 
 已知恢复限制：launch 可能在调用方消失后完成，Session id 尚未持久化。此时运行标为 lost，不再次启动；Scheduler 无法识别所产生的 Session 来跟踪或按保留期删除。明确记录该限制，留给后续统一恢复设计，不在此增加幂等协议、注册表或基础设施门槛。
 

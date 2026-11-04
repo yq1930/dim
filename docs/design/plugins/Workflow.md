@@ -87,9 +87,15 @@ The optional package lives at `runtime/plugins/workflow`, named
 `@dimcode/workflow`. Its root module owns runs and, from its apply, registers
 `session.ts` with `partRegistry` as the Session definition `WorkflowSession`,
 which provides the Session tool. The plugin directory carries `dim-plugin.json`
-and is a default plugin listed in `runtime/default-plugins.json`, which PluginManager
-loads (`--defaults`). An embedding host may still build the row below from the
-manifest's `code` fields.
+and is installed and enabled explicitly through [PluginManager](PluginManager.md).
+The base CLI's default development, alpha and release payloads omit it; without
+the plugin, its tool and management methods are unavailable, and its Settings
+documents and run records remain untouched. An installed copy retains the user's
+explicit selection and enablement. The base CLI no longer acquires the Node
+runtime on its first start, so an installed Workflow needs `runtime.install`
+(`dimcode runtime install node`) before it runs. External packaging and distribution are
+tracked in [#1091](https://github.com/arcships/dim/issues/1091). An embedding host
+may build the row below from the manifest's `code` fields.
 
 | Row field | Process row |
 | --- | --- |

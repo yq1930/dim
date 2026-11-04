@@ -32,8 +32,13 @@ use crate::model::view::{
     LineState, LineView, SideLine, TaskOutputState, TaskTarget, WorkflowInventory,
 };
 use crate::projection::Projection;
-use crate::wire::{Configuration, Event, EventContent, Progress};
-use crate::{configure, mcp, permission, update};
+use crate::wire::{
+    Attached, CatalogModel, Configuration, Created, Event, EventContent, Progress,
+    ProviderCatalogSnapshot,
+};
+use crate::{
+    configure, mcp, permission, session_create_from_options, session_create_params, update,
+};
 
 mod member;
 mod tasks;
@@ -250,6 +255,9 @@ struct Worker {
     task_history_queue: std::collections::VecDeque<String>,
     /// A stale request still occupies this slot until its reply arrives.
     task_history_request: Option<HistoryRequest>,
+    /// A `/goal` waiting for its line's history or for the event its write
+    /// produced, advanced by [`Worker::poll_goal`].
+    goal_pending: Option<PendingGoal>,
     task_stops: Option<StopBatch>,
     workflow: WorkflowReads,
     members: Members,
@@ -310,6 +318,20 @@ struct MemberDetailRead {
     branch_id: String,
     request_id: String,
     allow: bool,
+}
+
+/// A `/goal` waiting on the shown line: the reader must finish the line's
+/// history before the call is chosen, and the event a write produced must be
+/// folded before the report prints. Both waits resume from the loop, so the
+/// command never holds the branch reader while it waits.
+struct PendingGoal {
+    request: crate::goal::Request,
+    branch: String,
+    /// The attachment this command was issued on; a switch drops the wait.
+    projection_id: u64,
+    /// The call sent, and the sequence of the event it wrote, once the reply
+    /// arrived.
+    written: Option<(crate::goal::Call, u64)>,
 }
 
 struct OutputWatch {
@@ -388,6 +410,7 @@ async fn run(
         task_history: Default::default(),
         task_history_queue: Default::default(),
         task_history_request: None,
+        goal_pending: None,
         task_stops: None,
         workflow: WorkflowReads::default(),
         members: Members::default(),
@@ -435,6 +458,7 @@ async fn run(
             worker.send(Update::Failed(error.to_string()));
             break;
         }
+        worker.poll_goal().await;
         worker.poll_task_stops().await;
         worker.poll_workflow().await;
         worker.poll_context().await;
@@ -486,37 +510,6 @@ async fn run(
                 if worker.publish_at.is_some() => worker.publish(),
         }
     }
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Created {
-    session_id: String,
-    model: ModelId,
-}
-
-/// The record `session.attach` replies for the Session it opened. A server
-/// from before the record existed replies `{}`.
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Attached {
-    #[serde(default)]
-    model: Option<ModelId>,
-    #[serde(default)]
-    capability_snapshot: Option<Box<dim_agent_types::ModelCapabilitySnapshot>>,
-    /// The adopted configuration's preferences; absent when it carries none.
-    #[serde(default)]
-    model_preferences: Option<dim_agent_types::ModelPreferences>,
-    /// The Session's workspace; absent from servers older than the record.
-    #[serde(default)]
-    cwd: Option<String>,
-    /// The Session's stored title; absent from servers older than the title
-    /// fields, and `None` when it has none.
-    #[serde(default)]
-    title: Option<String>,
-    /// The title's revision; 0 on a server that reports none.
-    #[serde(default)]
-    title_revision: u64,
 }
 
 #[derive(Deserialize)]
@@ -685,16 +678,6 @@ struct CancelNotice {
     branch_id: String,
 }
 
-/// `session.create` parameters: the workspace and, when one is chosen, the
-/// permission preset, which the Session's branches and members inherit.
-fn creation_params(options: &Options) -> serde_json::Value {
-    let mut params = json!({"cwd": options.workspace().as_str()});
-    if let Some(policy) = permission::creation_policy(options) {
-        params["permissionPolicy"] = policy;
-    }
-    params
-}
-
 impl Worker {
     async fn cancel_catalog(&mut self) -> crate::Result<()> {
         if let Some((request, _, _, _)) = self.catalog_request.take()
@@ -731,27 +714,17 @@ impl Worker {
             return self.attach(id, kind).await;
         }
         let attached_session = self.invalidate_projection();
-        let mut params = creation_params(&self.options);
-        self.options.creation_startup(&mut params);
-        let mut preferences = self.options.creation_preferences(None);
-        let mut target = None;
-        if let (Some(provider), Some(model)) =
-            (self.options.provider.clone(), self.options.model.clone())
-        {
-            preferences = self.options.creation_preferences(
-                saved_model_preferences(&mut self.client, &provider, &model).await?,
-            );
-            target = Some((provider, model));
-        }
-        if let Some(preferences) = &preferences {
-            params["modelPreferences"] = preferences.clone();
-        }
+        let params = session_create_from_options(&mut self.client, &self.options).await?;
+        let preferences = params.get("modelPreferences").cloned();
         let created: Created = match self.client.typed("session.create", params).await {
             Ok(created) => created,
             Err(error) => {
                 return Err(crate::model_adoption_error(
                     &mut self.client,
-                    target.as_ref().map(|(p, m)| (p.as_str(), m.as_str())),
+                    self.options
+                        .provider
+                        .as_deref()
+                        .zip(self.options.model.as_deref()),
                     error,
                     preferences
                         .as_ref()
@@ -773,7 +746,7 @@ impl Worker {
     /// the status line shows.
     async fn start_session(&mut self) -> crate::Result<()> {
         let attached_session = self.invalidate_projection();
-        let mut params = creation_params(&self.options);
+        let mut params = session_create_params(&self.options);
         let mut preferences = None;
         let mut target = None;
         let result = async {
@@ -908,23 +881,27 @@ impl Worker {
         Ok(())
     }
 
-    /// Reads the Session's Skills for the command palette. A daemon without
-    /// `skills.catalog`, or a failed read, leaves the palette with commands
-    /// only: no error, and the next event asks again.
     async fn refresh_skills(&mut self) {
-        let Some(cwd) = self.session_cwd.clone() else {
-            self.send(Update::Skills(Vec::new()));
-            return;
-        };
         if !self.client.supports(&["skills.catalog"]) {
             self.send(Update::Skills(Vec::new()));
             return;
         }
-        let entries = crate::management::skills::catalog(&mut self.client, &cwd)
-            .await
-            .map(|catalog| catalog.entries)
-            .unwrap_or_default();
-        self.send(Update::Skills(entries));
+        let Some(cwd) = self.session_cwd.clone() else {
+            self.send(Update::Notice(
+                "Skills unavailable: the daemon did not report the Session workspace".into(),
+            ));
+            return;
+        };
+        match crate::management::skills::catalog(&mut self.client, &cwd).await {
+            Ok(catalog) => self.send(Update::Skills(catalog.entries)),
+            Err(error)
+                if error.downcast_ref::<client::RpcError>().and_then(app_error)
+                    == Some("unknown_method") =>
+            {
+                self.send(Update::Skills(Vec::new()))
+            }
+            Err(error) => self.send(Update::Notice(format!("Skills unavailable: {error}"))),
+        }
     }
 
     /// Whether the model takes image input, from its catalog entry:
@@ -956,17 +933,10 @@ impl Worker {
         if !self.client.offers("provider.catalog") {
             return None;
         }
-        #[derive(Deserialize)]
-        struct Snapshot {
-            catalog: Option<Catalog>,
-        }
-        #[derive(Deserialize)]
-        struct Catalog {
-            models: Vec<CatalogModel>,
-        }
-        let request = self
-            .client
-            .typed::<Snapshot>("provider.catalog", json!({"providerId": model.provider_id}));
+        let request = self.client.typed::<ProviderCatalogSnapshot>(
+            "provider.catalog",
+            json!({"providerId": model.provider_id}),
+        );
         let snapshot = tokio::time::timeout(Duration::from_secs(5), request)
             .await
             .ok()?
@@ -1175,6 +1145,7 @@ impl Worker {
                     .await;
                 if let Ok(opened) = &opened {
                     self.discover_branch(&opened.branch.branch_id);
+                    self.line_projection(&opened.branch.branch_id);
                     self.side = Some(opened.branch.branch_id.clone());
                     self.publish();
                 }
@@ -1314,7 +1285,6 @@ impl Worker {
                         session_id: String::new(),
                         kind: SwitchKind::New,
                     });
-                    self.send(Update::Skills(Vec::new()));
                 }
             }
             Command::Resume(session_id) => {
@@ -2074,67 +2044,113 @@ impl Worker {
     }
 
     /// `/goal`: the shown line's goal, written by the method the request
-    /// names. The line is read before the call is chosen, so a fold the
-    /// interface has not caught up with cannot pick the wrong method; a
-    /// write is followed by the events it produced, so the report shows the
-    /// state after it.
+    /// names. The call is chosen only once the reader has finished the line's
+    /// history, so a fold the interface has not caught up with cannot pick
+    /// the wrong method; the report waits for the event a write produced, so
+    /// it shows the state after it.
     async fn goal(&mut self, request: crate::goal::Request) {
-        let branch = self.focus.clone();
+        if self.goal_pending.is_some() {
+            self.report(
+                "Goal: a /goal is still in progress on this line".into(),
+                true,
+            );
+            return;
+        }
         if !crate::goal::available(&mut self.client, &self.session_id).await {
             self.report(crate::goal::NOT_AVAILABLE.into(), true);
             return;
         }
-        if let Err(error) = self.read_branch(&branch).await {
+        if self.session_id.is_empty() {
+            self.report(format!("Goal: {NO_SESSION}"), true);
+            return;
+        }
+        self.goal_pending = Some(PendingGoal {
+            request,
+            branch: self.focus.clone(),
+            projection_id: self.projection_id,
+            written: None,
+        });
+        self.poll_goal().await;
+    }
+
+    /// Advances the parked `/goal` from the loop: the task-history reader's
+    /// `done` releases the call, and the write's own event releases the
+    /// report. A line that is still loading or has no reply leaves it parked;
+    /// the reader's reply or its failure resumes it.
+    async fn poll_goal(&mut self) {
+        let Some(pending) = &self.goal_pending else {
+            return;
+        };
+        if pending.projection_id != self.projection_id {
+            self.goal_pending = None;
+            return;
+        }
+        let branch = pending.branch.clone();
+        if let Some((call, sequence)) = pending.written {
+            if self.cursors.get(&branch).copied().unwrap_or(0) >= sequence {
+                self.finish_goal(&branch, Some(call));
+            }
+            return;
+        }
+        let history = self
+            .task_history
+            .get(&branch)
+            .expect("the shown line is discovered");
+        if let Some(error) = history.error.clone() {
+            self.goal_pending = None;
             self.report(format!("Goal: {error}"), true);
             return;
         }
-        let call = crate::goal::call(&request, self.shown().goal().as_ref());
-        if let Some(call) = call {
-            let mut params = json!({"sessionId": self.session_id, "branchId": branch});
-            if let Some(objective) = crate::goal::objective(&request) {
-                params["objective"] = json!(objective);
+        if !history.done {
+            return;
+        }
+        let request = self
+            .goal_pending
+            .as_ref()
+            .expect("parked goal")
+            .request
+            .clone();
+        let Some(call) = crate::goal::call(&request, self.goal_on(&branch).as_ref()) else {
+            self.finish_goal(&branch, None);
+            return;
+        };
+        let mut params = json!({"sessionId": self.session_id, "branchId": branch});
+        if let Some(objective) = crate::goal::objective(&request) {
+            params["objective"] = json!(objective);
+        }
+        #[derive(Deserialize)]
+        struct Written {
+            sequence: u64,
+        }
+        match self.client.typed::<Written>(call.method(), params).await {
+            Ok(written) => {
+                self.goal_pending.as_mut().expect("parked goal").written =
+                    Some((call, written.sequence));
             }
-            if let Err(error) = self.client.rpc(call.method(), params).await {
+            Err(error) => {
+                self.goal_pending = None;
                 let text = match crate::client::app_error(&error) {
                     Some("unknown_method") => crate::goal::NOT_AVAILABLE.to_owned(),
                     _ => format!("Goal: {error}"),
                 };
                 self.report(text, true);
-                return;
-            }
-            if let Err(error) = self.read_branch(&branch).await {
-                self.report(format!("Goal: {error}"), true);
-                return;
             }
         }
-        let text = crate::goal::report(&branch, call, self.shown().goal().as_ref()).join("\n");
-        self.report(text, false);
     }
 
-    /// Applies the portion of `branch` the interface has not folded yet, from
-    /// its applied sequence to the published head.
-    async fn read_branch(&mut self, branch: &str) -> crate::Result<()> {
-        let mut after = self.cursors.get(branch).copied().unwrap_or(0);
-        let mut through = None;
-        loop {
-            let mut params = json!({
-                "sessionId": self.session_id, "branchId": branch,
-                "after": after, "limit": HISTORY_PAGE,
-            });
-            if let Some(through) = through {
-                params["through"] = json!(through);
-            }
-            let page: crate::wire::History = self.client.typed("session.history", params).await?;
-            through = Some(page.through);
-            let next = page.next(after, through)?;
-            for value in page.events {
-                self.apply(branch, serde_json::from_value(value)?);
-            }
-            match next {
-                Some(next) => after = next,
-                None => return Ok(()),
-            }
-        }
+    /// Reports the parked `/goal` with the fold it now holds.
+    fn finish_goal(&mut self, branch: &str, call: Option<crate::goal::Call>) {
+        self.goal_pending = None;
+        let goal = self.goal_on(branch);
+        self.report(
+            crate::goal::report(branch, call, goal.as_ref()).join("\n"),
+            false,
+        );
+    }
+
+    /// The goal folded on `branch`, from the projection that draws it.
+    fn goal_on(&self, branch: &str) -> Option<crate::goal::Goal> {
+        self.projection_on(branch).goal()
     }
 
     /// Whether a request made from a snapshot still addresses this
@@ -2542,10 +2558,15 @@ impl Worker {
     /// `--source SOURCE`.
     async fn mcp(&mut self, args: &str) -> crate::Result<()> {
         const USAGE: &str = "Usage: /mcp [list|login [--no-browser] ID|callback URL|logout ID|disconnect ID|enable ID|disable ID] [--source SOURCE]";
+        let cwd = self
+            .session_cwd
+            .as_deref()
+            .unwrap_or(self.options.workspace().as_str())
+            .to_owned();
         let words: Vec<&str> = args.split_whitespace().collect();
         match words.as_slice() {
             [] | ["list"] => {
-                let (rows, notes) = mcp::catalog_report(&mut self.client, &self.options).await?;
+                let (rows, notes) = mcp::catalog_report(&mut self.client, &cwd).await?;
                 let mut lines = rows;
                 lines.extend(notes);
                 // Without a Session there are no connections to report; the
@@ -2583,13 +2604,9 @@ impl Worker {
                 let [id] = rest.as_slice() else {
                     return Err(USAGE.into());
                 };
-                let params = crate::management::mcp::target_params(
-                    &mut self.client,
-                    self.options.workspace().as_str(),
-                    id,
-                    source,
-                )
-                .await?;
+                let params =
+                    crate::management::mcp::target_params(&mut self.client, &cwd, id, source)
+                        .await?;
                 let result: LoggedOut = self.client.typed("mcp.auth.logout", params).await?;
                 self.report(
                     format!("Signed out of {id:?}. Revoked: {}.", result.revoked),
@@ -2603,13 +2620,9 @@ impl Worker {
                 if id.is_empty() {
                     return Err(USAGE.into());
                 }
-                let params = crate::management::mcp::target_params(
-                    &mut self.client,
-                    self.options.workspace().as_str(),
-                    &id,
-                    source,
-                )
-                .await?;
+                let params =
+                    crate::management::mcp::target_params(&mut self.client, &cwd, &id, source)
+                        .await?;
                 self.client.rpc("mcp.disconnect", params).await?;
                 self.report(
                     format!("Disconnected {}.", crate::sanitize::safe(&id)),
@@ -2625,7 +2638,7 @@ impl Worker {
                 }
                 let state = crate::management::mcp::set_enabled(
                     &mut self.client,
-                    self.options.workspace().as_str(),
+                    &cwd,
                     &id,
                     source,
                     words[0] == "enable",
@@ -2661,13 +2674,12 @@ impl Worker {
         no_browser: bool,
     ) -> crate::Result<()> {
         self.end_mcp_attempt();
-        let params = crate::management::mcp::target_params(
-            &mut self.client,
-            self.options.workspace().as_str(),
-            id,
-            source,
-        )
-        .await?;
+        let cwd = self
+            .session_cwd
+            .as_deref()
+            .unwrap_or(self.options.workspace().as_str());
+        let params =
+            crate::management::mcp::target_params(&mut self.client, cwd, id, source).await?;
         let started: mcp::Started = self.client.typed("mcp.auth.start", params).await?;
         let issuer = url::Url::parse(&started.issuer)?;
         let now = std::time::SystemTime::now()
@@ -3061,37 +3073,6 @@ impl Worker {
         struct Account {
             account: Option<serde_json::Value>,
         }
-        #[derive(Deserialize)]
-        struct Snapshot {
-            catalog: Option<Catalog>,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Catalog {
-            version: u32,
-            models: Vec<CatalogModel>,
-            disabled_model_ids: Vec<String>,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct CatalogModel {
-            id: String,
-            name: String,
-            unavailable_reason: Option<String>,
-            #[serde(default)]
-            missing_limits: Vec<String>,
-            #[serde(default)]
-            zdr: bool,
-            #[serde(default)]
-            capabilities: dim_agent_types::CatalogCapabilities,
-            #[serde(default)]
-            metadata: Option<CatalogReasoning>,
-        }
-        #[derive(Deserialize, Default)]
-        #[serde(rename_all = "camelCase")]
-        struct CatalogReasoning {
-            reasoning: Option<dim_agent_types::ModelReasoning>,
-        }
         let listed: Providers = self.client.typed("provider.list", json!({})).await?;
         let mut usable: Vec<(String, String, bool)> = Vec::new();
         // `provider.refresh` lists a static provider only; an account
@@ -3111,11 +3092,16 @@ impl Worker {
                 provider.remote_model_list,
             ));
         }
-        let managed: Vec<Managed> = self
-            .client
-            .typed("account.providers", json!({}))
-            .await
-            .unwrap_or_default();
+        let managed: Vec<Managed> = match self.client.typed("account.providers", json!({})).await {
+            Ok(providers) => providers,
+            Err(error)
+                if error.downcast_ref::<client::RpcError>().and_then(app_error)
+                    == Some("unknown_method") =>
+            {
+                Vec::new()
+            }
+            Err(error) => return Err(format!("account.providers: {error}").into()),
+        };
         for provider in managed {
             let status = self
                 .client
@@ -3135,10 +3121,13 @@ impl Worker {
         for (provider_id, provider_name, listable) in usable {
             let snapshot = self
                 .client
-                .typed::<Snapshot>("provider.catalog", json!({"providerId": provider_id}))
+                .typed::<ProviderCatalogSnapshot>(
+                    "provider.catalog",
+                    json!({"providerId": provider_id}),
+                )
                 .await;
             let catalog = match snapshot {
-                Ok(Snapshot { catalog }) => catalog,
+                Ok(ProviderCatalogSnapshot { catalog }) => catalog,
                 Err(_) => {
                     empty.push(EmptyProvider {
                         provider_id,
@@ -4122,9 +4111,14 @@ impl Worker {
 
     /// The transcript the screen shows: the focused line's, or `main`'s.
     fn shown(&self) -> &Projection {
+        self.projection_on(&self.focus)
+    }
+
+    /// The projection that draws `branch`, when the interface opened it.
+    fn projection_on(&self, branch: &str) -> &Projection {
         self.lines
-            .get(&self.focus)
-            .filter(|_| self.focus != "main")
+            .get(branch)
+            .filter(|_| branch != "main")
             .map_or(&self.projection, |line| &line.projection)
     }
 
@@ -4218,19 +4212,6 @@ fn group(n: u64) -> String {
         out.push(c);
     }
     out
-}
-
-/// One model of `provider.catalog`, as far as the interface reads it.
-#[derive(Deserialize)]
-struct CatalogModel {
-    id: String,
-    capabilities: dim_agent_types::CatalogCapabilities,
-    metadata: Option<CatalogPreferences>,
-}
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CatalogPreferences {
-    service_tier: Option<dim_agent_types::ModelServiceTier>,
 }
 
 fn effort_choices(
@@ -4358,28 +4339,7 @@ pub(crate) async fn declare_model_limits(
     context_window: u64,
     max_output_tokens: u64,
 ) -> crate::Result<()> {
-    #[derive(Deserialize)]
-    struct Snapshot {
-        catalog: Option<Catalog>,
-    }
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct Catalog {
-        version: u32,
-        #[serde(default)]
-        disabled_model_ids: Vec<String>,
-        models: Vec<CatalogModel>,
-    }
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct CatalogModel {
-        id: String,
-        #[serde(default)]
-        missing_limits: Vec<String>,
-        #[serde(default)]
-        unavailable_reason: Option<String>,
-    }
-    let snapshot: Snapshot = client
+    let snapshot: ProviderCatalogSnapshot = client
         .typed("provider.catalog", json!({"providerId": provider_id}))
         .await?;
     let catalog = snapshot
@@ -4729,7 +4689,7 @@ mod tests {
         .unwrap();
         options.resolve_workspace().unwrap();
         assert_eq!(
-            creation_params(&options)["cwd"],
+            session_create_params(&options)["cwd"],
             directory.to_str().unwrap()
         );
     }

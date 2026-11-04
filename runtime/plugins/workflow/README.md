@@ -14,16 +14,25 @@ npm ci --prefix runtime/plugins/workflow --ignore-scripts
 (cd runtime && npm install --no-save --package-lock=false --ignore-scripts --install-links ./plugins/workflow)
 ```
 
-These commands set up the shared runtime and this package in the checkout for `--session-rows` embedding and the package's tests. `./dev` needs none of them: it stages the default plugins, with their own dependencies, into `staging/dev-plugins`.
+These commands set up the shared runtime and this package in the checkout for explicit installation, `--session-rows` embedding and the package's tests. `./dev` stages only the plugins selected in [runtime/default-plugins.json](../../default-plugins.json), which excludes Workflow.
 
-The plugin directory carries [dim-plugin.json](dim-plugin.json) and is a default plugin listed in
-[runtime/default-plugins.json](../../default-plugins.json), which PluginManager loads (`--defaults`).
-An embedding host may still build a row from the manifest's `code` fields for
+The base CLI's development, alpha and release payloads do not bundle Workflow or its dependencies.
+No external distribution channel or standalone packaging scheme is defined; that work is tracked
+in [#1091](https://github.com/arcships/dim/issues/1091).
+
+The plugin directory carries [dim-plugin.json](dim-plugin.json). After the checkout setup above,
+install it explicitly through PluginManager with
+`dimcode plugin install /absolute/path/to/dim/runtime/plugins/workflow --id workflow`.
+The base CLI does not acquire the Node runtime on its first start, so install it first with
+`dimcode runtime install node` (or the `/runtime` panel); until then the plugin's row stays pending.
+An embedding host may build a row from the manifest's `code` fields for
 `ServerConfig.session_typescript.rows`. A Session without a
 mount list (`SessionConfig.tools`) declares `workflow` once its Session part registers it; a Session with one
 declares it when the list names it. PluginManager creates the product-root `workflow/`
 directory when it turns the plugin on; a host that builds the row itself provisions it before
-enabling the process row. A stage Session takes the stage agent's or default
+enabling the process row. Without the plugin, Workflow tools and management methods are unavailable;
+existing `workflow.json` Settings and `workflow/runs.json` records remain untouched. Installed
+copies retain their explicit source and enablement choices. A stage Session takes the stage agent's or default
 profile's mount list: a profile without one exposes `workflow` inside a stage, and one whose list
 omits it has no Workflow tool; Workflow does not add it to `sessions.launch`. When it is declared,
 the non-interactive handler refuses invocation as A.2 requires. Missing parent directories fail with `io`; the plugin

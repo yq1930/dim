@@ -18,6 +18,7 @@ embedded-web = ["dim-app-server/embedded-web"]
 dim-cli = { path = "../dim-cli" }
 dim-app-server.workspace = true
 dim-session-title.workspace = true
+dim-goal.workspace = true
 dim-oauth = { path = "../dim-oauth" }
 dim-agent-scheduler = { path = "../dim-agent-scheduler" }
 dim-agent-runtime.workspace = true

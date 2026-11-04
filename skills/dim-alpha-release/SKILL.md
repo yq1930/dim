@@ -9,7 +9,7 @@ Rust alphas use `dimcode-alpha@alpha`, install only `dima`, and default to `~/.d
 
 ## Choose the route
 
-- **Version PR, GitHub CI or an unspecified alpha release:** follow [dim-release](../../.agents/skills/dim-release/SKILL.md). It owns version selection, committed metadata, release PRs/tags, draft inspection and guarded npm OIDC publication. CI requires the version fields to be committed before tagging; it does not increment them.
+- **Version PR, GitHub CI or an unspecified alpha release:** follow [dim-release](../../.agents/skills/dim-release/SKILL.md). It owns version selection, committed metadata, release PRs/tags, draft inspection and guarded npm OIDC publication. A manual main build allocates and stamps the next version. A version PR uses committed release metadata. Both CI paths create a GitHub prerelease draft before the separate npm publication.
 - **Explicit local Mac build/publication:** use `scripts/publish-alpha.mjs` below. It changes versions temporarily and restores them; it does not prepare a version PR or push a GitHub release tag.
 - Do not switch routes to bypass a failure or missing npm authorization. Check the user's existing authorization once and complete only the requested stage.
 

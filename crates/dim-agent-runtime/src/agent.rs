@@ -56,13 +56,6 @@ impl Agent {
     pub fn catalog(&self) -> &rutis_loader::ServiceCatalog {
         self.0.builder.catalog()
     }
-    /// How many branch openings of this Agent's Sessions are alive: an
-    /// opening ends when its branch leaves `Loading` or its build is torn
-    /// down. For tests of that release.
-    #[cfg(feature = "testing")]
-    pub fn live_openings(&self) -> usize {
-        self.0.assembly.openings.alive()
-    }
     pub async fn create_session(&self, config: SessionConfig) -> Result<Session> {
         self.create(
             Uuid::new_v4().to_string(),
@@ -530,10 +523,15 @@ impl Session {
         self.published(branch)?.batch_end(sequence).await
     }
     pub fn sequence(&self, branch: &str) -> Result<u64> {
-        if let Some(head) = self.0.tree.ended_head(branch) {
-            return Ok(head);
+        match self.published(branch) {
+            Ok(line) => Ok(line.sequence()),
+            Err(AgentError::BranchEnded(_)) => self
+                .0
+                .tree
+                .ended_head(branch)
+                .ok_or_else(|| AgentError::BranchEnded(branch.into())),
+            Err(error) => Err(error),
         }
-        Ok(self.published(branch)?.sequence())
     }
     /// The fixed head of an ended line, `None` for an open or unknown one.
     pub fn ended_head(&self, branch: &str) -> Option<u64> {

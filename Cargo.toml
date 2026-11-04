@@ -1,10 +1,10 @@
 [workspace]
 resolver = "2"
-members = ["crates/dim-agent-types", "crates/dim-agent-runtime", "crates/dim-agent-capabilities", "crates/dim-agent-aimux", "crates/dim-agent-attachments", "crates/dim-agent-questions", "crates/dim-agent-scheduler", "crates/dim-app-server", "crates/dim-client", "crates/dim-acp", "crates/dim-cli", "crates/dim-oauth", "crates/dim-session-title", "crates/dimcode", "crates/dim-migration", "xtask", "tests/extension-a", "tests/extension-b", "tests/integration"]
+members = ["crates/dim-agent-types", "crates/dim-agent-runtime", "crates/dim-agent-capabilities", "crates/dim-agent-aimux", "crates/dim-agent-attachments", "crates/dim-agent-questions", "crates/dim-agent-scheduler", "crates/dim-app-server", "crates/dim-client", "crates/dim-acp", "crates/dim-cli", "crates/dim-oauth", "crates/dim-session-title", "crates/dim-goal", "crates/dimcode", "crates/dim-migration", "xtask", "tests/extension-a", "tests/extension-b", "tests/integration"]
 exclude = ["vendor/aimux", "vendor/grok-build"]
 
 [workspace.package]
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.18"
 edition = "2024"
 license = "MIT"
 rust-version = "1.98"
@@ -26,6 +26,7 @@ aimux-provider-utils = { path = "vendor/aimux/aimux-provider-utils" }
 aimux-providers = { path = "vendor/aimux/aimux-providers", default-features = false }
 dim-app-server = { path = "crates/dim-app-server" }
 dim-session-title = { path = "crates/dim-session-title" }
+dim-goal = { path = "crates/dim-goal" }
 dim-client = { path = "crates/dim-client" }
 dim-migration = { path = "crates/dim-migration" }
 dim-acp = { path = "crates/dim-acp" }

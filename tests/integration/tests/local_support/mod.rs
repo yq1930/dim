@@ -4,7 +4,8 @@
 
 use dim_agent_capabilities::{
     defaults,
-    execution_settings::{ExecutionSettings, ExecutionSettingsHost},
+    environment_clients::{SessionClientsHost, SessionClientsSource},
+    execution_settings::{ExecutionSettings, ExecutionSettingsHost, ExecutionSettingsSource},
     history::HistoryRenderer,
     host::*,
     host_platform::{
@@ -385,6 +386,11 @@ pub struct Options {
     /// capability, as a host whose profile takes them by name does: the
     /// catalog plugin registers them either way.
     pub require_without_install: bool,
+    /// A client-presence source, provided at the root when present.
+    pub clients: Option<Arc<dyn SessionClientsSource>>,
+    /// The execution switches, provided to HostPlatform and the root when
+    /// present; the settings tool and snapshot parts are registered with it.
+    pub execution: Option<Arc<dyn ExecutionSettingsSource>>,
 }
 impl Default for Options {
     fn default() -> Self {
@@ -397,14 +403,54 @@ impl Default for Options {
             probe: None,
             instructions: None,
             require_without_install: false,
+            clients: None,
+            execution: None,
         }
     }
 }
 
 /// The product profile: PromptSources and Skills with scripted hosts.
+struct EnvironmentPartsPlugin {
+    parts: Key<PartRegistry>,
+    clients: bool,
+    execution: bool,
+}
+impl EnvironmentPartsPlugin {
+    fn new(names: &Names<'_>, clients: bool, execution: bool) -> rutis::Result<Self> {
+        Ok(Self {
+            parts: names.key()?,
+            clients,
+            execution,
+        })
+    }
+}
+impl DynPlugin for EnvironmentPartsPlugin {
+    fn name(&self) -> &str {
+        "EnvironmentParts"
+    }
+    fn injects(&self) -> Vec<TypeKey> {
+        vec![self.parts.erase()]
+    }
+    fn apply<'a>(&'a self, ctx: &'a rutis::Ctx) -> BoxFuture<'a, rutis::Result<Effect>> {
+        Box::pin(async move {
+            let parts = ctx.require_at(&self.parts)?;
+            if self.clients {
+                dim_agent_capabilities::environment_clients::register_parts(ctx, &parts)?;
+            }
+            if self.execution {
+                dim_agent_capabilities::execution_settings::prompt::register_parts(ctx, &parts)?;
+            }
+            Ok(Effect::Done)
+        })
+    }
+}
+
 pub async fn env(dirs: &Dirs, options: Options) -> Env {
     let mut host = platform(&dirs.home);
     host.timezone = Some(options.timezone.into());
+    if let Some(execution) = options.execution.clone() {
+        host = host.with_execution_settings(ExecutionSettingsHost(execution));
+    }
     let settings = options.settings.clone();
     let model = Arc::new(ScriptedModel::default());
     let gate = Arc::new(Gate::default());
@@ -434,6 +480,14 @@ pub async fn env(dirs: &Dirs, options: Options) -> Env {
         Arc::new(move || today.lock().unwrap().clone()),
         std::time::Duration::from_millis(10),
     );
+    let (clients, execution) = (options.clients.is_some(), options.execution.is_some());
+    if clients || execution {
+        builder.plugin(move |names| {
+            Ok(Box::new(EnvironmentPartsPlugin::new(
+                names, clients, execution,
+            )?))
+        });
+    }
     if options.require_without_install {
         for part in ["Skills", "SkillsBranch"] {
             builder.require_part(part);
@@ -463,9 +517,17 @@ pub async fn env(dirs: &Dirs, options: Options) -> Env {
         );
     }
     builder.plugin(|names| Ok(Box::new(SkillsCatalogPlugin::new(names)?)));
+    let clients = options.clients.clone();
+    let execution = options.execution.clone();
     let agent = MinimalHost::start_with(&builder, move |root, _| {
         root.provide_as::<HostPlatform>(Arc::new(host))?;
         root.provide_as::<SkillSettingsHost>(Arc::new(SkillSettingsHost(settings)))?;
+        if let Some(clients) = clients {
+            root.provide_as::<SessionClientsHost>(Arc::new(SessionClientsHost(clients)))?;
+        }
+        if let Some(execution) = execution {
+            root.provide_as::<ExecutionSettingsHost>(Arc::new(ExecutionSettingsHost(execution)))?;
+        }
         Ok(())
     })
     .await

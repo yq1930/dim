@@ -40,9 +40,11 @@ A line that ended still belongs to a live Session, and `TimelineTree` owns its e
 
 `TimelineStore` is a runtime port. `Timeline` and `TimelineTree` may declare it; `Session`, `Branch` and other parts may not. `SessionStore` keeps Session files, titles, grants, fork and delete, and serves no event read for the client protocol.
 
-### D6. A read holds one page at a time
+### D6. A read fetches one storage page at a time
 
-A reader takes a page, consumes it and drops it before the next; the page size belongs to the caller. A part's fold and the ended-line read keep their state bounded by what they fold, not by the branch. The opening copy that kept `1..=head` in memory was built for replay and goes ([#1063](https://github.com/arcships/dim/issues/1063)); readers that accumulate today are listed with their issues in the design document ([#1065](https://github.com/arcships/dim/issues/1065)).
+A read takes its facts from storage one page at a time: a page is consumed and dropped before the next is fetched, and its size belongs to the caller. This bounds what a read takes from the store, not what a consumer keeps. The query contract lets a consumer fold a prefix from pages (plugin contract §5.4), and an export materializes what it writes; both are accumulation by design, not a second read of the store.
+
+Two readers accumulate beyond one page and are named in the design document: `dim export` collects every page of a Session, and `chain_through` keeps the prefix the fork check folds ([#1065](https://github.com/arcships/dim/issues/1065)). The opening copy that kept `1..=head` in memory was removed with [#1063](https://github.com/arcships/dim/issues/1063).
 
 ## Consequences
 

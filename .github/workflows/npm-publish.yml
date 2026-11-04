@@ -18,7 +18,7 @@ concurrency:
 jobs:
   verify:
     if: github.repository == 'arcships/dim' && github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
       sha: ${{ steps.release.outputs.sha }}
@@ -94,6 +94,11 @@ jobs:
           const [major, minor, patch] = process.env.NPM_VERSION.split('.').map(Number);
           assert(major > 11 || (major === 11 && (minor > 5 || (minor === 5 && patch >= 1))), 'npm 11.5.1 or newer is required for OIDC');
           NODE
+      - name: Snapshot legacy dimcode dist-tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS --retry 2 https://registry.npmjs.org/-/package/dimcode/dist-tags | jq -ce 'objects | select(has("latest"))' > legacy-tags.json
       - name: Recheck the Release and publish dependencies before dimcode-alpha
         env:
           GH_TOKEN: ${{ github.token }}
@@ -121,11 +126,46 @@ jobs:
           import { readFileSync, writeFileSync } from 'node:fs';
           const manifest = JSON.parse(readFileSync('staging/npm/release-manifest.json'));
           const release = JSON.parse(readFileSync('staging/github-release.json'));
-          writeFileSync('npm-publication.json', JSON.stringify({ ...manifest, releaseId: release.id, releaseTag: process.env.RELEASE_TAG }));
+          writeFileSync('npm-publication.json', JSON.stringify({ ...manifest, legacyTags: JSON.parse(readFileSync('legacy-tags.json')), releaseId: release.id, releaseTag: process.env.RELEASE_TAG }));
           NODE
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: npm-publication
+          overwrite: true
           path: npm-publication.json
           if-no-files-found: error
           retention-days: 1
+  acceptance:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: npm-publication
+          digest-mismatch: error
+      - name: Verify all eight npm packages and legacy dist-tags
+        run: node scripts/check-alpha-registry.mjs npm-publication.json npm
+      - name: Install the published alpha and run dima
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(jq -er .version npm-publication.json)
+          prefix=$(mktemp -d)
+          trap 'rm -rf "$prefix"' EXIT
+          npm install --global --prefix "$prefix" --include=optional --ignore-scripts --registry https://registry.npmjs.org "dimcode-alpha@$version"
+          actual=$(DIMCODE_HOME="$prefix/home" "$prefix/bin/dima" --version)
+          echo "$actual"
+          [[ "$actual" == "dimcode $version" ]]
+      - name: Sync all eight packages to the Alibaba npm mirror and verify visibility
+        run: node scripts/check-alpha-registry.mjs npm-publication.json mirror
+      - name: Record acceptance
+        run: |
+          jq -r '"Published and verified \(.version) from \(.sourceCommit). npm and npmmirror expose the alpha wrapper and all seven pinned dependencies. The installed dima passed --version and the legacy dimcode dist-tags are unchanged."' npm-publication.json >> "$GITHUB_STEP_SUMMARY"

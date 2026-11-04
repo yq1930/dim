@@ -382,33 +382,29 @@ async fn node_configured_profile_runs_the_default_plugins() {
             .collect();
         let server = launch_configured(&directory, models, Some(parts), Some(defaults)).await;
         let mut client = Client::new_version(&server, false, 3).await;
-        let process = ["goal", "workflow"];
-        for name in process {
-            assert!(
-                names.iter().any(|listed| listed == name),
-                "{names:?} names {name}"
-            );
-        }
+        // The default list holds no process plugin: Workflow and Goal are
+        // not default plugins, and the one default left carries skills.
+        assert!(!names.iter().any(|name| name == "workflow"), "{names:?}");
+        assert!(!names.iter().any(|name| name == "goal"), "{names:?}");
         tokio::time::timeout(Duration::from_secs(60), async {
             loop {
                 let listed = client.rpc("plugin.list", json!({})).await;
                 assert_ok(&listed);
                 let items = listed["result"].as_array().unwrap();
-                let found = |name: &str| items.iter().find(|item| item["name"] == name);
-                let running = process
-                    .iter()
-                    .all(|name| found(name).is_some_and(|item| item["status"] == "running"));
-                let by_default = names
-                    .iter()
-                    .all(|name| found(name).is_some_and(|item| item["use"] == "default"));
-                if running && by_default {
+                let by_default = names.iter().all(|name| {
+                    items
+                        .iter()
+                        .find(|item| item["name"] == name.as_str())
+                        .is_some_and(|item| item["use"] == "default")
+                });
+                if by_default {
                     break;
                 }
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
         })
         .await
-        .expect("the default plugins run");
+        .expect("the default plugins are listed as default");
 
         // The content plugin contributes its Skill.
         tokio::time::timeout(Duration::from_secs(30), async {

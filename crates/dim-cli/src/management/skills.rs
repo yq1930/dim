@@ -90,17 +90,14 @@ pub async fn apply(client: &mut Client, action: &ManagementAction, cwd: &str) ->
     };
     match catalog(client, cwd).await {
         Ok(catalog) => Outcome::Catalog(catalog),
-        Err(error) if applied => Outcome::ReadFailed(error),
-        Err(error) => Outcome::Refused(error),
+        Err(error) if applied => Outcome::ReadFailed(error.to_string()),
+        Err(error) => Outcome::Refused(error.to_string()),
     }
 }
 
 /// The catalog as its owner reports it.
-pub async fn catalog(client: &mut Client, cwd: &str) -> Result<Catalog, String> {
-    client
-        .typed("skills.catalog", json!({"cwd": cwd}))
-        .await
-        .map_err(|error| error.to_string())
+pub async fn catalog(client: &mut Client, cwd: &str) -> crate::Result<Catalog> {
+    client.typed("skills.catalog", json!({"cwd": cwd})).await
 }
 
 /// One source's entries under its heading, in the order the owner reports

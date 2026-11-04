@@ -811,6 +811,8 @@ pub(crate) async fn bind_job(
     current.session_id = Some(session_id.to_owned());
     current.revision += 1;
     let revision = current.revision;
+    #[cfg(test)]
+    crate::binding_flow::pause(&job.id).await;
     shared
         .settings
         .update(SettingsScope::User, &snapshot.revision, document, &cancel)

@@ -1,12 +1,10 @@
 {
   "plugins": {
-    "goal": "plugins/goal",
-    "workflow": "plugins/workflow",
     "plugin-authoring": "plugins/plugin-authoring"
   },
   "locked": ["PluginManager", "Rpc", "Transport"],
   "runtimes": {
-    "node": { "source": "download", "auto": true },
+    "node": { "source": "download", "auto": false },
     "python": { "source": "download", "auto": false }
   }
 }

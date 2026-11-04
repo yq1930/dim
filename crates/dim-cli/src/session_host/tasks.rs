@@ -46,6 +46,8 @@ impl Worker {
             attached_session = std::mem::take(&mut self.parked);
         }
         self.projection = Projection::default();
+        self.session_cwd = None;
+        self.send(Update::Skills(Vec::new()));
         self.session_title = None;
         self.title_revision = 0;
         self.last_usage = None;
@@ -69,14 +71,32 @@ impl Worker {
             self.task_history
                 .insert(branch_id.to_owned(), BranchHistory::default());
             self.task_history_queue.push_back(branch_id.to_owned());
-            if branch_id != "main" {
-                self.line_projection(branch_id);
-            }
             self.changed();
         }
     }
 
     pub(super) fn line_projection(&mut self, branch_id: &str) -> &mut LineProjection {
+        let history = self
+            .task_history
+            .get_mut(branch_id)
+            .expect("discovered line");
+        if !self.lines.contains_key(branch_id)
+            && (history.after != 0 || history.done || history.error.is_some())
+        {
+            history.after = 0;
+            history.through = None;
+            history.done = false;
+            history.error = None;
+            history.catch_up = false;
+            if let Some(request) = &mut self.task_history_request
+                && request.branch_id == branch_id
+            {
+                request.current = false;
+            }
+            if !self.task_history_queue.iter().any(|id| id == branch_id) {
+                self.task_history_queue.push_back(branch_id.to_owned());
+            }
+        }
         let running = self.task_history.get(branch_id).and_then(|at| at.running);
         let line = self
             .lines
@@ -247,9 +267,9 @@ impl Worker {
                     }
                     if let Some(running) = running {
                         if request.branch_id != "main" {
-                            self.line_projection(&request.branch_id)
-                                .projection
-                                .set_running(running);
+                            if let Some(line) = self.lines.get_mut(&request.branch_id) {
+                                line.projection.set_running(running);
+                            }
                         } else {
                             self.projection.set_running(running);
                         }

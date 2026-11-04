@@ -43,6 +43,11 @@ pub struct Overrides {
     /// The roster's closing sentence in place of its built-in text
     /// (timeline branches §12.4).
     pub roster_closing: Option<Arc<str>>,
+    /// Goal's objective policy sentence in place of the shipped one
+    /// (model-prompts §8.1).
+    pub goal_objective: Option<Arc<str>>,
+    /// Goal's continuation policy sentence in place of the shipped one.
+    pub goal_continuation: Option<Arc<str>>,
 }
 
 /// What one run adds to the product assembly: the overrides above, the model
@@ -197,6 +202,14 @@ pub async fn serve_home(
     dim_agent_capabilities::prompt_suggestion::install(&mut builder);
     dim_app_server::collaboration::install(&mut builder);
     dim_agent_questions::install(&mut builder);
+    let mut texts = dim_goal::GoalTexts::default();
+    if let Some(objective) = &run.overrides.goal_objective {
+        texts.objective = objective.to_string();
+    }
+    if let Some(continuation) = &run.overrides.goal_continuation {
+        texts.continuation = continuation.to_string();
+    }
+    dim_goal::install_with(&mut builder, texts);
     observe(&mut builder);
     Ok(serve(builder, config).await?)
 }

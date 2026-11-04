@@ -130,7 +130,7 @@ cargo run --locked -p xtask -- check
 node --test scripts/*.test.mjs
 ```
 
-Public source verification uses local HTTP fixtures for model flows. For standalone binaries, `node scripts/build-all.mjs` builds the release targets or accepts a single target such as `--target darwin-arm64`. The resulting `dist/dimcode-<platform>` executable includes the App Server. Web assets can be installed separately or compiled in with the `embedded-web` Cargo feature. Cross-compiling the script’s Linux and Windows targets requires Zig, `cargo-zigbuild` and the corresponding Rust target. Self-hosted CI builds draft GitHub Releases. [Build environment](docs/architecture/build.md) · [Release packaging and cross-compilation](docs/release/README.md) · [Release procedure](.agents/skills/dim-release/SKILL.md) · [Documentation index](docs/INDEX.md)
+Public source verification uses local HTTP fixtures for model flows. For standalone binaries, `node scripts/build-all.mjs` builds the release targets or accepts a single target such as `--target darwin-arm64`. The resulting `dist/dimcode-<platform>` executable includes the App Server. Web assets can be installed separately or compiled in with the `embedded-web` Cargo feature. Cross-compiling the script’s Linux and Windows targets requires Zig, `cargo-zigbuild` and the corresponding Rust target. GitHub-hosted runners build the draft GitHub Releases. [Build environment](docs/architecture/build.md) · [Release packaging and cross-compilation](docs/release/README.md) · [Release procedure](.agents/skills/dim-release/SKILL.md) · [Documentation index](docs/INDEX.md)
 
 ## Third-party components and licenses
 

@@ -149,9 +149,8 @@ jobs:
           # The ignored CLI flows below start the real plugins, so their
           # packages are installed here, before the flows; the job's checkout
           # carries them into the Node binding checks as well.
-          npm ci --prefix runtime/plugins/goal --ignore-scripts --registry=https://registry.npmjs.org
           npm ci --prefix runtime/plugins/workflow --ignore-scripts --registry=https://registry.npmjs.org
-          (cd runtime && npm install --no-save --ignore-scripts --install-links ./plugins/goal ./plugins/workflow)
+          (cd runtime && npm install --no-save --ignore-scripts --install-links ./plugins/workflow)
           export DIM_TEST_APP_SERVER="$PWD/target/debug/dim-app-server"
           export DIM_TEST_NPM_WRAPPER="$PWD/npm/bin/dimcode.mjs"
           node scripts/run-rust-test.mjs target/test-artifacts.jsonl cli_flow --ignored
@@ -164,12 +163,11 @@ jobs:
           # tests run from the repository root, so name it explicitly.
           export RUTIS_HOST="$PWD/runtime/node_modules/.bin/rutis-host"
           node --test runtime/plugin-sdk.test.mjs
-          node --test runtime/plugins/goal/goal.test.mjs
           # The workflow plugin tests stay off: no double of a
           # test's can receive the plugin definition they register, because
           # 0.19.3's test tool does not take one (rutis-0.19-upgrade M10). The
-          # Node-backed Rust flows below still load them for real, and `tsc`
-          # checks them; goal has no tsconfig.
+          # Node-backed Rust flows below still load it for real, and `tsc`
+          # checks it.
           node runtime/node_modules/typescript/bin/tsc -p runtime/plugins/workflow/tsconfig.json
           # The Python of `py:` rows: a relocatable CPython, pinned by hash, so the
           # self-hosted runner needs neither a system Python 3.10+ nor sudo.

@@ -182,18 +182,19 @@ impl TreeCommands {
             .end(&id, source)
             .await
     }
-    /// One page of `id`'s committed batches; an ended line reads at its
-    /// fixed head.
+    /// One page of `id`'s committed batches up to `through`; an ended line
+    /// reads at its fixed head and `through` must end an atomic batch.
     pub async fn page(
         &self,
         id: String,
         after: u64,
         limit: usize,
+        through: u64,
     ) -> std::result::Result<Vec<Arc<AgentEvent>>, AgentError> {
         self.tree
             .upgrade()
             .ok_or_else(|| AgentError::Closed("TimelineTree".into()))?
-            .page(&id, after, limit)
+            .page(&id, after, limit, through)
             .await
     }
     /// Queries one line's own facts, forwarding to its Timeline while open
@@ -215,6 +216,22 @@ impl TreeCommands {
     #[service(skip)]
     fn head(&self, id: &str) -> Option<u64> {
         self.tree.upgrade()?.head(id)
+    }
+    /// Checks that `sequence` ends an atomic batch of line `id`, forwarding to
+    /// its Timeline while open and reading the store once it ends. The check
+    /// stays out of the service surface because no other language reads batch
+    /// structure.
+    #[service(skip)]
+    pub async fn batch_end(
+        &self,
+        id: String,
+        sequence: u64,
+    ) -> std::result::Result<(), AgentError> {
+        self.tree
+            .upgrade()
+            .ok_or_else(|| AgentError::Closed("TimelineTree".into()))?
+            .batch_end(&id, sequence)
+            .await
     }
     /// A signal that changes when line `id` ends a turn; it carries that
     /// `turn/end`'s sequence.
@@ -377,12 +394,27 @@ impl TimelineTree {
             session_id: self.session_id.clone(),
             branch_id: branch.into(),
         };
+        let query = TimelineQuery {
+            scope: dim_agent_runtime::TimelineQueryScope::Branch,
+            include_publishing: false,
+            from_event: None,
+            from_sequence: Some(1),
+            order_by: TimelineQueryOrderBy::Sequence,
+            direction: TimelineQueryDirection::Descending,
+            kinds: vec!["branch/ended".into()],
+            flags: Vec::new(),
+            event_id: None,
+            predicate: None,
+            limit: NonZeroU64::new(head).expect("non-empty stored head"),
+            offset: 0,
+        };
         Ok(self
             .store
-            .read(&key, 1..=head)
+            .query(&key, &query, 1, head)
             .await?
+            .events
             .into_iter()
-            .filter_map(|record| match &record.event.kind {
+            .filter_map(|event| match &event.kind {
                 EventKind::BranchEnded(data) => Some(data.branch.clone()),
                 _ => None,
             })
@@ -509,14 +541,28 @@ impl TimelineTree {
             session_id: self.session_id.clone(),
             branch_id: branch.into(),
         };
-        let (mut after, mut started) = (0, false);
-        while after < head {
-            let page = self
-                .store
-                .read_page(&key, after, CREATION_PAGE, head)
-                .await?;
-            for record in &page {
-                match &record.event.kind {
+        let mut query = TimelineQuery {
+            scope: TimelineQueryScope::Branch,
+            include_publishing: false,
+            from_event: None,
+            from_sequence: Some(1),
+            order_by: TimelineQueryOrderBy::Sequence,
+            direction: TimelineQueryDirection::Ascending,
+            kinds: vec!["branch/start".into(), "input/message".into()],
+            flags: Vec::new(),
+            event_id: None,
+            predicate: None,
+            limit: NonZeroU64::new(CREATION_PAGE as u64).expect("a page keeps one fact"),
+            offset: 0,
+        };
+        let mut started = false;
+        while let Some(from) = query.from_sequence {
+            if from > head {
+                break;
+            }
+            let page = self.store.query(&key, &query, from, head).await?;
+            for event in &page.events {
+                match &event.kind {
                     EventKind::BranchStart(_) => started = true,
                     EventKind::InputMessage(data)
                         if started && data.effective_mode() == InputMode::Queue =>
@@ -526,7 +572,13 @@ impl TimelineTree {
                     _ => {}
                 }
             }
-            after = page.last().map_or(head, |record| record.event.sequence);
+            let Some(last) = page.events.last().map(|event| event.sequence) else {
+                break;
+            };
+            if page.events.len() < CREATION_PAGE || last >= head {
+                break;
+            }
+            query.from_sequence = Some(last + 1);
         }
         Ok(false)
     }
@@ -791,14 +843,29 @@ impl TimelineTree {
             ready.send_replace(Some(outcome));
         });
     }
-    async fn page(&self, id: &str, after: u64, limit: usize) -> Result<Vec<Arc<AgentEvent>>> {
-        let through = self
+    /// One page of `id`'s committed batches, never past `through`: an ended
+    /// line reads at its fixed head. `through` must end an atomic batch, as it
+    /// does for a live line's read, so a page cannot be cut inside one.
+    async fn page(
+        &self,
+        id: &str,
+        after: u64,
+        limit: usize,
+        through: u64,
+    ) -> Result<Vec<Arc<AgentEvent>>> {
+        let head = self
             .head(id)
             .ok_or_else(|| AgentError::UnknownBranch(id.into()))?;
+        if through > head {
+            return Err(AgentError::InvalidInput(format!(
+                "future timeline sequence {through}"
+            )));
+        }
         if through <= after {
             return Ok(Vec::new());
         }
         if let Some(context) = self.owned_context(id) {
+            context.timeline().batch_end(through).await?;
             return open_page(context.timeline(), after, limit, through).await;
         }
         let key = TimelineKey {
@@ -863,6 +930,21 @@ impl TimelineTree {
             positions: page.positions,
             through,
         })
+    }
+    /// The batch-end check of one line, forwarding to its Timeline while open
+    /// and reading the store at the tree's key after it ends.
+    async fn batch_end(&self, id: &str, sequence: u64) -> Result<()> {
+        if let Some(context) = self.owned_context(id) {
+            return context.timeline().batch_end(sequence).await;
+        }
+        if self.ended_head(id).is_none() {
+            return Err(AgentError::UnknownBranch(id.into()));
+        }
+        let key = TimelineKey {
+            session_id: self.session_id.clone(),
+            branch_id: id.into(),
+        };
+        self.store.batch_end(&key, sequence).await
     }
     /// Whether `id` did anything after `from` up to `through` that a line it
     /// opened must see ([timeline branches §7.1.1](../../../docs/design/timeline-branches.md#711-the-parent-block-branchparent)):
@@ -1008,15 +1090,25 @@ impl TimelineTree {
         let mut window = LINE_PAGE;
         loop {
             let from = head.saturating_sub(window.saturating_sub(1)).max(1);
-            let records = self.store.read(&key, from..=head).await?;
-            if let Some(found) = records
-                .iter()
-                .rev()
-                .find_map(|record| match &record.event.kind {
-                    EventKind::BranchEnd(data) => Some((record.event.sequence, data.clone())),
-                    _ => None,
-                })
-            {
+            let query = TimelineQuery {
+                scope: dim_agent_runtime::TimelineQueryScope::Branch,
+                include_publishing: false,
+                from_event: None,
+                from_sequence: Some(from),
+                order_by: TimelineQueryOrderBy::Sequence,
+                direction: TimelineQueryDirection::Descending,
+                kinds: vec!["branch/end".into()],
+                flags: Vec::new(),
+                event_id: None,
+                predicate: None,
+                limit: NonZeroU64::new(window).expect("non-zero query window"),
+                offset: 0,
+            };
+            let records = self.store.query(&key, &query, from, head).await?.events;
+            if let Some(found) = records.into_iter().find_map(|event| match event.kind {
+                EventKind::BranchEnd(ref data) => Some((event.sequence, data.clone())),
+                _ => None,
+            }) {
                 return Ok(Some(found));
             }
             if from == 1 {
@@ -1035,13 +1127,30 @@ impl TimelineTree {
             session_id: self.session_id.clone(),
             branch_id: parent.into(),
         };
+        let query = TimelineQuery {
+            scope: dim_agent_runtime::TimelineQueryScope::Branch,
+            include_publishing: false,
+            from_event: None,
+            from_sequence: Some(anchor),
+            order_by: TimelineQueryOrderBy::Sequence,
+            direction: TimelineQueryDirection::Ascending,
+            kinds: vec!["branch/create".into()],
+            flags: Vec::new(),
+            event_id: None,
+            predicate: None,
+            limit: NonZeroU64::MIN,
+            offset: 0,
+        };
         Ok(self
             .store
-            .read(&key, anchor..=anchor)
+            .query(&key, &query, anchor, anchor)
             .await?
+            .events
             .into_iter()
-            .find_map(|record| match &record.event.kind {
-                EventKind::BranchCreate(data) if data.branch == child => Some(data.source.clone()),
+            .find_map(|event| match event.kind {
+                EventKind::BranchCreate(ref data) if data.branch == child => {
+                    Some(data.source.clone())
+                }
                 _ => None,
             }))
     }
@@ -3040,7 +3149,7 @@ impl BranchTool {
         }
         let events = self
             .tree
-            .page(target.id.clone(), after, limit)
+            .page(target.id.clone(), after, limit, head)
             .await
             .map_err(|error| HostError::failed(error.to_string()))?;
         let (items, next) = read_items(&events, after);

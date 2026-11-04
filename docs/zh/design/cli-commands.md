@@ -208,8 +208,8 @@ No goal on main.
 **读取目标。** 客户端按 Goal A.3 的规则，从它本来就在读的分支事件中折叠目标：最新存活的
 `goal:objective` 块是目标文本，最新存活的 `goal:status` 块是状态，`clear` 退役两者，`edit` 保留裁判，
 被 InputQueue 删除的输入会使折叠跳过它的块。它不新增查询方法，也不向 Goal 询问任何东西。不带参数的 `/goal`
-先打印用法，再打印这个折叠结果。在 `set` 与 `edit` 之间选择之前，客户端先把该线读到已发布的头部，写入之后再读一次才打印：
-显示的状态与选择的方法都来自事件，而不是从回复猜出来的状态。折叠在该线自己的开场事件处重新开始——它的 `branch/start`，
+先打印用法，再打印这个折叠结果。在 `set` 与 `edit` 之间选择之前，客户端先把该线读到已发布的头部。写入之后，客户端先折叠该次写入产生的事件再打印：
+行模式提示符会再读一次，终端界面则等待该线的实时事件。显示的状态与选择的方法都来自事件，而不是从回复猜出来的状态。折叠在该线自己的开场事件处重新开始——它的 `branch/start`，
 或分叉在复制完事实之后写入的 `session/forked`——所以新开的线没有目标，分叉 Session 的 `main` 也从不显示
 复制来的目标（Goal §2、A11）。v3 客户端会收到这个开场事件，因此分叉在客户端与 Goal 里的读法一致。
 
@@ -337,7 +337,7 @@ RuntimeManager 提供插件代码运行的 Node 与 Python 运行时（[RuntimeM
 原因（列出每个来源和它的错误）的 `failed`。
 
 行下方列出在等这个运行时的插件行——因为它是 `off` 或 `down` 而处于 Pending 的那些
-（[PluginManager §2.5](plugins/PluginManager.md#25-runtimes)）——这样"goal 为什么不工作"和它的
+（[PluginManager §2.5](plugins/PluginManager.md#25-runtimes)）——这样"workflow 为什么不工作"和它的
 解决办法在同一个地方。失败时每个来源一行，与 `runtime.list` 报的一致。
 
 ```text
@@ -346,7 +346,7 @@ RuntimeManager 提供插件代码运行的 Node 与 Python 运行时（[RuntimeM
 │ › node      download  24.21.0    ready                                    │
 │   python    system    3.12.15    off      未安装                          │
 │                                                                           │
-│   3 个插件在等 node：goal、scheduler、workflow                            │
+│   1 个插件在等 node：workflow                                             │
 ╰─ Enter 安装或应用 · s 来源 · a 自动 · r 重试 · Esc 关闭 ──────────────────╯
 ```
 
@@ -364,7 +364,7 @@ RuntimeManager 提供插件代码运行的 Node 与 Python 运行时（[RuntimeM
 │               https://npmmirror.com/mirrors/node/v24.21.0/…：404          │
 │   python    system    3.12.15    off      未安装                          │
 │                                                                           │
-│   3 个插件在等 node：goal、scheduler、workflow                            │
+│   1 个插件在等 node：workflow                                             │
 ╰─ Enter 重试 · s 把 node 换成 system · Esc 关闭 ───────────────────────────╯
 ```
 
@@ -411,9 +411,9 @@ RuntimeManager 提供插件代码运行的 Node 与 Python 运行时（[RuntimeM
 ```text
 /plugins
 ╭─ 插件 ────────────────────────────────────────────────────────────────────╮
-│ › goal           on     pending · 等待 node 运行时                        │
+│ › goal           on     ready · 内置                                      │
 │   session-title  on     ready · 内置                                     │
-│   scheduler      on     pending · 等待 node 运行时                        │
+│   scheduler      on     ready · 内置                                      │
 │   workflow       on     pending · 等待 node 运行时                        │
 ╰─ Enter 打开 /runtime · o 开/关 · r 重载 · Esc 关闭 ───────────────────────╯
 ```
@@ -722,7 +722,7 @@ MCP 不新增种类。它的条目就是生效目录——各服务器按 id 合
 
 toggle 以 `mcp.catalog` 紧接写入前报告的 revision 写该来源的启用状态，所以比较并交换只覆盖这段窗口；它只作用于一个 id，不会覆盖来源中别处的改动。用户条目的启用状态是本地记录；项目条目一开始是停用的，只有 toggle 或 `dimcode mcp enable|disable` 会启用它。edit 先读 `mcp.configuration` 取得条目的 revision 与文档，再写 `mcp.update`，绝不用 `mcp.save`：save 接收完整配置，而读取会隐藏机密，往返一次就会把它们抹掉。
 
-编辑文档就是 patch：省略的字段保留已存值，给出的值替换它，`env` 或 `headers` 只改动它点名的键。种子文档给出命令与工作目录、空的 `env` 与 `headers`，以及已配置 OAuth 的已报告字段；它从不给出已存参数、环境变量值、请求头值、Bearer 令牌或 URL，因为这些要么被隐藏，要么整体替换。文档不带 transport，因为已存条目的 transport 是固定的。stdio 的 patch 点名命令、工作目录与要改动的环境变量键：
+编辑文档就是 patch：省略的字段保留已存值，给出的值替换它，`env` 或 `headers` 只改动它点名的键。它还可以给出 `timeout`——该条目的工具调用时限，毫秒，1000 到 86400000；给 `null` 清除它，按十分钟默认值执行（[MCP 管理 §D20](appserver/mcp-management.md#d20-a-tool-call-waits-as-long-as-its-entry-allows)）。种子文档给出命令与工作目录、空的 `env` 与 `headers`，以及已配置 OAuth 的已报告字段；它从不给出已存参数、环境变量值、请求头值、Bearer 令牌或 URL，因为这些要么被隐藏，要么整体替换。文档不带 transport，因为已存条目的 transport 是固定的。stdio 的 patch 点名命令、工作目录与要改动的环境变量键：
 
 ```json
 {"command": "npx", "cwd": "/work", "env": {"TOKEN": "value"}}
@@ -733,6 +733,8 @@ toggle 以 `mcp.catalog` 紧接写入前报告的 revision 写该来源的启用
 ```json
 {"url": "https://mcp.example.com/mcp", "headers": {"X-Key": "value"}}
 ```
+
+新建的定义同样可以给出 `timeout`，查看时会显示给出的值。
 
 add 用目录的来源 revision——`userRevision`，来源为 `project` 时用 `projectRevision`——写 `mcp.save`，并拒绝目录中已列出的 id，因为一次 save 会替换该条目。新建文档就是一个条目，带它的来源与 `mcp.save` 接收的定义：
 

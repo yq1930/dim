@@ -78,8 +78,13 @@ A17 已确认：在首阶段准入时捕获上限；工具启动与首准入之�
 
 可选包位于 `runtime/plugins/workflow`，包名 `@dimcode/workflow`；根模块拥有运行，
 并在 apply 中经 `partRegistry` 把 `session.ts` 注册为 Session 定义 `WorkflowSession`，
-由它提供 Session 工具。插件目录带有 `dim-plugin.json`，是 `runtime/default-plugins.json`
-列出的默认插件，由 PluginManager 加载（`--defaults`）。嵌入宿主仍可从清单的 `code` 字段构造下面这一行。
+由它提供 Session 工具。插件目录带有 `dim-plugin.json`，通过 [PluginManager](../../../design/plugins/PluginManager.md)
+显式安装和启用。基础 CLI 的默认开发、alpha 和正式发布载荷不包含该插件；插件缺席时不提供其工具和管理方法，
+既有 Settings 文档与运行记录保持不变。已安装副本保留用户显式选择的来源和启用状态。
+基础 CLI 首次启动不再获取 Node 运行时，因此已安装的 Workflow 需要先执行 `runtime.install`
+（`dimcode runtime install node`）才能运行。
+外置打包和分发由 [#1091](https://github.com/arcships/dim/issues/1091) 跟踪。
+嵌入宿主可从清单的 `code` 字段构造下面这一行。
 
 | row 字段 | 进程行 |
 | --- | --- |

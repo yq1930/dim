@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readdirSync, readFileSync, rmSync, statfsSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, rmSync, statfsSync } from 'node:fs';
 import path from 'node:path';
+import { currentVersion, nextAlphaVersion, setAlphaVersion } from './alpha-version.mjs';
 
 const args = process.argv.slice(2);
 const usage = 'Usage: node scripts/publish-alpha.mjs [X.Y.Z-alpha.N] [--dry-run] [--platform PLATFORM ...]';
@@ -40,38 +41,7 @@ const output = (command, commandArgs) => {
   assert.ifError(result.error);
   return result;
 };
-const parse = (value) => value.match(/^(\d+)\.(\d+)\.(\d+)(?:-([a-z]+)\.(\d+))?$/)?.slice(1)
-  .map((part) => (/^\d+$/.test(part ?? '') ? Number(part) : part));
-const compare = (left, right) => {
-  const [a, b] = [parse(left), parse(right)];
-  for (const index of [0, 1, 2, 4]) if (a[index] !== b[index]) return a[index] - b[index];
-  return 0;
-};
-
-const versions = (name) => {
-  const listed = output('npm', ['view', name, 'versions', '--json', '--registry', 'https://registry.npmjs.org']);
-  const parsed = JSON.parse(listed.stdout || '[]');
-  if (listed.status === 0) return [parsed].flat();
-  assert.equal(parsed.error?.code, 'E404', `Cannot read ${name} versions from npm`);
-  return [];
-};
-const published = versions('dimcode');
-const released = [...published, ...['dimcode-alpha', 'dimcode-web', ...Object.keys(targets).map((platform) => `dimcode-${platform}`)]
-  .flatMap(versions)];
-const current = readFileSync(path.join(repo, 'Cargo.toml'), 'utf8')
-  .match(/\[workspace\.package\]\s+version = "([^"]+)"/)[1];
-const alphas = released.filter((value) => /^\d+\.\d+\.\d+-alpha\.\d+$/.test(value)).sort(compare);
-let version = requested[0];
-if (!version) {
-  if (alphas.length === 0) version = `${current.split('-')[0]}-alpha.0`;
-  else version = alphas.at(-1).replace(/\d+$/, (number) => String(Number(number) + 1));
-}
-assert(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-alpha\.(0|[1-9]\d*)$/.test(version),
-  `Expected X.Y.Z-alpha.N, got ${version}`);
-assert(!released.includes(version), `${version} is already on npm`);
-const betas = published.filter((value) => /^\d+\.\d+\.\d+-beta\.\d+$/.test(value)).sort(compare);
-assert(betas.length === 0 || compare(version.split('-')[0], betas.at(-1).split('-')[0]) <= 0,
-  `Alpha ${version} must stay below the newest dimcode beta ${betas.at(-1)}`);
+const version = nextAlphaVersion(requested[0]);
 
 const dirty = output('git', ['status', '--porcelain']).stdout.trim();
 assert(dryRun || dirty === '', 'Commit or stash local changes first: the build must match its source commit');
@@ -87,24 +57,12 @@ for (const entry of readdirSync(path.join(repo, 'staging'), { withFileTypes: tru
 const ids = [process.env.DIM_OAUTH_CLIENT_ID_CN, process.env.DIM_OAUTH_CLIENT_ID_GLOBAL].filter(Boolean).length;
 assert(ids !== 1, 'Set DIM_OAUTH_CLIENT_ID_CN and DIM_OAUTH_CLIENT_ID_GLOBAL together');
 const account = ids === 2;
-console.log(`\ndimcode ${current} → ${version} (dimcode-alpha on npm tag alpha${dryRun ? ', dry run' : ''}, ${account ? 'with' : 'without'} Dim account, ${platforms.join(' ')})\n`);
+console.log(`\ndimcode ${currentVersion} → ${version} (dimcode-alpha on npm tag alpha${dryRun ? ', dry run' : ''}, ${account ? 'with' : 'without'} Dim account, ${platforms.join(' ')})\n`);
 
 const sourceCommit = output('git', ['rev-parse', 'HEAD']).stdout.trim();
-const bumped = version !== current;
+const bumped = version !== currentVersion;
 try {
-  if (bumped) {
-    const edit = (file, change) => writeFileSync(path.join(repo, file), change(readFileSync(path.join(repo, file), 'utf8')));
-    const json = (file, change) => edit(file, (text) => {
-      const data = JSON.parse(text);
-      change(data);
-      return `${JSON.stringify(data, null, 2)}\n`;
-    });
-    edit('Cargo.toml', (text) => text.replace(/(\[workspace\.package\]\s+version = ")[^"]+/, `$1${version}`));
-    edit('npm/package.json', (text) => text.replaceAll(`"${current}"`, `"${version}"`));
-    json('runtime/package.json', (data) => { data.version = version; });
-    json('runtime/package-lock.json', (data) => { data.version = version; data.packages[''].version = version; });
-    run('cargo', ['metadata', '--format-version', '1'], { stdio: ['ignore', 'ignore', 'inherit'] });
-  }
+  if (bumped) setAlphaVersion(version);
   const packages = path.join(staging, 'complete', 'npm');
   const { bavail, bsize } = statfsSync(repo);
   assert(bavail * bsize >= 8 * 2 ** 30,

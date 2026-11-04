@@ -967,7 +967,7 @@ dependencies = [
 
 [[package]]
 name = "dim-acp"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.18"
 dependencies = [
  "agent-client-protocol",
  "base64 0.22.1",
@@ -986,7 +986,7 @@ dependencies = [
 
 [[package]]
 name = "dim-agent-aimux"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.18"
 dependencies = [
  "aimux-core",
  "aimux-provider-utils",
@@ -1015,7 +1015,7 @@ dependencies = [
 
 [[package]]
 name = "dim-agent-attachments"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.18"
 dependencies = [
  "dim-agent-capabilities",
  "dim-agent-runtime",
@@ -1025,7 +1025,7 @@ dependencies = [
 
 [[package]]
 name = "dim-agent-capabilities"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.18"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -1060,7 +1060,7 @@ dependencies = [
 
 [[package]]
 name = "dim-agent-integration-tests"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.18"
 dependencies = [
  "dim-agent-capabilities",
  "dim-agent-runtime",
@@ -1079,7 +1079,7 @@ dependencies = [
 
 [[package]]
 name = "dim-agent-questions"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.18"
 dependencies = [
  "dim-agent-capabilities",
  "dim-agent-runtime",
@@ -1094,7 +1094,7 @@ dependencies = [
 
 [[package]]
 name = "dim-agent-runtime"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.18"
 dependencies = [
  "dim-agent-runtime",
  "dim-agent-types",
@@ -1114,7 +1114,7 @@ dependencies = [
 
 [[package]]
 name = "dim-agent-scheduler"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.18"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -1148,7 +1148,7 @@ dependencies = [
 
 [[package]]
 name = "dim-app-server"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.18"
 dependencies = [
  "async-trait",
  "axum",
@@ -1205,7 +1205,7 @@ dependencies = [
 
 [[package]]
 name = "dim-cli"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.18"
 dependencies = [
  "anstyle",
  "base64 0.22.1",
@@ -1246,7 +1246,7 @@ dependencies = [
 
 [[package]]
 name = "dim-client"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.18"
 dependencies = [
  "dim-agent-types",
  "libc",
@@ -1258,8 +1258,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "dim-goal"
+version = "0.1.0-alpha.18"
+dependencies = [
+ "dim-agent-aimux",
+ "dim-agent-capabilities",
+ "dim-agent-runtime",
+ "dim-agent-types",
+ "dim-app-server",
+ "dim-client",
+ "futures-util",
+ "rutis",
+ "rutis-loader",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "dim-migration"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.18"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -1288,7 +1310,7 @@ dependencies = [
 
 [[package]]
 name = "dim-oauth"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.18"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -1313,7 +1335,7 @@ dependencies = [
 
 [[package]]
 name = "dim-session-title"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.18"
 dependencies = [
  "axum",
  "dim-agent-aimux",
@@ -1337,7 +1359,7 @@ dependencies = [
 
 [[package]]
 name = "dimcode"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.18"
 dependencies = [
  "agent-client-protocol-schema",
  "base64 0.22.1",
@@ -1347,6 +1369,7 @@ dependencies = [
  "dim-agent-types",
  "dim-app-server",
  "dim-cli",
+ "dim-goal",
  "dim-oauth",
  "dim-session-title",
  "image",
@@ -4526,7 +4549,7 @@ dependencies = [
 
 [[package]]
 name = "test-extension-a"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.18"
 dependencies = [
  "dim-agent-runtime",
  "rutis",
@@ -4534,7 +4557,7 @@ dependencies = [
 
 [[package]]
 name = "test-extension-b"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.18"
 dependencies = [
  "dim-agent-runtime",
  "rutis",
@@ -5502,7 +5525,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.1.0-alpha.8"
+version = "0.1.0-alpha.18"
 dependencies = [
  "axum",
  "dim-agent-aimux",
@@ -5513,6 +5536,7 @@ dependencies = [
  "dim-agent-types",
  "dim-app-server",
  "dim-client",
+ "dim-goal",
  "dim-session-title",
  "futures-util",
  "rusqlite",

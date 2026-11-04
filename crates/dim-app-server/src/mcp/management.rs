@@ -116,6 +116,9 @@ struct ConfigurationPatch {
     env: Option<std::collections::BTreeMap<String, Option<String>>>,
     #[serde(default, deserialize_with = "optional_non_null")]
     headers: Option<std::collections::BTreeMap<String, Option<String>>>,
+    /// A present `null` clears the entry's limit.
+    #[serde(default, deserialize_with = "nullable_patch")]
+    timeout: Option<Option<u64>>,
     #[serde(default, deserialize_with = "optional_non_null")]
     bearer: Option<BearerPatch>,
     #[serde(default, deserialize_with = "optional_non_null")]
@@ -183,34 +186,47 @@ fn patch_sets_secret(patch: &ConfigurationPatch, secret: &McpSecretEntry) -> boo
         )
 }
 
+/// A view shows `timeout` only when the entry states one.
+fn with_timeout(view: &mut serde_json::Value, timeout: Option<u64>) {
+    if let Some(timeout) = timeout {
+        view["timeout"] = timeout.into();
+    }
+}
+
 fn configuration_view(
     configuration: McpServerSettings,
     referenced: &BTreeSet<String>,
     unset: &BTreeSet<String>,
 ) -> Result<serde_json::Value, RpcError> {
-    Ok(match configuration {
+    match configuration {
         McpServerSettings::Stdio {
             command,
             args,
             cwd,
             env,
+            timeout,
             ..
-        } => serde_json::json!({
-            "type": "stdio", "command": command, "argsCount": args.len(), "cwd": cwd,
-            "envNames": env.keys().collect::<Vec<_>>(),
-            "referencedVariables": referenced, "unsetVariables": unset
-        }),
+        } => {
+            let mut view = serde_json::json!({
+                "type": "stdio", "command": command, "argsCount": args.len(), "cwd": cwd,
+                "envNames": env.keys().collect::<Vec<_>>(),
+                "referencedVariables": referenced, "unsetVariables": unset
+            });
+            with_timeout(&mut view, timeout);
+            Ok(view)
+        }
         McpServerSettings::Remote {
             kind,
             url,
             headers,
             auth,
             oauth,
+            timeout,
             ..
         } => {
             let endpoint = config::public_endpoint(&url)
                 .map_err(|_| RpcError::invalid("Invalid MCP endpoint"))?;
-            serde_json::json!({
+            let mut view = serde_json::json!({
                 "type": kind, "endpoint": endpoint,
                 "headerNames": headers.keys().collect::<Vec<_>>(),
                 "authConfigured": auth.is_some(), "oauthConfigured": oauth.is_some(),
@@ -220,9 +236,11 @@ fn configuration_view(
                     "scopes": oauth.scopes,
                     "metadataConfigured": oauth.auth_server_metadata_url.is_some()
                 }))
-            })
+            });
+            with_timeout(&mut view, timeout);
+            Ok(view)
         }
-    })
+    }
 }
 
 fn patch_configuration(
@@ -235,8 +253,12 @@ fn patch_configuration(
             args,
             cwd,
             env,
+            timeout,
             ..
         } => {
+            if let Some(value) = patch.timeout {
+                *timeout = value;
+            }
             if patch.url.is_some()
                 || patch.headers.is_some()
                 || patch.bearer.is_some()
@@ -262,8 +284,12 @@ fn patch_configuration(
             headers,
             auth,
             oauth,
+            timeout,
             ..
         } => {
+            if let Some(value) = patch.timeout {
+                *timeout = value;
+            }
             if patch.command.is_some()
                 || patch.args.is_some()
                 || patch.cwd.is_some()
@@ -1002,6 +1028,7 @@ mod tests {
             auth: None,
             oauth: None,
             enabled: None,
+            timeout: None,
             extra: Default::default(),
         }
     }

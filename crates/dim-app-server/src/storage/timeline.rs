@@ -43,10 +43,6 @@ use std::{
 /// round started (timeline storage §3).
 const ROUND_WINDOW: Duration = Duration::from_millis(20);
 
-/// Starts one `read_tool_use_starts` statement looks up. Each start is one
-/// term of a `UNION ALL`, and SQLite's default `SQLITE_MAX_COMPOUND_SELECT`
-/// is 500 terms, so a batch is read in statements of half that.
-const STARTS_PER_STATEMENT: usize = 250;
 struct Pending {
     key: TimelineKey,
     events: Vec<StoredEvent>,
@@ -509,23 +505,6 @@ impl SqliteTimelineStore {
         }
         self.finish(reader);
         Ok(result)
-    }
-    /// The records of `key` in `range`, decoded with one reader of
-    /// `request_bodies`.
-    async fn read_records(
-        &self,
-        key: &TimelineKey,
-        range: RangeInclusive<u64>,
-        request_bodies: RequestBodies,
-    ) -> Result<Vec<StoredEvent>> {
-        let mut segments = self
-            .segments(
-                &key.session_id,
-                vec![(key.branch_id.clone(), range)],
-                request_bodies,
-            )
-            .await?;
-        Ok(segments.pop().expect("one range returns one segment"))
     }
     /// Ends `reader`'s read call; feature `testing` counts its node loads.
     fn finish(&self, reader: Reader) {
@@ -1267,305 +1246,6 @@ impl SessionStore {
             })
             .await
     }
-    pub async fn read_page(
-        &self,
-        id: &str,
-        branch: &str,
-        after: u64,
-        limit: usize,
-        through: u64,
-    ) -> Result<Vec<Arc<dim_agent_types::AgentEvent>>> {
-        self.page(id, branch, after, limit, through, RequestBodies::Rebuild)
-            .await
-    }
-    /// A page for readers that discard `context/prepare` and `model/call`
-    /// records or use only their other fields: their requests are not
-    /// rebuilt.
-    pub async fn read_page_without_request_bodies(
-        &self,
-        id: &str,
-        branch: &str,
-        after: u64,
-        limit: usize,
-        through: u64,
-    ) -> Result<Vec<Arc<dim_agent_types::AgentEvent>>> {
-        self.page(id, branch, after, limit, through, RequestBodies::Unused)
-            .await
-    }
-    async fn page(
-        &self,
-        id: &str,
-        branch: &str,
-        after: u64,
-        limit: usize,
-        through: u64,
-        request_bodies: RequestBodies,
-    ) -> Result<Vec<Arc<dim_agent_types::AgentEvent>>> {
-        let key = TimelineKey {
-            session_id: id.into(),
-            branch_id: branch.into(),
-        };
-        Ok(self
-            .timeline
-            .page(&key, after, limit, through, request_bodies)
-            .await?
-            .into_iter()
-            .map(|record| record.event)
-            .collect())
-    }
-    /// The newest events below `before` inside `window_start..=through`, whole
-    /// batches at both ends (session-history-window §4.2). A `before` inside a
-    /// batch clamps down to the batch end; a `through` inside one fails like
-    /// the forward read. Every event carries its batch end, so the caller can
-    /// trim by bytes without splitting one.
-    pub async fn read_page_before(
-        &self,
-        id: &str,
-        branch: &str,
-        before: u64,
-        limit: usize,
-        through: u64,
-        window_start: u64,
-    ) -> Result<Vec<StoredEvent>> {
-        let key = TimelineKey {
-            session_id: id.into(),
-            branch_id: branch.into(),
-        };
-        if through > 0 {
-            self.timeline
-                .read_records(&key, through..=through, RequestBodies::Unused)
-                .await?;
-        }
-        let top = before.saturating_sub(1).min(through);
-        if top == 0 || top < window_start || limit == 0 {
-            return Ok(vec![]);
-        }
-        let Some(at_top) = self.read_any(&key, top..=top).await?.pop() else {
-            return Ok(vec![]);
-        };
-        let end = if at_top.batch_end <= top {
-            at_top.batch_end
-        } else {
-            self.previous_batch_end(&key, at_top.event.sequence, at_top.batch_end, window_start)
-                .await?
-        };
-        if end < window_start {
-            return Ok(vec![]);
-        }
-        let mut low = end
-            .saturating_sub(limit.saturating_sub(1) as u64)
-            .max(1)
-            .max(window_start);
-        loop {
-            let page = self
-                .timeline
-                .read_records(&key, low..=end, RequestBodies::Unused)
-                .await?;
-            let Some(first) = page.first() else {
-                return Ok(vec![]);
-            };
-            if low <= window_start || low == 1 {
-                return Ok(page);
-            }
-            let start = self
-                .batch_start(&key, first.event.sequence, first.batch_end, window_start)
-                .await?;
-            if start >= low {
-                return Ok(page);
-            }
-            low = start;
-        }
-    }
-    /// Reads a sequence range that may start and end inside a batch; the
-    /// caller checks the boundaries itself.
-    async fn read_any(
-        &self,
-        key: &TimelineKey,
-        range: RangeInclusive<u64>,
-    ) -> Result<Vec<StoredEvent>> {
-        let mut reader = self.timeline.reader(RequestBodies::Unused);
-        let records = read_range(&self.timeline.db, &mut reader, key, range, false).await;
-        self.timeline.finish(reader);
-        records
-    }
-    /// The end of the batch before the one holding `sequence..=batch_end`,
-    /// searching no lower than `floor`.
-    async fn previous_batch_end(
-        &self,
-        key: &TimelineKey,
-        sequence: u64,
-        batch_end: u64,
-        floor: u64,
-    ) -> Result<u64> {
-        let mut probe = sequence.saturating_sub(1);
-        loop {
-            if probe == 0 {
-                return Ok(0);
-            }
-            let low = probe.saturating_sub(63).max(1).max(floor);
-            let chunk = self.read_any(key, low..=probe).await?;
-            if let Some(previous) = chunk
-                .iter()
-                .rev()
-                .find(|record| record.batch_end != batch_end)
-            {
-                return Ok(previous.event.sequence);
-            }
-            if low <= floor || low == 1 {
-                return Ok(low.saturating_sub(1));
-            }
-            probe = low - 1;
-        }
-    }
-    /// The first sequence of the batch holding `sequence..=batch_end`,
-    /// searching no lower than `floor` (a batch start).
-    async fn batch_start(
-        &self,
-        key: &TimelineKey,
-        sequence: u64,
-        batch_end: u64,
-        floor: u64,
-    ) -> Result<u64> {
-        let mut probe = sequence.saturating_sub(1);
-        loop {
-            if probe == 0 || probe < floor {
-                return Ok(floor);
-            }
-            let low = probe.saturating_sub(63).max(1).max(floor);
-            let chunk = self.read_any(key, low..=probe).await?;
-            if let Some(previous) = chunk
-                .iter()
-                .rev()
-                .find(|record| record.batch_end != batch_end)
-            {
-                return Ok(previous.event.sequence + 1);
-            }
-            if low <= floor || low == 1 {
-                return Ok(low);
-            }
-            probe = low - 1;
-        }
-    }
-    /// The stored events of `event_ids` in one statement; ids the store
-    /// does not hold are absent.
-    pub async fn read_events(
-        &self,
-        id: &str,
-        event_ids: &[String],
-    ) -> Result<HashMap<String, Arc<dim_agent_types::AgentEvent>>> {
-        if event_ids.is_empty() {
-            return Ok(HashMap::new());
-        }
-        let session = id.to_owned();
-        let wanted = event_ids.to_vec();
-        let rows = self
-            .read_rows(id, move |connection| {
-                let columns = (0..wanted.len())
-                    .map(|at| format!("?{}", at + 2))
-                    .collect::<Vec<_>>()
-                    .join(",");
-                let mut query = connection
-                    .prepare(&format!(
-                        "SELECT sequence, last_sequence, kind, body, event_id FROM timeline_events \
-                     WHERE session_id=?1 AND event_id IN ({columns})"
-                    ))
-                    .map_err(error)?;
-                let mut parameters: Vec<&dyn rusqlite::ToSql> = vec![&session];
-                parameters.extend(wanted.iter().map(|id| id as &dyn rusqlite::ToSql));
-                query_fetched(&mut query, rusqlite::params_from_iter(parameters))
-            })
-            .await?;
-        let mut events = HashMap::with_capacity(rows.len());
-        for row in rows {
-            let record = indexed(row)?;
-            events.insert(record.event.id.clone(), record.event);
-        }
-        Ok(events)
-    }
-    /// The main-branch `step/tool-use-start`s of `keys`; calls the store does
-    /// not hold are absent. The keys are read in bounded statement chunks.
-    pub async fn read_tool_use_starts(
-        &self,
-        id: &str,
-        keys: &[(String, String)],
-    ) -> Result<HashMap<(String, String), Arc<dim_agent_types::AgentEvent>>> {
-        if keys.is_empty() {
-            return Ok(HashMap::new());
-        }
-        let session = id.to_owned();
-        let wanted = keys.to_vec();
-        let rows = self
-            .read_rows(id, move |connection| {
-                let mut rows = Vec::with_capacity(wanted.len());
-                for chunk in wanted.chunks(STARTS_PER_STATEMENT) {
-                    let selects = (0..chunk.len())
-                        .map(|at| {
-                            format!(
-                                "SELECT sequence, last_sequence, kind, body, event_id FROM \
-                             timeline_events WHERE session_id=?1 AND branch_id='main' AND \
-                             kind='step/tool-use-start' AND \
-                             json_extract(body, '$.record.event.data.request_id')=?{} AND \
-                             json_extract(body, '$.record.event.data.call_id')=?{}",
-                                at * 2 + 2,
-                                at * 2 + 3
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                        .join(" UNION ALL ");
-                    let mut query = connection.prepare(&selects).map_err(error)?;
-                    let mut parameters: Vec<&dyn rusqlite::ToSql> = vec![&session];
-                    for (request_id, call_id) in chunk {
-                        parameters.push(request_id);
-                        parameters.push(call_id);
-                    }
-                    rows.extend(query_fetched(
-                        &mut query,
-                        rusqlite::params_from_iter(parameters),
-                    )?);
-                }
-                Ok(rows)
-            })
-            .await?;
-        let mut starts = HashMap::with_capacity(rows.len());
-        for row in rows {
-            let record = indexed(row)?;
-            if let EventKind::ToolUseStart(start) = &record.event.kind {
-                starts.insert(
-                    (start.request_id.clone(), start.call_id.clone()),
-                    record.event,
-                );
-            }
-        }
-        Ok(starts)
-    }
-    /// The rows `select` picks, decoded with one content reader; `select`
-    /// runs its one statement in the first connection hold.
-    async fn read_rows(
-        &self,
-        session: &str,
-        select: impl Fn(&Connection) -> Result<Vec<Fetched>> + Send + Sync + 'static,
-    ) -> Result<Vec<Fetched>> {
-        let session = session.to_owned();
-        let mut reader = self.timeline.reader(RequestBodies::Rebuild);
-        let rows = holds(
-            &self.timeline.db,
-            &mut reader,
-            None,
-            move |connection, reader, rows: &mut Option<Rows>| {
-                let rows = match rows {
-                    Some(rows) => rows,
-                    None => rows.insert(Rows {
-                        fetched: select(connection)?.into(),
-                        decoded: vec![],
-                    }),
-                };
-                rows.advance(connection, &session, reader)
-            },
-        )
-        .await?;
-        self.timeline.finish(reader);
-        Ok(rows.expect("a finished read fetched its rows").decoded)
-    }
     pub async fn has_records(&self, id: &str) -> Result<bool> {
         let id = id.to_owned();
         self.timeline
@@ -2207,29 +1887,6 @@ impl Fetched {
         })
     }
 }
-/// The rows a batch read selects, in the five-column form both of them use:
-/// sequence, last sequence, kind, body and the identity the index matched.
-fn query_fetched(
-    query: &mut rusqlite::Statement<'_>,
-    parameters: impl rusqlite::Params,
-) -> Result<Vec<Fetched>> {
-    query
-        .query_map(parameters, |row| {
-            Ok((
-                read_sequence(row, 0)?,
-                read_sequence(row, 1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, Option<String>>(4)?,
-            ))
-        })
-        .map_err(error)?
-        .map(|row| {
-            let (first, last, kind, body, event_id) = row.map_err(error)?;
-            Fetched::parse(first, last, kind, &body, event_id)
-        })
-        .collect()
-}
 /// The sequence of the event a query names by id. `timeline_events_by_id`
 /// answers this without touching a body; the page then reads that one row.
 const BY_ID_SEQUENCE: &str = "SELECT sequence FROM timeline_events \
@@ -2619,22 +2276,6 @@ pub(super) async fn read_range(
     .await?;
     rows.expect("a finished read fetched its rows")
         .records(&range, boundary)
-}
-/// The one event of a row an identity index found.
-fn indexed(row: Fetched) -> Result<StoredEvent> {
-    let Fetched {
-        mut records,
-        event_id,
-        ..
-    } = row;
-    let record = records
-        .pop()
-        .filter(|_| records.is_empty())
-        .ok_or_else(|| error("indexed event is missing"))?;
-    if event_id.as_deref() != Some(record.event.id.as_str()) {
-        return Err(error("event identity index does not match row"));
-    }
-    Ok(record)
 }
 
 impl SqliteTimelineStore {
@@ -3249,18 +2890,6 @@ impl TimelineStore for SqliteTimelineStore {
     ) -> BoxFuture<'a, Result<Vec<StoredEvent>>> {
         Box::pin(async move {
             self.page(key, after, limit, through, RequestBodies::Rebuild)
-                .await
-        })
-    }
-    fn read_page_without_request_bodies<'a>(
-        &'a self,
-        key: &'a TimelineKey,
-        after: u64,
-        limit: usize,
-        through: u64,
-    ) -> BoxFuture<'a, Result<Vec<StoredEvent>>> {
-        Box::pin(async move {
-            self.page(key, after, limit, through, RequestBodies::Unused)
                 .await
         })
     }

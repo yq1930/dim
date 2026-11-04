@@ -4,6 +4,71 @@ pub use dim_client::wire::*;
 use dim_agent_types::ToolResult;
 use serde::Deserialize;
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Created {
+    pub session_id: String,
+    pub model: dim_agent_types::ModelId,
+}
+
+/// The record `session.attach` replies for the Session it opened. A server
+/// from before the record existed replies `{}`.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Attached {
+    #[serde(default)]
+    pub model: Option<dim_agent_types::ModelId>,
+    #[serde(default)]
+    pub capability_snapshot: Option<Box<dim_agent_types::ModelCapabilitySnapshot>>,
+    /// The adopted configuration's preferences; absent when it carries none.
+    #[serde(default)]
+    pub model_preferences: Option<dim_agent_types::ModelPreferences>,
+    /// The Session's workspace; absent from servers older than the record.
+    #[serde(default)]
+    pub cwd: Option<String>,
+    /// The Session's stored title; absent from servers older than the title
+    /// fields, and `None` when it has none.
+    #[serde(default)]
+    pub title: Option<String>,
+    /// The title's revision; 0 on a server that reports none.
+    #[serde(default)]
+    pub title_revision: u64,
+}
+
+#[derive(Deserialize)]
+pub struct ProviderCatalogSnapshot {
+    pub catalog: Option<ProviderCatalog>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderCatalog {
+    pub version: u32,
+    pub models: Vec<CatalogModel>,
+    pub disabled_model_ids: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogModel {
+    pub id: String,
+    pub name: String,
+    pub capabilities: dim_agent_types::CatalogCapabilities,
+    #[serde(default)]
+    pub missing_limits: Vec<String>,
+    pub unavailable_reason: Option<String>,
+    #[serde(default)]
+    pub zdr: bool,
+    pub metadata: Option<CatalogPreferences>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogPreferences {
+    pub reasoning: Option<dim_agent_types::ModelReasoning>,
+    pub service_tier: Option<dim_agent_types::ModelServiceTier>,
+}
+
 /// A Workflow run as `workflow.status` and `workflow.stop` return it: the
 /// fields the task view reads. The run owner validates the whole record.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]

@@ -268,7 +268,9 @@ impl McpProbe {
                 missing_scopes: Some(scopes.split_whitespace().map(str::to_owned).collect()),
                 ..Self::base(ProbeStatus::AuthRequired, latency)
             },
-            server::McpServerError::Timeout => Self::failed(ProbeReason::Timeout, error, latency),
+            server::McpServerError::Timeout { .. } => {
+                Self::failed(ProbeReason::Timeout, error, latency)
+            }
             server::McpServerError::InvalidResponse(_) => {
                 Self::failed(ProbeReason::Response, error, latency)
             }
@@ -505,17 +507,22 @@ impl McpService {
         document: serde_json::Value,
         cancel: &CancellationToken,
     ) -> Result<()> {
-        let valid = McpSettings::from_value(document).and_then(|document| {
+        let valid = McpSettings::from_value(document).and_then(|mut document| {
             // A plugin registers its MCP content as one unit, and dim does
             // not manage a plugin entry on its own. Refuse the document
             // with the first broken entry's error rather than drop it.
-            let (servers, invalid) = document.into_parts();
-            if let Some(error) = invalid.into_values().next() {
+            if let Some(error) = document.invalid_entries().values().next() {
                 return Err(SettingsError::Document(error.to_string()));
             }
+            // The wrapper owns its members: `dir` and the file's shape are
+            // `McpPluginDocument`'s, and a plugin document's own top-level
+            // members are not part of the registration, as the typed map
+            // dropped them. Keeping one would write a second `dir` beside the
+            // wrapper's and make the whole file unreadable for every plugin.
+            document.extra.clear();
             let registration = McpPluginDocument {
                 dir,
-                mcp_servers: servers,
+                servers: document,
             };
             McpPluginServers {
                 plugins: BTreeMap::from([(plugin.clone(), registration.clone())]),
@@ -661,7 +668,11 @@ impl McpService {
                     let plugins = settings
                         .read::<McpPluginServers>(SettingsScope::User, &cancel)
                         .await?;
-                    for (id, configuration) in plugins.document.entries() {
+                    let (entries, broken) = plugins.document.into_entries();
+                    for (id, error) in broken {
+                        invalid.insert((source, id), error);
+                    }
+                    for (id, configuration) in entries {
                         let entry = resolved_entry(
                             &settings,
                             source,
@@ -742,14 +753,17 @@ impl McpService {
         self.run(cancel, move |settings, cancel| async move {
             let protected = credentials.credential_variables();
             let Some(scope) = source.scope() else {
-                let configuration = settings
+                let (mut entries, mut invalid) = settings
                     .read::<McpPluginServers>(SettingsScope::User, &cancel)
                     .await?
                     .document
-                    .entries()
-                    .find(|(entry, _)| *entry == id)
-                    .map(|(_, configuration)| configuration)
-                    .ok_or(McpError::UnknownServer)?;
+                    .into_entries();
+                let Some(configuration) = entries.remove(&id) else {
+                    return match invalid.remove(&id) {
+                        Some(error) => Err(McpError::InvalidEntry(error)),
+                        None => Err(McpError::UnknownServer),
+                    };
+                };
                 return resolved_entry(
                     &settings,
                     source,
@@ -797,12 +811,16 @@ impl McpService {
         let protected = self.protected();
         self.run(cancel, move |settings, cancel| async move {
             let Some(scope) = source.scope() else {
-                let configuration = settings
+                let configuration = match settings
                     .read::<McpPluginServers>(SettingsScope::User, &cancel)
                     .await?
                     .document
                     .declared(&id)
-                    .ok_or(McpError::UnknownServer)?;
+                {
+                    Ok(Some(configuration)) => configuration,
+                    Ok(None) => return Err(McpError::UnknownServer),
+                    Err(error) => return Err(McpError::InvalidEntry(error)),
+                };
                 let expansion = config::connected(
                     &settings,
                     configuration.clone(),
@@ -988,7 +1006,10 @@ impl McpService {
                 Ok(Err(error)) => Err(error),
                 Err(_deadline) => Ok(McpProbe::failed(
                     ProbeReason::Timeout,
-                    server::McpServerError::Timeout,
+                    server::McpServerError::Timeout {
+                        millis: PROBE_DEADLINE.as_millis() as u64,
+                        origin: "the probe deadline",
+                    },
                     latency,
                 )),
             };

@@ -1498,6 +1498,15 @@ fn tui_workflow_panel_starts_a_run_on_the_shown_line() {
                 "through":10,"nextAfter":10,"done":true}),
         );
         wait_shown.recv_timeout(PATIENCE).unwrap();
+        let transcript = wire.read("session.history");
+        assert_eq!(transcript["params"]["branchId"], "line-1");
+        assert_eq!(transcript["params"]["after"], 0);
+        wire.reply(
+            &transcript,
+            json!({"events":[{"id":"start-line-1","sequence":10,"create_at":1,
+                    "type":"branch","name":"start","data":{"parent":"main"}}],
+                "through":10,"nextAfter":10,"done":true}),
+        );
         let request = wire.read("workflow.list");
         wire.reply(&request, listing(false));
         let request = wire.read("settings.read");
@@ -1556,6 +1565,7 @@ fn tui_workflow_panel_starts_a_run_on_the_shown_line() {
 #[test]
 fn tui_workflow_starts_without_a_session_and_reports_nowhere() {
     let home = Home::new();
+    let launch_cwd = fs::canonicalize(&home.0).unwrap();
     let (shown, wait_shown) = mpsc::channel();
     let daemon = home.daemon(move |wire| {
         opened_with(
@@ -1571,6 +1581,7 @@ fn tui_workflow_starts_without_a_session_and_reports_nowhere() {
         );
         wait_shown.recv_timeout(PATIENCE).unwrap();
         let request = wire.read("workflow.list");
+        assert_eq!(request["params"]["cwd"], json!(launch_cwd));
         wire.reply(&request, listing(false));
         let request = wire.read("settings.read");
         wire.reply(&request, settings());
@@ -1582,7 +1593,7 @@ fn tui_workflow_starts_without_a_session_and_reports_nowhere() {
             json!({
                 "name": "release-notes",
                 "source": "plugin",
-                "cwd": "/workspace",
+                "cwd": launch_cwd,
                 "params": {},
             })
         );
@@ -1593,7 +1604,9 @@ fn tui_workflow_starts_without_a_session_and_reports_nowhere() {
         wire.reply(&request, settings());
         drains(wire);
     });
-    let mut terminal = Terminal::launch_tui(home.command());
+    let mut command = home.command();
+    command.args(["--cwd", home.0.to_str().unwrap()]);
+    let mut terminal = Terminal::launch_tui(command);
     terminal.until("test / model");
     shown.send(()).unwrap();
     terminal.write(b"/new\r");
@@ -1845,12 +1858,13 @@ fn workflow_commands_write_and_enable_against_the_real_owner() {
     let project = home.0.join("work");
     fs::create_dir(&project).unwrap();
     let socket = home.0.join("rust/daemon.sock");
-    // The installed layout, from the checkout: the product home holds the
-    // plugin files, the defaults name the shipped plugins, and the runtimes
-    // are the system Node and the checkout's runtime packages
-    // (`crates/dim-app-server/README.md`, Plugins). `runtime/node_modules`
-    // holds the packages.
     let runtime = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../runtime");
+    let defaults = home.0.join("workflow-defaults.json");
+    fs::write(
+        &defaults,
+        json!({"plugins":{"workflow":runtime.join("plugins/workflow")}}).to_string(),
+    )
+    .unwrap();
     let node = std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
         .map(|directory| directory.join("node"))
         .find(|path| path.is_file())
@@ -1865,7 +1879,7 @@ fn workflow_commands_write_and_enable_against_the_real_owner() {
         .arg("--product-home")
         .arg(&home.0)
         .arg("--defaults")
-        .arg(runtime.join("default-plugins.json"))
+        .arg(&defaults)
         .arg("--node")
         .arg(node)
         .arg("--js-runtime")
@@ -1886,8 +1900,6 @@ fn workflow_commands_write_and_enable_against_the_real_owner() {
         );
         thread::sleep(Duration::from_millis(50));
     }
-    // Default plugins start after the daemon does; Workflow's methods are
-    // advertised once it runs.
     let advertised = || -> Option<bool> {
         let stream = UnixStream::connect(&socket).ok()?;
         stream.set_read_timeout(Some(Duration::from_secs(5))).ok()?;

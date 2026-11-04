@@ -1,6 +1,7 @@
 //! `/goal`: the goal of the shown line, folded from the branch's events and
 //! written through the methods Goal registers (cli-commands.md).
 use super::*;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const USAGE: &str =
     "Usage: /goal [OBJECTIVE | set OBJECTIVE | edit OBJECTIVE | pause | resume | clear]";
@@ -119,6 +120,15 @@ fn emit(wire: &mut Wire, branch: &str, sequence: u64, kind: &str, name: &str, da
         json!({"sessionId":"session","branchId":branch,"event":
             {"id":format!("{kind}-{sequence}"),"sequence":sequence,"create_at":1,
              "type":kind,"name":name,"data":data}}),
+    );
+}
+
+/// A change input Goal wrote, live: a line whose history is done folds it
+/// through the live stream, not a history page.
+fn change_notice(wire: &mut Wire, branch: &str, change: Value) {
+    wire.notice(
+        "session.event",
+        json!({"sessionId":"session","branchId":branch,"event":change}),
     );
 }
 
@@ -444,61 +454,44 @@ fn tui_goal_shows_the_state_and_marks_the_status_area() {
         wire.reply(&history, page(8, vec![]));
         started(wire);
 
-        let history = wire.read("session.history");
-        wire.reply(&history, page(8, vec![]));
         let write = wire.read("session.goal.set");
         assert_eq!(
             write["params"],
             json!({"sessionId":"session","branchId":"main","objective":"Ship it"})
         );
         wire.reply(&write, json!({"sequence":9}));
-        let history = wire.read("session.history");
-        wire.reply(&history, page(9, vec![set(9, "Ship it")]));
+        change_notice(wire, "main", set(9, "Ship it"));
 
         let read = wire.read("session.methods");
         wire.reply(&read, methods(true));
-        let history = wire.read("session.history");
-        wire.reply(&history, page(9, vec![]));
         let write = wire.read("session.goal.edit");
         assert_eq!(
             write["params"],
             json!({"sessionId":"session","branchId":"main","objective":"Ship it fully"})
         );
         wire.reply(&write, json!({"sequence":12}));
-        let history = wire.read("session.history");
-        wire.reply(&history, page(12, vec![edit(12, "Ship it fully")]));
+        change_notice(wire, "main", edit(12, "Ship it fully"));
 
         let read = wire.read("session.methods");
         wire.reply(&read, methods(true));
-        let history = wire.read("session.history");
-        wire.reply(&history, page(12, vec![]));
         let write = wire.read("session.goal.pause");
         wire.reply(&write, json!({"sequence":15}));
-        let history = wire.read("session.history");
-        wire.reply(&history, page(15, vec![paused(15)]));
+        change_notice(wire, "main", paused(15));
 
         let read = wire.read("session.methods");
         wire.reply(&read, methods(true));
-        let history = wire.read("session.history");
-        wire.reply(&history, page(15, vec![]));
         let write = wire.read("session.goal.resume");
         wire.reply(&write, json!({"sequence":18}));
-        let history = wire.read("session.history");
-        wire.reply(&history, page(18, vec![resumed(18)]));
+        change_notice(wire, "main", resumed(18));
 
         let read = wire.read("session.methods");
         wire.reply(&read, methods(true));
-        let history = wire.read("session.history");
-        wire.reply(&history, page(18, vec![]));
         let write = wire.read("session.goal.clear");
         wire.reply(&write, json!({"sequence":21}));
-        let history = wire.read("session.history");
-        wire.reply(&history, page(21, vec![cleared(21)]));
+        change_notice(wire, "main", cleared(21));
 
         let read = wire.read("session.methods");
         wire.reply(&read, methods(true));
-        let history = wire.read("session.history");
-        wire.reply(&history, page(21, vec![]));
         drained(wire);
     });
     let mut command = home.command();
@@ -555,13 +548,10 @@ fn tui_goal_acts_on_the_shown_line_and_a_new_line_has_none() {
         wire.reply(&history, page(8, vec![]));
         started(wire);
 
-        let history = wire.read("session.history");
-        wire.reply(&history, page(8, vec![]));
         let write = wire.read("session.goal.set");
         assert_eq!(write["params"]["branchId"], "main");
         wire.reply(&write, json!({"sequence":9}));
-        let history = wire.read("session.history");
-        wire.reply(&history, page(9, vec![set(9, "Ship it")]));
+        change_notice(wire, "main", set(9, "Ship it"));
 
         // A line opens from main; its own history starts at its branch/start.
         emit(
@@ -584,32 +574,32 @@ fn tui_goal_acts_on_the_shown_line_and_a_new_line_has_none() {
             ),
         );
 
+        let transcript = wire.read("session.history");
+        assert_eq!(transcript["params"]["after"], 0);
+        wire.reply(
+            &transcript,
+            page(
+                11,
+                vec![json!({"id":"start-line-1","sequence":11,"create_at":1,
+            "type":"branch","name":"start","data":{"parent":"main"}})],
+            ),
+        );
         let read = wire.read("session.methods");
         wire.reply(&read, methods(true));
-        let history = wire.read("session.history");
-        assert_eq!(history["params"]["branchId"], "line-1");
-        wire.reply(&history, page(11, vec![]));
         let read = wire.read("session.methods");
         wire.reply(&read, methods(true));
-        let history = wire.read("session.history");
-        assert_eq!(history["params"]["branchId"], "line-1");
-        wire.reply(&history, page(11, vec![]));
         let write = wire.read("session.goal.set");
         assert_eq!(
             write["params"],
             json!({"sessionId":"session","branchId":"line-1","objective":"Child goal"})
         );
         wire.reply(&write, json!({"sequence":12}));
-        let history = wire.read("session.history");
-        assert_eq!(history["params"]["branchId"], "line-1");
-        wire.reply(
-            &history,
-            page(
+        change_notice(
+            wire,
+            "line-1",
+            change(
                 12,
-                vec![change(
-                    12,
-                    vec![objective("line-1", "set", "Child goal"), active("line-1")],
-                )],
+                vec![objective("line-1", "set", "Child goal"), active("line-1")],
             ),
         );
         drained(wire);
@@ -643,9 +633,9 @@ fn tui_goal_acts_on_the_shown_line_and_a_new_line_has_none() {
     daemon.join().unwrap();
 }
 
-/// A line whose discovery page has not landed yet. `/goal OBJECTIVE` reads
-/// the line to its head before it picks `set` or `edit`, so an active goal
-/// the interface has not folded yet still gets `edit`.
+/// A line whose discovery page has not landed yet. `/goal OBJECTIVE` waits
+/// for the reader to finish the line before it picks `set` or `edit`, so an
+/// active goal the interface has not folded yet still gets `edit`.
 #[test]
 fn tui_goal_reads_the_line_before_it_picks_set_or_edit() {
     let home = Home::new();
@@ -674,9 +664,10 @@ fn tui_goal_reads_the_line_before_it_picks_set_or_edit() {
 
         let read = until_request(wire, "session.methods");
         wire.reply(&read, methods(true));
-        let read = until_request(wire, "session.history");
-        assert_eq!(read["params"]["branchId"], "line-1");
-        assert_eq!(read["params"]["after"], 0);
+        wire.quiet(Duration::from_millis(150));
+
+        // The discovery page lands with the active goal the interface had not
+        // folded: only now may the command choose `edit`.
         let events = vec![
             json!({"id":"start-line-1","sequence":11,"create_at":1,
                 "type":"branch","name":"start","data":{"parent":"main"}}),
@@ -685,27 +676,18 @@ fn tui_goal_reads_the_line_before_it_picks_set_or_edit() {
                 vec![objective("line-1", "set", "Old goal"), active("line-1")],
             ),
         ];
-        wire.reply(&read, page(12, events.clone()));
+        wire.reply(&delayed, page(12, events));
         let write = wire.read("session.goal.edit");
         assert_eq!(
             write["params"],
             json!({"sessionId":"session","branchId":"line-1","objective":"New objective"})
         );
         wire.reply(&write, json!({"sequence":13}));
-        let read = wire.read("session.history");
-        wire.reply(
-            &read,
-            page(
-                13,
-                vec![change(
-                    13,
-                    vec![objective("line-1", "edit", "New objective")],
-                )],
-            ),
+        change_notice(
+            wire,
+            "line-1",
+            change(13, vec![objective("line-1", "edit", "New objective")]),
         );
-
-        // The discovery page lands late; its events predate the edit.
-        wire.reply(&delayed, page(12, events));
         drained(wire);
     });
     let mut command = home.command();
@@ -761,11 +743,10 @@ fn tui_goal_reports_a_failed_read_and_sends_nothing() {
         let discovery = until_request(wire, "session.history");
         failed(wire, &discovery);
 
+        let transcript = until_request(wire, "session.history");
+        failed(wire, &transcript);
         let read = until_request(wire, "session.methods");
         wire.reply(&read, methods(true));
-        let read = until_request(wire, "session.history");
-        assert_eq!(read["params"]["branchId"], "line-1");
-        failed(wire, &read);
 
         // No goal method is sent before the client leaves.
         let mut line = String::new();
@@ -800,4 +781,484 @@ fn tui_goal_reports_a_failed_read_and_sends_nothing() {
     terminal.until("Bye!");
     assert!(terminal.wait().success());
     daemon.join().unwrap();
+}
+
+/// `/goal` while the shown line's initial history is still loading: the
+/// command waits for the task-history reader, so exactly one
+/// `session.history` page is outstanding for the line, the fold it decides on
+/// is the reader's whole fixed window, and it repeats no page from zero. A
+/// second `/goal` while the first waits is reported and changes nothing.
+#[test]
+fn tui_goal_during_the_initial_history_read_opens_no_second_pager() {
+    let home = Home::new();
+    let daemon = home.daemon(|wire| {
+        wire.hello(&["session.methods"]);
+        wire.created();
+        let attach = wire.read("session.attach");
+        wire.reply(&attach, attach_record(&attach));
+        let table = wire.read("session.methods");
+        wire.reply(&table, methods(true));
+
+        // main's first history page is outstanding when `/goal` arrives.
+        let held = wire.read("session.history");
+        assert_eq!(held["params"]["after"], 0);
+
+        let read = until_request(wire, "session.methods");
+        wire.reply(&read, methods(true));
+        // Only one reader: while that page is outstanding, no second history
+        // request for the line and no goal method travels.
+        wire.quiet(Duration::from_millis(500));
+
+        // The first page fixes the window, and the active goal is on the
+        // second: only a command that waits for the reader's `done` folds it,
+        // so `edit` proves the wait.
+        wire.reply(
+            &held,
+            json!({"events":[],"through":9,"nextAfter":4,"done":false}),
+        );
+        let second = wire.read("session.history");
+        assert_eq!(second["params"]["after"], 4);
+        assert_eq!(second["params"]["through"], 9);
+        wire.reply(&second, page(9, vec![set(9, "Old goal")]));
+
+        let write = wire.read("session.goal.edit");
+        assert_eq!(
+            write["params"],
+            json!({"sessionId":"session","branchId":"main","objective":"New objective"})
+        );
+        wire.reply(&write, json!({"sequence":10}));
+        change_notice(wire, "main", edit(10, "New objective"));
+
+        // The queue sends no page after the one that finished the line: the
+        // only frames left are what the interface reads while it exits.
+        let mut line = String::new();
+        while wire.0.read_line(&mut line).is_ok_and(|read| read > 0) {
+            let request: Value = serde_json::from_str(&line).unwrap();
+            assert_ne!(request["method"], json!("session.history"), "{request}");
+            line.clear();
+        }
+    });
+    let mut command = home.command();
+    sized(&mut command, 100, 32);
+    let mut terminal = Terminal::launch_tui(command);
+    terminal.until("test / model");
+
+    terminal.write(b"/goal New objective\r");
+    terminal.write(b"/goal Another objective\r");
+    terminal.until("Goal: a /goal is still in progress on this line");
+    terminal.until("Goal edited on main · active");
+    terminal.until("  New objective");
+
+    terminal.write(b"/exit\r");
+    terminal.until("Bye!");
+    assert!(terminal.wait().success());
+    daemon.join().unwrap();
+}
+
+/// A JSON-RPC call over the real daemon's socket, skipping notices.
+fn rpc(wire: &mut BufReader<UnixStream>, id: &mut u64, method: &str, params: Value) -> Value {
+    *id += 1;
+    writeln!(
+        wire.get_mut(),
+        "{}",
+        json!({"jsonrpc":"2.0","id":*id,"method":method,"params":params})
+    )
+    .unwrap();
+    wire.get_mut().flush().unwrap();
+    loop {
+        let mut line = String::new();
+        assert_ne!(
+            wire.read_line(&mut line).unwrap(),
+            0,
+            "the daemon answered {method}"
+        );
+        let reply: Value = serde_json::from_str(&line).unwrap();
+        if reply["id"] == *id {
+            return reply;
+        }
+    }
+}
+
+/// Every message a chat request carries: its role and its content as sent.
+fn messages(request: &Value) -> Vec<(String, String)> {
+    request["messages"]
+        .as_array()
+        .map(|messages| {
+            messages
+                .iter()
+                .map(|message| {
+                    (
+                        message["role"].as_str().unwrap_or_default().to_owned(),
+                        match &message["content"] {
+                            Value::String(text) => text.clone(),
+                            other => other.to_string(),
+                        },
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Whether a message of `role` carries `needle`. The System prompt holds
+/// Goal's guide entry, which names every marker, so a marker the model is
+/// asked to act on is always a user or tool message.
+fn said(request: &Value, role: &str, needle: &str) -> bool {
+    messages(request)
+        .iter()
+        .any(|(message_role, text)| message_role == role && text.contains(needle))
+}
+
+/// One SSE frame of the fixture model.
+fn frame(delta: Value, finish: Value) -> String {
+    format!(
+        "data: {}\n\n",
+        json!({"id":"goal-fixture","choices":[{"index":0,"delta":delta,"finish_reason":finish}]})
+    )
+}
+
+/// The fixture model's reply: a plain turn, then the `goal_update` call the
+/// continuation asks for, then the closing reply to that call's result. A
+/// later request is answered with plain text, so a stray continuation cannot
+/// keep the conversation going.
+fn model_reply(request: &Value, index: usize) -> String {
+    let data = if index >= 3 {
+        frame(json!({"content":"No further work."}), json!("stop"))
+    } else if said(request, "tool", "goal_update recorded") {
+        frame(json!({"content":"Goal completed."}), json!("stop"))
+    } else if said(request, "user", r#"kind="continuation""#) {
+        let arguments = json!({"status":"completed","summary":"all done"}).to_string();
+        frame(
+            json!({"tool_calls":[{"index":0,"id":"goal-update","type":"function",
+                "function":{"name":"goal_update","arguments":arguments}}]}),
+            Value::Null,
+        ) + &frame(json!({}), json!("tool_calls"))
+    } else {
+        frame(json!({"content":"Continuing."}), json!("stop"))
+    };
+    data + "data: [DONE]\n\n"
+}
+
+/// A scripted OpenAI-compatible endpoint on loopback: it records every chat
+/// request and answers each with [`model_reply`].
+fn model_endpoint() -> (String, Arc<Mutex<Vec<Value>>>, Arc<AtomicBool>) {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let stop = Arc::new(AtomicBool::new(false));
+    let (seen, end) = (requests.clone(), stop.clone());
+    thread::spawn(move || {
+        while !end.load(Ordering::Acquire) {
+            let (stream, _) = match listener.accept() {
+                Ok(accepted) => accepted,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    thread::sleep(Duration::from_millis(10));
+                    continue;
+                }
+                Err(error) => panic!("{error}"),
+            };
+            stream.set_nonblocking(false).unwrap();
+            stream.set_read_timeout(Some(PATIENCE)).unwrap();
+            let mut stream = BufReader::new(stream);
+            let mut request_line = String::new();
+            assert!(stream.read_line(&mut request_line).unwrap() > 0);
+            let mut length = 0;
+            loop {
+                let mut line = String::new();
+                assert!(stream.read_line(&mut line).unwrap() > 0);
+                if line == "\r\n" {
+                    break;
+                }
+                if let Some(n) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    length = n.trim().parse::<usize>().unwrap();
+                }
+            }
+            let mut body = vec![0; length];
+            stream.read_exact(&mut body).unwrap();
+            if !request_line.starts_with("POST /v1/chat/completions") {
+                let head =
+                    "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                stream.get_mut().write_all(head.as_bytes()).unwrap();
+                stream.get_mut().flush().unwrap();
+                continue;
+            }
+            let request: Value = serde_json::from_slice(&body).unwrap();
+            let index = seen.lock().unwrap().len();
+            let reply = model_reply(&request, index);
+            seen.lock().unwrap().push(request);
+            let head = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                reply.len()
+            );
+            stream.get_mut().write_all(head.as_bytes()).unwrap();
+            stream.get_mut().write_all(reply.as_bytes()).unwrap();
+            stream.get_mut().flush().unwrap();
+        }
+    });
+    (format!("http://{address}/v1"), requests, stop)
+}
+
+/// The base CLI's default profile serves Goal natively: with no Node or
+/// Python on `PATH`, no staged package and no runtime acquisition, the
+/// daemon lists `session.goal.*`, reads the `goal` Settings source, and a
+/// completed turn drives a continuation that reaches the model. The model
+/// then reports completion, and no further continuation follows.
+#[test]
+fn the_product_profile_installs_native_goal_without_a_foreign_runtime() {
+    let home = Home::new();
+    let _daemon = OwnedDaemon(home.0.join("rust/daemon.sock"));
+    let path = home.0.join("path");
+    fs::create_dir_all(&path).unwrap();
+    assert!(!path.join("node").exists() && !path.join("python").exists());
+    let (base_url, requests, stop) = model_endpoint();
+    let output = home
+        .command()
+        .env("PATH", &path)
+        .args(["mcp", "list"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stream = UnixStream::connect(home.0.join("rust/daemon.sock")).unwrap();
+    stream.set_read_timeout(Some(PATIENCE)).unwrap();
+    let mut wire = BufReader::new(stream);
+    let mut id = 0;
+    let hello = rpc(
+        &mut wire,
+        &mut id,
+        "hello",
+        json!({"protocolVersion":3,"clientKind":"cli"}),
+    );
+    assert_eq!(
+        hello["result"]["daemonProfile"]["kind"], "product",
+        "{hello}"
+    );
+
+    let deadline = Instant::now() + PATIENCE;
+    let settings = loop {
+        let reply = rpc(
+            &mut wire,
+            &mut id,
+            "settings.read",
+            json!({"source":"goal","scope":"user"}),
+        );
+        if reply.get("result").is_some() {
+            break reply;
+        }
+        assert!(
+            ["service_reloading", "unknown_source"]
+                .iter()
+                .any(|code| reply["error"]["data"]["appError"] == *code),
+            "{reply}"
+        );
+        assert!(
+            Instant::now() < deadline,
+            "the goal Settings source registers"
+        );
+        thread::sleep(Duration::from_millis(5));
+    };
+    assert_eq!(
+        settings["result"]["document"]["maxContinuations"], 20,
+        "{settings}"
+    );
+
+    let provider = "018ec73f-0000-7000-8000-000000000097";
+    let configured = rpc(
+        &mut wire,
+        &mut id,
+        "provider.create",
+        json!({"providerId":provider,"displayName":"Goal profile fixture",
+        "connection":{"driverKind":"openai-compatible","baseUrl":base_url,"auth":{"type":"anonymous"}},
+        "models":[{"modelId":"goal","displayName":"Goal","status":"active",
+            "capabilities":dim_agent_types::CatalogCapabilities::with_limits(32_000,1024)}],"enabled":true}),
+    );
+    assert!(configured.get("result").is_some(), "{configured}");
+    let selected = rpc(
+        &mut wire,
+        &mut id,
+        "provider.select",
+        json!({"providerId":provider,"modelId":"goal"}),
+    );
+    assert!(selected.get("result").is_some(), "{selected}");
+    let created = rpc(
+        &mut wire,
+        &mut id,
+        "session.create",
+        json!({"cwd":home.0,"interactive":true,"tools":["goal_update"],
+        "permissionPolicy":{"preset":"full-access","allowedTools":[],"disallowedTools":[]}}),
+    );
+    let session = created["result"]["sessionId"]
+        .as_str()
+        .expect("the product creates a Session")
+        .to_owned();
+    assert_eq!(
+        created["result"]["model"]["modelId"], "goal",
+        "the selected provider serves the Session: {created}"
+    );
+    let deadline = Instant::now() + PATIENCE;
+    loop {
+        let set = rpc(
+            &mut wire,
+            &mut id,
+            "session.goal.set",
+            json!({"sessionId":session,"objective":"ship the native goal"}),
+        );
+        if let Some(result) = set.get("result") {
+            assert!(result["sequence"].is_u64(), "{set}");
+            break;
+        }
+        assert!(
+            ["service_reloading", "unknown_method"]
+                .iter()
+                .any(|code| set["error"]["data"]["appError"] == *code),
+            "{set}"
+        );
+        assert!(
+            Instant::now() < deadline,
+            "the Goal part activates in the product profile"
+        );
+        thread::sleep(Duration::from_millis(5));
+    }
+
+    let listed = rpc(
+        &mut wire,
+        &mut id,
+        "session.methods",
+        json!({"sessionId":session}),
+    );
+    let names: Vec<&str> = listed["result"]["methods"]
+        .as_array()
+        .expect("the method table")
+        .iter()
+        .filter_map(|method| method["name"].as_str())
+        .collect();
+    for name in [
+        "session.goal.set",
+        "session.goal.edit",
+        "session.goal.pause",
+        "session.goal.resume",
+        "session.goal.clear",
+    ] {
+        assert!(names.contains(&name), "{name} is listed: {listed}");
+    }
+
+    // The set's turn, the continuation's turn and that turn's tool result.
+    let deadline = Instant::now() + PATIENCE;
+    while requests.lock().unwrap().len() < 3 {
+        if Instant::now() >= deadline {
+            let seen = requests.lock().unwrap().clone();
+            let dump: Vec<String> = seen
+                .iter()
+                .map(|request| {
+                    messages(request)
+                        .iter()
+                        .map(|(role, text)| {
+                            format!("{role}: {}", text.chars().take(300).collect::<String>())
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n--\n")
+                })
+                .collect();
+            let history = rpc(
+                &mut wire,
+                &mut id,
+                "session.history",
+                json!({"sessionId":session,"branchId":"main","after":0,"limit":256}),
+            );
+            panic!(
+                "the goal's turns reach the model ({} requests)\nrequests: {dump:#?}\nhistory: {history}",
+                seen.len()
+            );
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    let idle = rpc(
+        &mut wire,
+        &mut id,
+        "session.idle",
+        json!({"sessionId":session,"branchId":"main"}),
+    );
+    assert!(idle.get("result").is_some(), "{idle}");
+    thread::sleep(Duration::from_millis(500));
+    let seen = requests.lock().unwrap().clone();
+    assert_eq!(
+        seen.len(),
+        3,
+        "a completed goal asks for no further turn: {seen:#?}"
+    );
+    assert!(
+        said(
+            &seen[1],
+            "user",
+            r#"kind="continuation" count="1" limit="20""#
+        ),
+        "the continuation reaches the model: {:#?}",
+        seen[1]
+    );
+    assert!(
+        said(&seen[2], "tool", "goal_update recorded: completed."),
+        "the tool result reaches the model: {:#?}",
+        seen[2]
+    );
+
+    let history = rpc(
+        &mut wire,
+        &mut id,
+        "session.history",
+        json!({"sessionId":session,"branchId":"main","after":0,"limit":256}),
+    );
+    assert_eq!(history["result"]["done"], true, "{history}");
+    let blocks: Vec<String> = history["result"]["events"]
+        .as_array()
+        .expect("the branch's events")
+        .iter()
+        .flat_map(|event| {
+            event["data"]["blocks"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|block| block["text"].as_str().map(str::to_owned))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    let continuation = blocks
+        .iter()
+        .find(|text| text.contains(r#"kind="continuation""#))
+        .expect("the completed turn writes a continuation");
+    assert!(
+        continuation.starts_with(r#"<dim-goal kind="continuation" count="1" limit="20" after=""#)
+            && continuation.contains(r#"branch="main">"#),
+        "{continuation}"
+    );
+    let report = blocks
+        .iter()
+        .find(|text| text.contains(r#"op="completed""#))
+        .expect("goal_update writes its report");
+    assert!(
+        report.contains("Result:\nall done") && report.contains(r#"branch="main""#),
+        "{report}"
+    );
+    assert!(
+        !home.0.join("plugins").exists(),
+        "no staged package directory exists"
+    );
+    assert!(
+        !home.0.join("runtimes").exists() && !home.0.join("rust/runtimes").exists(),
+        "no runtime was acquired"
+    );
+    stop.store(true, Ordering::Release);
+    assert!(
+        home.command()
+            .args(["daemon", "stop"])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
 }

@@ -111,6 +111,37 @@ test("a configuration view names variables without values", () => {
   assert.deepEqual(legacy.unsetVariables, [])
 })
 
+const { configuration, patch } = await import("../src/features/settings/mcp-form.ts")
+
+function draft(overrides) {
+  return {
+    id: "docs", source: "user", type: "stdio", command: "server", args: [], cwd: "",
+    argsAction: "replace", storedArgsCount: 0, secrets: [], enabled: false, token: "",
+    authConfigured: false, bearerAction: "keep", oauth: false, oauthAction: "keep",
+    clientId: "", callbackPort: "", scopes: "", metadataUrl: "", timeout: "",
+    metadataConfigured: false, metadataAction: "keep", secretsInUserScope: false,
+    ...overrides,
+  }
+}
+
+test("a number-typed timeout saves and tests as the number", () => {
+  const typed = draft({ timeout: 5000 })
+  assert.equal(configuration(typed).timeout, 5000)
+  assert.equal(patch(typed).timeout, 5000)
+  const remote = draft({ type: "http", url: "https://example.test/mcp", timeout: 5000 })
+  assert.equal(configuration(remote).timeout, 5000)
+  assert.equal(patch(remote).timeout, 5000)
+})
+
+test("a kept string timeout still saves as the number", () => {
+  const typed = draft({ timeout: "5000" })
+  assert.equal(configuration(typed).timeout, 5000)
+  assert.equal(patch(typed).timeout, 5000)
+  const blank = draft({ timeout: "" })
+  assert.equal("timeout" in configuration(blank), false)
+  assert.equal(patch(blank).timeout, null)
+})
+
 /// #952: the daemon expands a reference, so the form accepts an endpoint
 /// template and a malformed literal endpoint still stops the save.
 test("an endpoint template is a valid draft and a malformed literal URL is not", async () => {

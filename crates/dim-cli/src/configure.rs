@@ -1,8 +1,11 @@
 //! The Session configuration commands both clients offer: `/effort` and
 //! `/reasoning` (reasoning effort), `/fast` (service tier) and `/agent`.
 
-use crate::{Result, client::Client, wire::Configuration};
-use dim_agent_types::{CatalogCapabilities, ModelReasoning, ModelServiceTier};
+use crate::{
+    Result,
+    client::Client,
+    wire::{Configuration, ProviderCatalogSnapshot},
+};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -96,27 +99,7 @@ pub async fn run(
                     snapshot.capabilities.reasoning,
                 )
             } else {
-                #[derive(Deserialize)]
-                struct Snapshot {
-                    catalog: Option<Catalog>,
-                }
-                #[derive(Deserialize)]
-                struct Catalog {
-                    models: Vec<CatalogModel>,
-                }
-                #[derive(Deserialize)]
-                struct CatalogModel {
-                    id: String,
-                    capabilities: CatalogCapabilities,
-                    metadata: Option<Preferences>,
-                }
-                #[derive(Deserialize)]
-                #[serde(rename_all = "camelCase")]
-                struct Preferences {
-                    reasoning: Option<ModelReasoning>,
-                    service_tier: Option<ModelServiceTier>,
-                }
-                let snapshot: Snapshot = client
+                let snapshot: ProviderCatalogSnapshot = client
                     .typed("provider.catalog", json!({"providerId":model.provider_id}))
                     .await?;
                 let catalog = snapshot

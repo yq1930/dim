@@ -383,6 +383,22 @@ async fn session_history_page(
     Ok(events)
 }
 
+/// One page of an ended `branch` at its fixed head, from the tree that owns
+/// the end. `through` must end an atomic batch, so the page is never cut
+/// inside one.
+async fn ended_page(
+    session: &Session,
+    branch: &str,
+    after: u64,
+    limit: usize,
+    through: u64,
+) -> dim_agent_runtime::Result<Vec<Arc<dim_agent_types::AgentEvent>>> {
+    session
+        .session_service::<dim_agent_capabilities::timeline_tree::TreeCommands>()?
+        .page(branch.to_owned(), after, limit, through)
+        .await
+}
+
 /// The facts after `after` a page asks for, up to `limit`.
 fn history_page_query(after: u64, limit: usize) -> dim_agent_runtime::TimelineQuery {
     dim_agent_runtime::TimelineQuery {
@@ -730,11 +746,11 @@ impl AgentIndex {
     /// One page of `branch`'s own facts after `after`, at most `limit`, never
     /// past `through`, ending on an atomic batch.
     ///
-    /// A loaded line pages through its Session's query, which asks the store
-    /// whether the page's last fact ends a batch ([ADR 020 D4]); a line whose
-    /// Session this process does not hold, or an ended one when the host keeps
-    /// no store of its own, reads through a page read instead: the tree owns
-    /// the ended lines and serves them at their fixed head ([ADR 020 D6]).
+    /// The Session must already be loaded. An ended line is served by the tree
+    /// at its fixed head; otherwise the Session query serves the page. The
+    /// `ended_head` check is a snapshot: a line that ends while the query reads
+    /// it answers `BranchEnded`, and the page is re-read through the tree at
+    /// the fixed head.
     pub(crate) async fn history_page(
         &self,
         id: &str,
@@ -743,56 +759,26 @@ impl AgentIndex {
         limit: usize,
         through: u64,
     ) -> dim_agent_runtime::Result<Vec<Arc<dim_agent_types::AgentEvent>>> {
-        if let Some((_, session)) = self.session(id)
-            && !session.is_unloading()
-        {
-            if session.ended_head(branch).is_none() {
-                match session_history_page(&session, branch, after, limit, through).await {
-                    Err(AgentError::BranchEnded(_)) => {}
-                    result => return result,
-                }
-            } else if self.session_store.is_none() {
-                let page = session
-                    .session_service::<dim_agent_capabilities::timeline_tree::TreeCommands>()?
-                    .page(branch.to_owned(), after, limit)
-                    .await?;
-                return Ok(page
-                    .into_iter()
-                    .filter(|event| event.sequence <= through)
-                    .collect());
-            }
+        let (_, session) = self
+            .session(id)
+            .ok_or_else(|| AgentError::Closed(id.into()))?;
+        if session.is_unloading() {
+            return Err(AgentError::Storage("Session is unloading".into()));
         }
-        self.session_store
-            .as_ref()
-            .ok_or_else(|| AgentError::Closed(id.into()))?
-            .read_page_without_request_bodies(id, branch, after, limit, through)
-            .await
-    }
-    /// The error a history window answers without the native Session store.
-    fn no_history_store() -> AgentError {
-        AgentError::InvalidInput("history windows require the native Session store".into())
+        if session.ended_head(branch).is_some() {
+            return ended_page(&session, branch, after, limit, through).await;
+        }
+        match session_history_page(&session, branch, after, limit, through).await {
+            Err(AgentError::BranchEnded(_)) => {
+                ended_page(&session, branch, after, limit, through).await
+            }
+            page => page,
+        }
     }
     /// Whether this index has the native Session store the history window
     /// reads (session-history-window §5.3).
     pub(crate) fn has_session_store(&self) -> bool {
         self.session_store.is_some()
-    }
-    /// The newest events below `before` in `window_start..=through`, whole
-    /// batches at both ends.
-    pub(crate) async fn read_page_before(
-        &self,
-        id: &str,
-        branch: &str,
-        before: u64,
-        limit: usize,
-        through: u64,
-        window_start: u64,
-    ) -> dim_agent_runtime::Result<Vec<dim_agent_runtime::StoredEvent>> {
-        self.session_store
-            .as_ref()
-            .ok_or_else(Self::no_history_store)?
-            .read_page_before(id, branch, before, limit, through, window_start)
-            .await
     }
     fn slot(&self, id: &str) -> Arc<SessionSlot> {
         self.directory

@@ -295,7 +295,11 @@ pub struct Mentions {
 
 impl Mentions {
     pub fn new(root: PathBuf) -> Self {
-        let shallow = root.parent().is_none() || home().is_some_and(|home| same_dir(&home, &root));
+        Self::new_with_home(root, home())
+    }
+
+    fn new_with_home(root: PathBuf, home: Option<PathBuf>) -> Self {
+        let shallow = root.parent().is_none() || home.is_some_and(|home| same_dir(&home, &root));
         Self {
             root,
             shallow,
@@ -743,16 +747,22 @@ mod tests {
 
     #[test]
     fn the_home_directory_is_listed_one_level_and_never_walked() {
-        let Some(home) = home() else { return };
-        let mut mentions = Mentions::new(home.clone());
-        let started = Instant::now();
-        let found = mentions.candidates("");
-        assert!(started.elapsed() < Duration::from_secs(1));
+        let home = tempfile::tempdir().unwrap();
+        std::fs::write(home.path().join("notes.txt"), "").unwrap();
+        std::fs::create_dir(home.path().join("projects")).unwrap();
+        std::fs::write(home.path().join("projects/hidden.txt"), "").unwrap();
+        let home = home.path().to_owned();
+        let mut mentions = Mentions::new_with_home(home.clone(), Some(home));
+        let found: Vec<String> = mentions
+            .candidates("")
+            .into_iter()
+            .map(|candidate| candidate.text)
+            .collect();
         assert!(mentions.walk.is_none(), "home must not be walked");
-        assert!(
-            found
-                .iter()
-                .all(|c| !c.text.trim_end_matches('/').contains('/'))
+        assert_eq!(
+            found,
+            ["projects/", "notes.txt"],
+            "only the home's own entries are listed"
         );
     }
 }

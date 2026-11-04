@@ -18,7 +18,7 @@ use dim_agent_capabilities::methods::RpcError;
 use rutis::host::FiberView;
 use sha2::{Digest, Sha256};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{
         Arc, Mutex, Weak,
         atomic::{AtomicU64, Ordering},
@@ -69,6 +69,10 @@ impl Instance {
 pub(crate) struct UiHost {
     leaves: UiLeaves,
     instances: Mutex<HashMap<String, Instance>>,
+    /// Leaf connections whose registration is gone but whose RPC connection
+    /// is still attached; presence must not report them under their declared
+    /// channel during that window.
+    disposing: Mutex<HashSet<String>>,
     generations: AtomicU64,
     /// Leaf disposals started outside a caller that awaits them (a session
     /// that ended, a leaf that did not attach); `close_all` waits for them.
@@ -81,6 +85,7 @@ impl UiHost {
         Arc::new_cyclic(|this| Self {
             leaves,
             instances: Mutex::new(HashMap::new()),
+            disposing: Mutex::new(HashSet::new()),
             generations: AtomicU64::new(0),
             closing: TaskTracker::new(),
             this: this.clone(),
@@ -89,6 +94,29 @@ impl UiHost {
 
     fn next_generation(&self) -> u64 {
         self.generations.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    /// Whether `connection_id` is the connection a registered UI leaf uses.
+    /// Presence uses it to count that connection as `tui` rather than its
+    /// declared `cli` kind.
+    pub(crate) fn is_leaf_connection(&self, connection_id: &str) -> bool {
+        self.instances
+            .lock()
+            .expect("ui registry")
+            .values()
+            .any(|instance| instance.connection.as_deref() == Some(connection_id))
+    }
+    pub(crate) fn is_disposing(&self, connection_id: &str) -> bool {
+        self.disposing
+            .lock()
+            .expect("disposing ui connections")
+            .contains(connection_id)
+    }
+    pub(crate) fn finished(&self, connection_id: &str) {
+        self.disposing
+            .lock()
+            .expect("disposing ui connections")
+            .remove(connection_id);
     }
 
     /// Opens a session with the leaf at `address` and returns the token its
@@ -304,6 +332,7 @@ impl UiHost {
                 leaf.replaces = None;
             }
         }
+        hub.notify_clients(session_id);
         Ok(attached)
     }
 
@@ -427,6 +456,7 @@ impl UiHost {
         let _ = self
             .close(hub, &params.ui_id, Some("replaced".to_owned()))
             .await;
+        hub.notify_clients(&params.session_id);
         Ok(attached)
     }
 
@@ -481,6 +511,14 @@ impl UiHost {
         reason: Option<String>,
     ) -> Result<(), RpcError> {
         let instance = self.forget(ui_id).ok_or_else(ui_unknown)?;
+        if instance.leaf.is_some()
+            && let Some(connection) = instance.connection.as_deref()
+        {
+            self.disposing
+                .lock()
+                .expect("disposing ui connections")
+                .insert(connection.to_owned());
+        }
         if let Some(connection) = instance
             .connection
             .as_deref()
@@ -491,6 +529,7 @@ impl UiHost {
         if let Some(view) = instance.leaf.and_then(|leaf| leaf.view) {
             let _ = view.dispose().await;
         }
+        hub.notify_clients(&instance.session_id);
         Ok(())
     }
 

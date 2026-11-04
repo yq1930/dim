@@ -1218,7 +1218,7 @@ fn state_change(source: &str, body: &str) -> EventKind {
     })
 }
 
-/// Goal's continuation input (`goal.ts`, `writes.continuation`): a queued
+/// Goal's continuation input (`text::continuation` in the Goal crate): a queued
 /// `dim-goal` block with no user content and no line write.
 fn continuation() -> EventKind {
     EventKind::InputMessage(InputMessageData {

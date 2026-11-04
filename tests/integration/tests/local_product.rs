@@ -341,7 +341,10 @@ async fn unresolved_write_targets_fail_without_mutation() {
     std::os::unix::fs::symlink("loop", cwd.join("loop")).unwrap();
     let product = product(&dirs).await;
     let session = session(&product, &cwd).await;
-    for path in ["dangling/new/file.txt", "loop/file.txt"] {
+    for (path, named) in [
+        ("dangling/new/file.txt", "dangling"),
+        ("loop/file.txt", "loop"),
+    ] {
         product.model.push(Step::Tool(
             "write",
             serde_json::json!({"path": path, "content": "blocked"}),
@@ -352,9 +355,12 @@ async fn unresolved_write_targets_fail_without_mutation() {
             .await
             .unwrap();
         session.idle("main").await.unwrap();
-        assert_eq!(
-            tool_results(&session).await.last().unwrap().is_error,
-            Some(true)
+        let result = tool_results(&session).await.last().unwrap().clone();
+        assert_eq!(result.is_error, Some(true));
+        let message = result_text(&result);
+        assert!(
+            message.contains("Failed to resolve") && message.contains(named),
+            "{message}"
         );
     }
     assert!(!dirs.root.join("missing").exists());

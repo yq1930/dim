@@ -468,7 +468,7 @@ impl Projection {
                 None => settings
                     .read::<McpPluginServers>(SettingsScope::User, cancel)
                     .await
-                    .map(|snapshot| (snapshot.revision, snapshot.document.entries().collect())),
+                    .map(|snapshot| (snapshot.revision, snapshot.document.entries())),
             };
             let (revision, servers) = match read {
                 Ok(read) => read,

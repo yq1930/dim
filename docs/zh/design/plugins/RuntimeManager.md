@@ -75,13 +75,14 @@ session-node / py：启动进程、握手、挂载会话、维护 RuntimeStatus
 
 ```json
 "runtimes": {
-  "node":   { "source": "download", "auto": true },
+  "node":   { "source": "download", "auto": false },
   "python": { "source": "download", "auto": false }
 }
 ```
 
 - `source`：`download` 用上面的压缩包；`system` 用 `PATH` 上的解释器（`node`；`python3`，Windows 上是 `python`），获取时检查：Node 22.19 或更高（`@arcships/rutis-runtime` 的 `engines`）且带自己的 npm（`npm-cli.js` 在官方压缩包和安装程序放的位置；没有它的 Node 会失败，原因里写出这个路径），Python 3.12 或更高且有 pip。检查不通过就是这个运行时的失败（§3.3）。
 - `auto`：`true` 每次启动都获取。`false` 在 `runtime.install`（§5）之前不动；装好后会被记录（§2.4），之后每次启动都像 `auto` 一样获取。
+- 发布文件把两个运行时都设为 `auto: false`，因此首次启动不下载任何东西。Node 插件（例如 Workflow）需要先执行 `runtime.install`（`/runtime` 面板，或 `dimcode runtime install node`）才能运行。
 - 用户在 `<home>/runtimes/config.json` 里覆盖预置，形状相同，按运行时、按字段覆盖；客户端通过 `runtime.configure`（§5）写它，保持这个合并。它在 home 里，所以只有用户本地配置能改，项目配置不能。
 - 配置在动作应用它的那一刻读取，而不是启动时读一次：`runtime.install` 当时重新读文件和环境（§3.3），所以 `source` 或 `auto` 的改动不必重启进程即可生效。`runtime.list` 报告的是正在生效的运行时，不是文件——改了的文件要等某个动作应用它才出现。
 
@@ -174,11 +175,11 @@ rutis 的 Python 运行时是一个进程；行 `py:<模块>` 用 `importlib.imp
 ```text
 bin/dimcode[.exe]
 default-plugins.json        # PluginManager §2.3，含 `runtimes`（§2.2）
-plugins/<name>/             # goal、web、workflow，带生产依赖的 node_modules；plugin-authoring
+plugins/<name>/             # plugin-authoring，没有生产依赖的 node_modules
 LICENSE  NOTICE  release-manifest.json
 ```
 
-`scripts/stage-plugins.mjs` 复制 `runtime/default-plugins.json` 和每个默认插件的目录（不含测试、`tsconfig.json`、`node_modules`），在每个有 `package.json` 的目录里按它固定的 lock 执行 `npm ci --omit=dev --ignore-scripts --no-bin-links`；`stage-release.mjs --plugins DIR` 把结果放在 `bin/` 旁边。默认插件从自己的 `node_modules` 解析 `@arcships/rutis`；它不能解析出自己的一份 Cordis，因为 rutis-runtime 拒绝 Cordis 与运行时不同的插件。插件入口是 TypeScript，放在 npm 包的 `node_modules` 下也可以：Node 运行时通过 tsx 加载它们，不用 Node 自带的去类型。查找这个文件（`<prefix>/default-plugins.json`，即 `bin/` 的上一级，或 `DIMCODE_DEFAULT_PLUGINS`）和 App Server 的 `--defaults` 参数归 PluginManager（[#485](https://github.com/arcships/dim/pull/485)）；RuntimeManager 读这个文件的 `runtimes` 一节。有 `--defaults` 且没有 `--node` 时，App Server 用 RuntimeManager 获取运行时；否则行为与现在相同（显式的 `--node`、`--js-runtime`、`--python` 继续用于开发和测试）。
+`scripts/stage-plugins.mjs` 复制 `runtime/default-plugins.json` 和每个默认插件的目录（不含测试、`tsconfig.json`、`node_modules`），在每个有 `package.json` 的目录里按它固定的 lock 执行 `npm ci --omit=dev --ignore-scripts --no-bin-links`；`stage-release.mjs --plugins DIR` 把结果放在 `bin/` 旁边。默认插件从自己的 `node_modules` 解析 `@arcships/rutis`；它不能解析出自己的一份 Cordis，因为 rutis-runtime 拒绝 Cordis 与运行时不同的插件。插件入口是 TypeScript，放在 npm 包的 `node_modules` 下也可以：Node 运行时通过 tsx 加载它们，不用 Node 自带的去类型。查找这个文件（`<prefix>/default-plugins.json`，即 `bin/` 的上一级，或 `DIMCODE_DEFAULT_PLUGINS`）和 App Server 的 `--defaults` 参数归 PluginManager（[#485](https://github.com/arcships/dim/pull/485)）；RuntimeManager 读这个文件的 `runtimes` 一节。有 `--defaults` 且没有 `--node` 时，App Server 在运行时的 `auto` 开启或它已被记录为安装过时，用 RuntimeManager 获取它；否则行为与现在相同（显式的 `--node`、`--js-runtime`、`--python` 继续用于开发和测试）。
 
 ## 7. 安全
 

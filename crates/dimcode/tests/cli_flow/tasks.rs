@@ -1,6 +1,66 @@
 use super::*;
 
 #[test]
+fn opening_a_discovered_line_loads_its_transcript_through_the_task_history_queue() {
+    let home = Home::new();
+    let (ready, readiness) = std::sync::mpsc::channel();
+    let daemon = home.daemon(move |wire| {
+        wire.hello(&[]);
+        wire.created();
+        let attach = wire.read("session.attach");
+        wire.reply(&attach, attach_record(&attach));
+        let history = wire.read("session.history");
+        let branches: Vec<_> = ["child-a", "child-b", "child-c"].iter().enumerate().map(|(i, branch)| {
+            fact(branch, i as u64 + 1, 1000, "branch", "create", json!({
+                "branch":branch,"at":{"kind":"create"},
+                "source":{"kind":"host","operation_id":branch},"prompt":branch,
+            }))
+        }).collect();
+        wire.reply(&history, json!({"events":branches,"through":8,"nextAfter":8,"done":true}));
+        let mut branches = ["child-a", "child-b", "child-c"].into_iter();
+        for _ in 0..5 {
+            let request = wire.read_any();
+            match request["method"].as_str().unwrap() {
+                "session.context.usage" => wire.send(json!({"jsonrpc":"2.0","id":request["id"],"error":{
+                    "code":-32601,"message":"Unknown method","data":{"appError":"unknown_method"}}})),
+                "account.providers" => wire.reply(&request, json!([])),
+                "session.history" => {
+                    let branch = branches.next().expect("one discovery page per branch");
+                    assert_eq!(request["params"]["branchId"], branch);
+                    let text = fact(&format!("{branch}-text"), 2, 2000, "step", "text", json!({
+                        "turn_id":"turn","request_id":"request","delta":format!("saved transcript of {branch}"),
+                    }));
+                    wire.reply(&request, json!({"events":[text],"through":2,"nextAfter":2,"done":true}));
+                }
+                method => panic!("unexpected request {method}"),
+            }
+        }
+        ready.send(()).unwrap();
+        let history = wire.read("session.history");
+        assert_eq!(history["params"], json!({"sessionId":"session","branchId":"child-a","after":0,"limit":256}));
+        wire.reply(&history, json!({"events":[fact("child-a-text",2,2000,"step","text",json!({
+            "turn_id":"turn","request_id":"request","delta":"saved transcript of child-a",
+        }))],"through":2,"nextAfter":2,"done":true}));
+        event(wire, "child-a", fact("child-a-live",3,3000,"step","text",json!({
+            "turn_id":"turn","request_id":"request","delta":" and live continuation",
+        })));
+        wire.hold();
+    });
+    let mut terminal = Terminal::launch_tui(home.command());
+    terminal.until("test / model");
+    readiness.recv_timeout(PATIENCE).unwrap();
+    terminal.write(b"/lines\r");
+    terminal.until("the session itself");
+    terminal.write(b"\x1b[B\r");
+    terminal.until("saved transcript of child-a and live continuation");
+    assert!(!terminal.transcript.contains("saved transcript of child-b"));
+    assert!(!terminal.transcript.contains("saved transcript of child-c"));
+    home.kill(&terminal);
+    terminal.wait();
+    daemon.join().unwrap();
+}
+
+#[test]
 #[ignore = "requires DIM_TEST_APP_SERVER pointing to the built production App Server"]
 fn native_tui_stop_all_settles_the_member_and_reports_cancellation_to_the_leader() {
     fn rpc(stream: &mut BufReader<UnixStream>, method: &str, params: Value) -> Value {

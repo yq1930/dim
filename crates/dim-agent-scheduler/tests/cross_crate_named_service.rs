@@ -88,7 +88,11 @@ async fn a_native_process_plugin_reads_session_permissions_by_name() {
     .await
     .expect("the probe reports a reply");
     assert!(value.get("error").is_none(), "{value}");
-    assert!(value["preset"].is_string(), "{value}");
+    assert_eq!(
+        value,
+        json!({"preset":"read-only","allowedTools":[],"disallowedTools":[]}),
+        "the reply is the host's default policy"
+    );
     server.shutdown();
     server.join().await.unwrap();
 }

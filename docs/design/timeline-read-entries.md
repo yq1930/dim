@@ -2,7 +2,7 @@
 
 Status: Proposed. Scope: every way a part, the App Server or a TypeScript plugin reads events from a Timeline, which of them the event query ([ADR 019](../adr/019-event-query.md), [plugin contract §5.4](plugin-contract.md#54-the-event-query)) replaces, and what is left. This document holds an audit and the decisions proposed in [ADR 020](../adr/020-timeline-read-convergence.md); a decision here takes effect when that ADR is accepted. Language: English.
 
-Base: `origin/main` at `514225777`. Call sites exclude tests and examples. Every row below was read from source, not carried over from an earlier plan.
+Base: `origin/main` at `514225777`. Call sites exclude tests and examples. Every row below was read from source at that base, so the TypeScript paths it names, Goal's `runtime/plugins/goal/branch.ts` among them, are a pre-port snapshot.
 
 ## 1. The entries
 
@@ -41,10 +41,8 @@ Deleting a `Timeline` method alone leaves these reachable.
 
 | Read | Defined | Callers |
 | --- | --- | --- |
-| `SessionStore::read_page` | `storage/timeline.rs:1258` | `collaboration.rs:1106`, `:2232` |
 | `TimelineStore::read_page`, called by the TimelineTree part itself | `timeline_store.rs:229` | `timeline_tree.rs:425`, `:668` (also behind `TreeTimeline::page` :180) |
 | `Session::local_page` reads the store port directly | `agent.rs:562-585` | `agents.rs:677`, `:1007`, `connection/tree.rs:227`, `agents/sessions.rs:616` |
-| `read_page_without_request_bodies` | :1271 | `agents.rs:634`, through `Agents::read_page` |
 | `read_page_before` | :1409 | `agents.rs:763`, `connection/tree.rs:209` |
 | `read_events` | :1539 | `agents.rs:688`, `collaboration.rs:1151` |
 | `turn_window` | :1304 | `agents.rs:746`, `connection/tree.rs:197` |
@@ -57,7 +55,6 @@ These contradict §5.4's "a part reads facts through its branch's `timeline` ser
 
 ### 1.6 Store port (`timeline_store.rs`)
 
-`head` :207, `read` :215, `read_page` :229, `event_by_id` :283, `read_context` :319, `read_kind_page` :373, `read_page_without_request_bodies` :437, `query` :464, `read_segments` :471, `trace` :694, `latest_snapshot` :710. The SQLite implementations are at `storage/timeline.rs:3507-4119`.
 
 ### 1.7 Dependency graph
 
@@ -147,7 +144,6 @@ Each row was read from the consumer's source: what it takes from the Timeline, h
 | Cut validation (`history.rs:981`) | Whether a sequence ends an atomic batch | `local(through..=through)`; the store errors inside a batch | No event content, only batch structure; the query cannot give it |
 | Recall (`recall.rs:184`) | Newest-first events of several kinds, folded, stopping once the answer is reached | `page_cursor` and `page` | Descending paging with an early stop |
 | Collaboration rebuild (`collaboration.rs:2726`) | Approval inputs not yet handled, and every `collaboration/result` with its sequence | `local(..=committed())`, walked twice | Four kinds, not the whole branch. It reads to `committed()` |
-| Peer session read (`collaboration.rs:1106`) | A page of another session's events from `after`, plus calls fetched by id | `SessionStore::read_page`, `read_events` | Paging and by-id. The App Server reading another session, not a part reading its own Timeline |
 | Branch tool default start (`timeline_tree.rs:2291`) | The `model/start` before this turn's first `tool-use`, minus one | `parent.local(..)`, whole parent | Two events, matched on `turn_id` and `request_id`. The predicate is one equality, so one match stays with the caller |
 | Fork check and prefix (`agents.rs:1446`) | Whether the cut is legal, and the context before it | `validate_context_boundary_in` and `context` | Folding the prefix is the projection's job; the batch check is as above |
 | History window (`connection/tree.rs:197`) | The newest turn's start and a descending page inside the window | `turn_window` and `read_page_before` | Descending paging, plus the newest `turn/start` |

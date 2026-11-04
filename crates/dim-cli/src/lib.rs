@@ -149,12 +149,6 @@ async fn run_tui_with_connection(
 /// node, asks the daemon to open a session with it, then runs its own
 /// `Tui`. It ends when the `Tui` leaves or the session ends.
 async fn open_tui_leaf(root: &rutis::Ctx, options: &Options) -> Result<i32> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct Created {
-        session_id: String,
-    }
-
     let (link, connection) = daemon_link(root, options, true).await?;
     if !connection.offers("ui.leaf.2") {
         return run_tui_with_connection(root, options, link, connection).await;
@@ -173,23 +167,9 @@ async fn open_tui_leaf(root: &rutis::Ctx, options: &Options) -> Result<i32> {
         session_host::adopt_startup(&mut client, options, id).await?;
         id.clone()
     } else {
-        let mut params = serde_json::json!({ "cwd": options.workspace().as_str() });
-        options.creation_startup(&mut params);
-        let mut preferences = options.creation_preferences(None);
-        let mut target = None;
-        if let (Some(provider), Some(model)) = (&options.provider, &options.model) {
-            preferences = options.creation_preferences(
-                session_host::saved_model_preferences(&mut client, provider, model).await?,
-            );
-            target = Some((provider.clone(), model.clone()));
-        }
-        if let Some(preferences) = &preferences {
-            params["modelPreferences"] = preferences.clone();
-        }
-        if let Some(policy) = permission::creation_policy(options) {
-            params["permissionPolicy"] = policy;
-        }
-        let created: Created = match client.typed("session.create", params).await {
+        let params = session_create_from_options(&mut client, options).await?;
+        let preferences = params.get("modelPreferences").cloned();
+        let created: wire::Created = match client.typed("session.create", params).await {
             Ok(created) => created,
             Err(error)
                 if options.provider.is_none()
@@ -204,7 +184,7 @@ async fn open_tui_leaf(root: &rutis::Ctx, options: &Options) -> Result<i32> {
             Err(error) => {
                 let error = model_adoption_error(
                     &mut client,
-                    target.as_ref().map(|(p, m)| (p.as_str(), m.as_str())),
+                    options.provider.as_deref().zip(options.model.as_deref()),
                     error,
                     preferences.as_ref().filter(|_| options.effort.is_none()),
                 )
@@ -370,6 +350,33 @@ fn plugin_error(error: Arc<rutis::host::ErrorKind>) -> Error {
     }
 }
 
+/// Session creation parameters without a startup model selection.
+pub(crate) fn session_create_params(options: &Options) -> serde_json::Value {
+    let mut params = serde_json::json!({"cwd": options.workspace().as_str()});
+    if let Some(policy) = permission::creation_policy(options) {
+        params["permissionPolicy"] = policy;
+    }
+    params
+}
+
+/// Session creation with the launch options and the chosen model's saved preferences.
+pub(crate) async fn session_create_from_options(
+    client: &mut client::Client,
+    options: &Options,
+) -> Result<serde_json::Value> {
+    let mut params = session_create_params(options);
+    options.creation_startup(&mut params);
+    let saved = if let (Some(provider), Some(model)) = (&options.provider, &options.model) {
+        session_host::saved_model_preferences(client, provider, model).await?
+    } else {
+        None
+    };
+    if let Some(preferences) = options.creation_preferences(saved) {
+        params["modelPreferences"] = preferences;
+    }
+    Ok(params)
+}
+
 /// The failure of adopting `target` into a Session. When the target's
 /// catalog entry reports missing limits, the declaration command is appended;
 /// the catalog is read only on this failure path, never from the message.
@@ -399,22 +406,7 @@ async fn declaration_hint(
     provider_id: &str,
     model_id: &str,
 ) -> Option<String> {
-    #[derive(serde::Deserialize)]
-    struct Snapshot {
-        catalog: Option<Catalog>,
-    }
-    #[derive(serde::Deserialize)]
-    struct Catalog {
-        models: Vec<CatalogModel>,
-    }
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct CatalogModel {
-        id: String,
-        #[serde(default)]
-        missing_limits: Vec<String>,
-    }
-    let snapshot: Snapshot = client
+    let snapshot: wire::ProviderCatalogSnapshot = client
         .typed(
             "provider.catalog",
             serde_json::json!({"providerId": provider_id}),
@@ -709,31 +701,16 @@ async fn act(root: &rutis::Ctx, mut options: Options) -> Result<i32> {
                 )
                 .await?;
             }
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Catalog {
-                models: Vec<Model>,
-                disabled_model_ids: Vec<String>,
-            }
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Model {
-                id: String,
-                name: String,
-                unavailable_reason: Option<String>,
-                #[serde(default)]
-                missing_limits: Vec<String>,
-            }
             let params = serde_json::json!({"providerId":provider});
             let catalog = if options.refresh {
-                Some(client.typed::<Catalog>("provider.refresh", params).await?)
+                Some(
+                    client
+                        .typed::<wire::ProviderCatalog>("provider.refresh", params)
+                        .await?,
+                )
             } else {
-                #[derive(serde::Deserialize)]
-                struct Snapshot {
-                    catalog: Option<Catalog>,
-                }
                 client
-                    .typed::<Snapshot>("provider.catalog", params)
+                    .typed::<wire::ProviderCatalogSnapshot>("provider.catalog", params)
                     .await?
                     .catalog
             };
@@ -825,14 +802,14 @@ async fn act(root: &rutis::Ctx, mut options: Options) -> Result<i32> {
             Ok(0)
         }
         Action::McpList => {
-            mcp_command::list(&mut client, &options).await?;
+            mcp_command::list(&mut client, options.workspace().as_str()).await?;
             Ok(0)
         }
         Action::McpLogin(id) => {
             let mut input = input::Input::new()?;
             mcp_command::sign_in(
                 &mut client,
-                &options,
+                options.workspace().as_str(),
                 &mut input,
                 id,
                 options.mcp_source.as_deref(),
@@ -842,10 +819,22 @@ async fn act(root: &rutis::Ctx, mut options: Options) -> Result<i32> {
             .await
         }
         Action::McpLogout(id) => {
-            mcp_command::sign_out(&mut client, &options, id, options.mcp_source.as_deref()).await
+            mcp_command::sign_out(
+                &mut client,
+                options.workspace().as_str(),
+                id,
+                options.mcp_source.as_deref(),
+            )
+            .await
         }
         Action::McpDisconnect(id) => {
-            mcp_command::disconnect(&mut client, &options, id, options.mcp_source.as_deref()).await
+            mcp_command::disconnect(
+                &mut client,
+                options.workspace().as_str(),
+                id,
+                options.mcp_source.as_deref(),
+            )
+            .await
         }
         Action::McpEnable { id, enabled } => {
             let state = management::mcp::set_enabled(

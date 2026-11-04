@@ -53,6 +53,10 @@ pub enum Configuration {
         cwd: Option<String>,
         #[serde(rename = "envNames")]
         env_names: Vec<String>,
+        /// The entry's `tools/call` limit in milliseconds; absent means the
+        /// default.
+        #[serde(default)]
+        timeout: Option<u64>,
         #[serde(rename = "referencedVariables", default)]
         referenced_variables: Vec<String>,
         #[serde(rename = "unsetVariables", default)]
@@ -71,6 +75,10 @@ pub struct Remote {
     oauth_configured: bool,
     #[serde(default)]
     oauth: Option<OAuthView>,
+    /// The entry's `tools/call` limit in milliseconds; absent means the
+    /// default.
+    #[serde(default)]
+    timeout: Option<u64>,
     #[serde(default)]
     referenced_variables: Vec<String>,
     #[serde(default)]
@@ -174,16 +182,25 @@ impl Configuration {
                 ]
             }
         };
-        let (referenced, unset) = match self {
+        let (referenced, unset, timeout) = match self {
             Self::Stdio {
                 referenced_variables,
                 unset_variables,
+                timeout,
                 ..
-            } => (referenced_variables, unset_variables),
-            Self::Http(remote) | Self::Sse(remote) => {
-                (&remote.referenced_variables, &remote.unset_variables)
-            }
+            } => (referenced_variables, unset_variables, timeout),
+            Self::Http(remote) | Self::Sse(remote) => (
+                &remote.referenced_variables,
+                &remote.unset_variables,
+                &remote.timeout,
+            ),
         };
+        if let Some(timeout) = timeout {
+            lines.push(tf(
+                "Tool call timeout: {millis} ms",
+                &[("millis", &timeout.to_string())],
+            ));
+        }
         lines.push(tf("Variables: {names}", &[("names", &names(referenced))]));
         lines.push(tf("Unset variables: {names}", &[("names", &names(unset))]));
         lines
@@ -240,6 +257,13 @@ pub struct Patch {
         skip_serializing_if = "Option::is_none"
     )]
     bearer: Option<BearerPatch>,
+    /// A present `null` clears the entry's limit.
+    #[serde(
+        default,
+        deserialize_with = "nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    timeout: Option<Option<u64>>,
     #[serde(
         default,
         deserialize_with = "non_null",
@@ -572,13 +596,27 @@ pub async fn editable(client: &mut Client, cwd: &str, server: &Server) -> Result
 /// placeholder would be written literally.
 pub fn seed(configuration: &Value) -> Result<Value, String> {
     Ok(match Configuration::decode(configuration)? {
-        Configuration::Stdio { command, cwd, .. } => json!({
-            "command": command,
-            "cwd": cwd.unwrap_or_default(),
-            "env": {},
-        }),
+        Configuration::Stdio {
+            command,
+            cwd,
+            timeout,
+            ..
+        } => {
+            let mut document = json!({
+                "command": command,
+                "cwd": cwd.unwrap_or_default(),
+                "env": {},
+            });
+            if let Some(timeout) = timeout {
+                document["timeout"] = json!(timeout);
+            }
+            document
+        }
         Configuration::Http(remote) | Configuration::Sse(remote) => {
             let mut document = json!({"headers": {}});
+            if let Some(timeout) = remote.timeout {
+                document["timeout"] = json!(timeout);
+            }
             if let Some(oauth) = remote.oauth {
                 let mut set = serde_json::Map::new();
                 set.insert("action".into(), json!("set"));

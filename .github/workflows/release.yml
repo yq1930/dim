@@ -5,8 +5,8 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing alpha tag (vX.Y.Z-alpha.N)
-        required: true
+        description: Existing alpha tag (leave empty to select the next alpha from main)
+        required: false
         type: string
 permissions:
   contents: read
@@ -15,24 +15,55 @@ concurrency:
   cancel-in-progress: false
 jobs:
   preflight:
-    if: ${{ github.repository == 'arcships/dim' }}
-    runs-on: [self-hosted, linux, x64]
-    timeout-minutes: 10
+    if: github.repository == 'arcships/dim' && (github.event_name == 'push' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     outputs:
-      tag: ${{ steps.release.outputs.tag }}
-      sha: ${{ steps.release.outputs.sha }}
-      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag || steps.main.outputs.tag }}
+      sha: ${{ steps.release.outputs.sha || github.sha }}
+      version: ${{ steps.release.outputs.version || steps.main.outputs.version }}
+      stamp: ${{ steps.main.outputs.version != '' || steps.release.outputs.stamp == 'true' }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version-file: .node-version
           package-manager-cache: false
+      - name: Check the latest published source and allocate the next alpha
+        if: github.event_name == 'workflow_dispatch' && inputs.tag == ''
+        id: main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)" == "$GITHUB_SHA" ]] || { echo 'Dispatch again from the current main commit.' >&2; exit 1; }
+          existing=$(git tag --points-at "$GITHUB_SHA" --list 'v*-alpha.*')
+          if [[ -n "$existing" ]]; then
+            echo "Skipped: inspect the existing alpha tag(s) for $GITHUB_SHA: $existing" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          previous=$(npm view dimcode-alpha dist-tags.alpha)
+          [[ "$previous" =~ ^[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$ ]]
+          url=$(npm view "dimcode-web@$previous" dist.tarball)
+          [[ "$url" == https://registry.npmjs.org/dimcode-web/-/* ]]
+          commit=$(curl -fsSL --retry 2 "$url" | tar -xzO package/release-manifest.json | jq -er --arg v "$previous" 'select(.version == $v and .platform == "web") | .sourceCommit')
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "$commit" == "$GITHUB_SHA" ]]; then
+            echo "Skipped: main $GITHUB_SHA already ships as $previous." >> "$GITHUB_STEP_SUMMARY"
+          else
+            version=$(node scripts/alpha-version.mjs)
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+            echo "tag=v$version" >> "$GITHUB_OUTPUT"
+            echo "Selected $version for main $GITHUB_SHA." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Validate release tag and version
+        if: github.event_name == 'push' || inputs.tag != ''
         id: release
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
@@ -43,6 +74,15 @@ jobs:
           source_sha=$(git rev-parse HEAD)
           [[ "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" == "$source_sha" ]]
           git merge-base --is-ancestor "$source_sha" origin/main
+          {
+            echo "tag=$RELEASE_TAG"
+            echo "sha=$source_sha"
+            echo "version=${RELEASE_TAG#v}"
+          } >> "$GITHUB_OUTPUT"
+          if [[ "$(git for-each-ref --format='%(objecttype) %(contents:subject)' "refs/tags/$RELEASE_TAG")" == "tag Dim CI alpha $RELEASE_TAG" ]]; then
+            echo 'stamp=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict';
           import { readFileSync } from 'node:fs';
@@ -56,13 +96,30 @@ jobs:
           assert.equal(runtimeLock.version, version);
           assert.equal(runtimeLock.packages[''].version, version);
           NODE
-          {
-            echo "tag=$RELEASE_TAG"
-            echo "sha=$source_sha"
-            echo "version=${RELEASE_TAG#v}"
-          } >> "$GITHUB_OUTPUT"
+      - name: Generate Rust distribution notices once for all targets
+        if: steps.main.outputs.version != '' || steps.release.outputs.version != ''
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version || steps.main.outputs.version }}
+          STAMP: ${{ steps.main.outputs.version != '' || steps.release.outputs.stamp == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$STAMP" == true ]]; then node scripts/alpha-version.mjs "$RELEASE_VERSION"; fi
+          cargo install cargo-about --version 0.9.3 --features cli --locked
+          cargo fetch --locked
+          mkdir -p staging
+          node scripts/rust-notices.mjs staging/rust-notices.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.main.outputs.version != '' || steps.release.outputs.version != ''
+        with:
+          name: rust-notices
+          path: staging/rust-notices.txt
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
   build:
     needs: preflight
+    if: needs.preflight.outputs.version != ''
     environment: release-build
     strategy:
       fail-fast: false
@@ -70,40 +127,27 @@ jobs:
         include:
           - platform: darwin-arm64
             target: aarch64-apple-darwin
-            runner_os: macOS
-            runner_arch: ARM64
-            arch: arm64
+            runner: macos-15
           - platform: darwin-x64
             target: x86_64-apple-darwin
-            runner_os: macOS
-            runner_arch: ARM64
-            arch: x64
+            runner: macos-15-intel
           - platform: linux-arm64
             target: aarch64-unknown-linux-gnu
-            runner_os: linux
-            runner_arch: x64
-            arch: arm64
+            runner: ubuntu-22.04-arm
           - platform: linux-x64
             target: x86_64-unknown-linux-gnu
-            runner_os: linux
-            runner_arch: x64
-            arch: x64
+            runner: ubuntu-22.04
           - platform: windows-arm64
             target: aarch64-pc-windows-msvc
-            runner_os: windows
-            runner_arch: x64
-            arch: arm64
+            runner: windows-11-arm
           - platform: windows-x64
             target: x86_64-pc-windows-msvc
-            runner_os: windows
-            runner_arch: x64
-            arch: x64
-    runs-on: [self-hosted, '${{ matrix.runner_os }}', '${{ matrix.runner_arch }}']
+            runner: windows-2022
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     env:
       DIM_BUILD_PLATFORM: ${{ matrix.platform }}
       DIM_BUILD_TARGET: ${{ matrix.target }}
-      DIM_BUILD_ARCH: ${{ matrix.arch }}
       CARGO_INCREMENTAL: '0'
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -113,51 +157,82 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version-file: .node-version
+          architecture: ${{ runner.arch == 'ARM64' && 'arm64' || 'x64' }}
           package-manager-cache: false
+      - name: Check native build host and disk space
+        shell: bash
+        run: |
+          node --input-type=module <<'NODEJS'
+          import assert from 'node:assert/strict';
+          import { statfsSync } from 'node:fs';
+          const os = process.platform === 'win32' ? 'windows' : process.platform;
+          assert.equal(os + '-' + process.arch, process.env.DIM_BUILD_PLATFORM, 'Expected a native release runner');
+          const { bavail, bsize } = statfsSync('.');
+          const gib = bavail * bsize / 2 ** 30;
+          console.log(`Available disk: ${gib.toFixed(1)} GiB`);
+          assert(gib >= 15, 'The build runner needs at least 15 GiB free');
+          NODEJS
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+        if: runner.os == 'Linux'
+        with:
+          version: "0.13.6"
+          enable-cache: false
+      - name: Install the glibc 2.28 build toolchain
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          uv venv --python /usr/bin/python3 "$RUNNER_TEMP/zigbuild"
+          uv pip install --only-binary :all: --python "$RUNNER_TEMP/zigbuild/bin/python" cargo-zigbuild==0.20.1 ziglang==0.14.1
+          echo "$RUNNER_TEMP/zigbuild/bin" >> "$GITHUB_PATH"
       - name: Configure Windows C/C++ toolchain
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
         with:
-          arch: ${{ matrix.arch == 'arm64' && 'amd64_arm64' || 'amd64' }}
-      - name: Select Windows linker and ARM64 compiler
+          arch: ${{ runner.arch == 'ARM64' && 'arm64' || 'amd64' }}
+      - name: Select native Windows tools
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $linker = Join-Path $env:VCToolsInstallDir "bin/Hostx64/$env:DIM_BUILD_ARCH/link.exe"
+          $linker = Join-Path $env:VCToolsInstallDir "bin/Host$env:VSCMD_ARG_HOST_ARCH/$env:VSCMD_ARG_TGT_ARCH/link.exe"
           if (!(Test-Path $linker)) { throw "Missing target linker: $linker" }
           $key = 'CARGO_TARGET_' + $env:DIM_BUILD_TARGET.ToUpper().Replace('-', '_') + '_LINKER'
           "$key=$linker" >> $env:GITHUB_ENV
-          if ($env:DIM_BUILD_ARCH -eq 'arm64') {
+          if ($env:RUNNER_ARCH -eq 'ARM64') {
             Get-Command clang-cl -ErrorAction Stop
             'CC_aarch64_pc_windows_msvc=clang-cl' >> $env:GITHUB_ENV
             'CXX_aarch64_pc_windows_msvc=clang-cl' >> $env:GITHUB_ENV
+          } elseif (!(Get-Command nasm -ErrorAction SilentlyContinue)) {
+            choco install nasm --version=2.16.03 -y --no-progress
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            "$env:ProgramFiles/NASM" >> $env:GITHUB_PATH
           }
+      - name: Stamp the build checkout with the allocated alpha version
+        if: needs.preflight.outputs.stamp == 'true'
+        env:
+          RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
+        shell: bash
+        run: node scripts/alpha-version.mjs "$RELEASE_VERSION"
       - name: Build native payload for target architecture
         env:
-          # The Dim account's OAuth client IDs stay in secrets and are compiled
-          # into dimcode; without them the build is API-key only.
           DIM_OAUTH_CLIENT_ID_CN: ${{ secrets.DIM_OAUTH_CLIENT_ID_CN }}
           DIM_OAUTH_CLIENT_ID_GLOBAL: ${{ secrets.DIM_OAUTH_CLIENT_ID_GLOBAL }}
         shell: bash
         run: |
           set -euo pipefail
+          : "${DIM_OAUTH_CLIENT_ID_CN:?Missing CN OAuth client ID}" "${DIM_OAUTH_CLIENT_ID_GLOBAL:?Missing global OAuth client ID}"
           unset RUSTC_WRAPPER
-          if [[ "$DIM_BUILD_PLATFORM" == linux-arm64 ]]; then
-            command -v aarch64-linux-gnu-gcc
-            command -v aarch64-linux-gnu-g++
-            export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
-            export CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++
-            export AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar
-            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
-          fi
           rustup target add "$DIM_BUILD_TARGET"
-          if [[ -n "$DIM_OAUTH_CLIENT_ID_CN" && -n "$DIM_OAUTH_CLIENT_ID_GLOBAL" ]]; then
-            echo "DIM_ACCOUNT=--account" >> "$GITHUB_ENV"
-          elif [[ -n "$DIM_OAUTH_CLIENT_ID_CN$DIM_OAUTH_CLIENT_ID_GLOBAL" ]]; then
-            echo 'Set DIM_OAUTH_CLIENT_ID_CN and DIM_OAUTH_CLIENT_ID_GLOBAL together.' >&2; exit 1
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            DIM_RELEASE_BUILD=1 cargo zigbuild --release --locked --target "$DIM_BUILD_TARGET.2.28" -p dimcode
+          else
+            DIM_RELEASE_BUILD=1 cargo build --release --locked --target "$DIM_BUILD_TARGET" -p dimcode
           fi
-          DIM_RELEASE_BUILD=1 cargo build --release --locked --target "$DIM_BUILD_TARGET" -p dimcode
           echo "DIM_BIN_DIR=$PWD/target/$DIM_BUILD_TARGET/release" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: rust-notices
+          path: staging
+          digest-mismatch: error
       - name: Stage and pack release payload
         env:
           RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
@@ -165,10 +240,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p staging
-          node scripts/rust-notices.mjs staging/rust-notices.txt
+          if [[ "$RUNNER_OS" == Windows ]]; then export PATH="$(cygpath -u "$WINDIR")/System32:$PATH"; fi
           node scripts/stage-plugins.mjs "staging/plugins-$DIM_BUILD_PLATFORM"
-          node scripts/stage-release.mjs "$DIM_BIN_DIR" "staging/$DIM_BUILD_PLATFORM" "$RELEASE_VERSION" "$SOURCE_SHA" ${DIM_ACCOUNT:-} --plugins "staging/plugins-$DIM_BUILD_PLATFORM" --rust-notices staging/rust-notices.txt
+          node scripts/stage-release.mjs "$DIM_BIN_DIR" "staging/$DIM_BUILD_PLATFORM" "$RELEASE_VERSION" "$SOURCE_SHA" --account --plugins "staging/plugins-$DIM_BUILD_PLATFORM" --rust-notices staging/rust-notices.txt
           node scripts/pack-release.mjs "staging/$DIM_BUILD_PLATFORM" "release/$DIM_BUILD_PLATFORM"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -180,7 +254,7 @@ jobs:
           overwrite: true
   draft:
     needs: [preflight, build]
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: write
@@ -198,6 +272,12 @@ jobs:
           pattern: release-*
           path: staging/platforms
           digest-mismatch: error
+      - name: Stamp the build checkout with the allocated alpha version
+        if: needs.preflight.outputs.stamp == 'true'
+        env:
+          RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
+        shell: bash
+        run: node scripts/alpha-version.mjs "$RELEASE_VERSION"
       - name: Build the Web workspace, verify provenance and collect packages
         env:
           RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
@@ -225,6 +305,21 @@ jobs:
           retention-days: 1
           compression-level: 0
           overwrite: true
+      - name: Reserve the generated tag at the build commit
+        if: github.event_name == 'workflow_dispatch' && inputs.tag == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
+          SOURCE_SHA: ${{ needs.preflight.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag_object=$(gh api --method POST "repos/$GITHUB_REPOSITORY/git/tags" -f "tag=$RELEASE_TAG" -f "message=Dim CI alpha $RELEASE_TAG" -f "object=$SOURCE_SHA" -f type=commit --jq .sha)
+          if ! gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$tag_object" >/dev/null; then
+            existing=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '.object.sha')
+            gh api "repos/$GITHUB_REPOSITORY/git/tags/$existing" |
+              jq -e --arg sha "$SOURCE_SHA" --arg tag "$RELEASE_TAG" '.object.sha == $sha and .tag == $tag and (.message | rtrimstr("\n")) == ("Dim CI alpha " + $tag)' >/dev/null
+          fi
       - name: Create draft release and upload release packages
         env:
           GH_TOKEN: ${{ github.token }}
@@ -234,7 +329,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)" == "$SOURCE_SHA" ]]
+          [[ "$(gh api "repos/$GITHUB_REPOSITORY/commits/refs%2Ftags%2F$RELEASE_TAG" --jq .sha)" == "$SOURCE_SHA" ]]
           if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
             echo 'Release already exists; inspect it before retrying.' >&2
             exit 1

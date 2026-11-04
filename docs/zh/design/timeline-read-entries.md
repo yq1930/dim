@@ -2,7 +2,7 @@
 
 状态：提议中。范围：部件、App Server 或 TypeScript 插件从 Timeline 读取事件的全部方式，其中哪些会被事件查询（[ADR 019](../../adr/019-event-query.md)、[插件契约 §5.4](plugin-contract.md#54-the-event-query)）取代，以及还剩什么。本文是审计，加上 [ADR 020](../../adr/020-timeline-read-convergence.md) 提议的决策；决策在该 ADR 被接受后生效。语言：中文。English: [English](../../design/timeline-read-entries.md)。
 
-基线：`origin/main` 的 `514225777`。调用点不含测试和示例。下面每一行都是从源码读出来的，不是沿用早先的计划。
+基线：`origin/main` 的 `514225777`。调用点不含测试和示例。下面每一行都是在该基线上从源码读出来的，因此其中点名的 TypeScript 路径（含 Goal 的 `runtime/plugins/goal/branch.ts`）是移植前的快照。
 
 ## 1. 入口
 
@@ -41,10 +41,8 @@
 
 | 读 | 定义 | 调用方 |
 | --- | --- | --- |
-| `SessionStore::read_page` | `storage/timeline.rs:1258` | `collaboration.rs:1106`、`:2232` |
 | `TimelineStore::read_page`，由 TimelineTree 部件自己调用 | `timeline_store.rs:229` | `timeline_tree.rs:425`、`:668`（也在 `TreeTimeline::page` :180 之后） |
 | `Session::local_page` 直接读存储端口 | `agent.rs:562-585` | `agents.rs:677`、`:1007`、`connection/tree.rs:227`、`agents/sessions.rs:616` |
-| `read_page_without_request_bodies` | :1271 | `agents.rs:634`，经 `Agents::read_page` |
 | `read_page_before` | :1409 | `agents.rs:763`、`connection/tree.rs:209` |
 | `read_events` | :1539 | `agents.rs:688`、`collaboration.rs:1151` |
 | `turn_window` | :1304 | `agents.rs:746`、`connection/tree.rs:197` |
@@ -57,7 +55,6 @@
 
 ### 1.6 存储端口（`timeline_store.rs`）
 
-`head` :207、`read` :215、`read_page` :229、`event_by_id` :283、`read_context` :319、`read_kind_page` :373、`read_page_without_request_bodies` :437、`query` :464、`read_segments` :471、`trace` :694、`latest_snapshot` :710。SQLite 实现在 `storage/timeline.rs:3507-4119`。
 
 ### 1.7 依赖图
 
@@ -147,7 +144,6 @@ flowchart LR
 | 裁剪点校验（`history.rs:981`） | 某个序号是否是一次原子写入的末尾 | `local(through..=through)`；落在批内时存储报错 | 不涉及事件内容，只涉及批结构；查询给不了 |
 | 回忆（`recall.rs:184`） | 几种类型的事件，由新到旧，折叠，够答案就停 | `page_cursor` 和 `page` | 倒序分页加提前停止 |
 | 协作重建（`collaboration.rs:2726`） | 尚未处理的审批输入，以及每条 `collaboration/result` 和它的序号 | `local(..=committed())`，遍历两遍 | 四种类型，不需要整个分支。它读到 `committed()` |
-| 对端会话读取（`collaboration.rs:1106`） | 另一个会话从 `after` 起的一页事件，加按编号取的调用事件 | `SessionStore::read_page`、`read_events` | 分页和按编号读。这是 App Server 读另一个会话，不是部件读自己的 Timeline |
 | 分支工具默认起点（`timeline_tree.rs:2291`） | 本轮第一次 `tool-use` 之前的 `model/start`，序号减一 | `parent.local(..)`，整个父分支 | 两条事件，按 `turn_id` 和 `request_id` 匹配。谓词只有一个等值，所以其中一个匹配留给调用方 |
 | fork 校验与前缀（`agents.rs:1446`） | 切点是否合法，以及切点之前的上下文 | `validate_context_boundary_in` 和 `context` | 折叠前缀是投影的工作；批检查同上 |
 | 历史窗口（`connection/tree.rs:197`） | 最新一轮的起点，以及窗口内的一页倒序事件 | `turn_window` 和 `read_page_before` | 倒序分页，加最新一条 `turn/start` |

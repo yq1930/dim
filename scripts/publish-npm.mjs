@@ -34,7 +34,8 @@ const platforms = [
 ];
 assert(Array.isArray(manifest.npmPackages), 'Missing npm package manifest');
 const shipped = platforms.filter(([platform]) => manifest.npmPackages.some(({ name }) => name === `dimcode-${platform}`));
-assert(shipped.length === platforms.length || (tag === 'alpha' && shipped.length > 0),
+if (fromRelease && tag === 'alpha') assert.equal(manifest.account, true, 'CI alphas require the Dim account build');
+assert(shipped.length === platforms.length || (!fromRelease && tag === 'alpha' && shipped.length > 0),
   'Release must contain all six platform packages and one wrapper');
 const wrapper = tag === 'alpha' ? 'dimcode-alpha' : 'dimcode';
 const names = [...shipped.map(([platform]) => `dimcode-${platform}`), 'dimcode-web', wrapper];
@@ -92,19 +93,20 @@ for (const name of names) {
   archives.push(archive);
 }
 
+function registryField(spec, field) {
+  const result = spawnSync('npm', ['view', spec, field, '--json', '--registry', 'https://registry.npmjs.org'], { encoding: 'utf8' });
+  assert.ifError(result.error);
+  let data;
+  try { data = JSON.parse(result.stdout); }
+  catch { assert.fail('Cannot verify registry state: ' + spec); }
+  if (result.status === 0) return data;
+  assert.equal(data?.error?.code, 'E404', 'Cannot verify registry state: ' + spec);
+}
+
 console.log(`Validated ${archives.length} npm packages for ${version} (${sourceCommit}).`);
 if (mode) {
   if (tag === 'alpha') {
-    const listed = spawnSync('npm', ['view', 'dimcode', 'versions', '--json',
-      '--registry', 'https://registry.npmjs.org'], { encoding: 'utf8' });
-    assert.ifError(listed.error);
-    let versions;
-    try { versions = JSON.parse(listed.stdout); }
-    catch { assert.fail('Cannot verify registry state: dimcode'); }
-    if (listed.status !== 0) {
-      assert.equal(versions.error?.code, 'E404', 'Cannot verify registry state: dimcode');
-      versions = [];
-    }
+    const versions = registryField('dimcode', 'versions') ?? [];
     const core = (value) => value.split('-')[0].split('.').map(Number);
     const below = (left, right) => {
       const index = left.findIndex((part, index) => part !== right[index]);
@@ -117,18 +119,19 @@ if (mode) {
   const pending = [];
   for (const [index, archive] of archives.entries()) {
     const name = names[index];
-    const existing = spawnSync('npm', ['view', `${name}@${version}`, 'dist', '--json',
-      '--registry', 'https://registry.npmjs.org'], { encoding: 'utf8' });
-    assert.ifError(existing.error);
-    let metadata;
-    try { metadata = JSON.parse(existing.stdout); }
-    catch { assert.fail(`Cannot verify registry state: ${name}`); }
-    if (existing.status === 0) {
+    if (fromRelease && tag === 'alpha') {
+      const current = registryField(name + '@alpha', 'version');
+      if (current !== undefined) {
+        assert(/^\d+\.\d+\.\d+-alpha\.\d+$/.test(current), `Unexpected alpha tag on ${name}: ${current}`);
+        assert(current.localeCompare(version, 'en', { numeric: true }) <= 0, `${name}@alpha already points to newer ${current}`);
+      }
+    }
+    const metadata = registryField(name + '@' + version, 'dist');
+    if (metadata !== undefined) {
       const integrity = `sha512-${createHash('sha512').update(readFileSync(archive)).digest('base64')}`;
       assert.equal(metadata.integrity, integrity, `Existing version has different content: ${name}`);
       console.log(`Already published with matching integrity: ${name}@${version}`);
     } else {
-      assert.equal(metadata.error?.code, 'E404', `Cannot verify registry state: ${name}`);
       pending.push(archive);
     }
   }

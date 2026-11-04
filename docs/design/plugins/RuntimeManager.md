@@ -75,13 +75,14 @@ The default configuration file ([PluginManager §2.3](PluginManager.md#23-the-de
 
 ```json
 "runtimes": {
-  "node":   { "source": "download", "auto": true },
+  "node":   { "source": "download", "auto": false },
   "python": { "source": "download", "auto": false }
 }
 ```
 
 - `source`: `download` uses the archive above; `system` uses the interpreter on `PATH` (`node`; `python3`, or `python` on Windows), checked when it is acquired: Node 22.19 or later (the `engines` of `@arcships/rutis-runtime`) with its bundled npm (`npm-cli.js` where the official archives and installers put it; a Node without it fails with a reason naming that path), Python 3.12 or later with pip. A check that fails is that runtime's failure (§3.3).
 - `auto`: `true` acquires the runtime at every start. `false` leaves it off until `runtime.install` (§5); once installed, it is recorded (§2.4) and acquired at every start like an `auto` one.
+- The shipped file sets both runtimes to `auto: false`, so a first start downloads nothing. A Node plugin such as Workflow needs `runtime.install` (the `/runtime` panel, or `dimcode runtime install node`) before it can run.
 - The user overrides the preset in `<home>/runtimes/config.json`, the same shape, merged per runtime and field over the preset; a client writes it through `runtime.configure` (§5), which keeps that merge. It is in the home, so only the user's local configuration changes it; no project source does.
 - The configuration is read when an action applies it, not once at startup: `runtime.install` reads the file and the environment at that moment (§3.3), so a changed `source` or `auto` applies without restarting the process. `runtime.list` reports the runtime in effect, not the file — a changed file shows up when an action applies it.
 
@@ -174,11 +175,11 @@ The release archive and each npm platform package carry, beside `bin/`:
 ```text
 bin/dimcode[.exe]
 default-plugins.json        # PluginManager §2.3, with `runtimes` (§2.2)
-plugins/<name>/             # goal, web, workflow with production node_modules; plugin-authoring
+plugins/<name>/             # plugin-authoring; no production node_modules
 LICENSE  NOTICE  release-manifest.json
 ```
 
-`scripts/stage-plugins.mjs` copies `runtime/default-plugins.json` and each default plugin's directory (without tests, `tsconfig.json` or `node_modules`) and runs `npm ci --omit=dev --ignore-scripts --no-bin-links`, from its pinned lock, in each one with a `package.json`; `stage-release.mjs --plugins DIR` puts the result beside `bin/`. A default plugin resolves `@arcships/rutis` from its own `node_modules`; it must not resolve a Cordis of its own, since rutis-runtime refuses a plugin whose Cordis differs from the runtime's. The plugin entries are TypeScript, also under an npm package's `node_modules`: the Node runtime loads them through tsx, not Node's own type stripping. Finding the file (`<prefix>/default-plugins.json`, the parent of `bin/`, or `DIMCODE_DEFAULT_PLUGINS`) and the App Server's `--defaults` flag are PluginManager's ([#485](https://github.com/arcships/dim/pull/485)); RuntimeManager reads the `runtimes` section of that file. With `--defaults` and without `--node`, the App Server acquires the runtimes with RuntimeManager; otherwise it behaves as today (explicit `--node`, `--js-runtime` and `--python` remain for development and tests).
+`scripts/stage-plugins.mjs` copies `runtime/default-plugins.json` and each default plugin's directory (without tests, `tsconfig.json` or `node_modules`) and runs `npm ci --omit=dev --ignore-scripts --no-bin-links`, from its pinned lock, in each one with a `package.json`; `stage-release.mjs --plugins DIR` puts the result beside `bin/`. A default plugin resolves `@arcships/rutis` from its own `node_modules`; it must not resolve a Cordis of its own, since rutis-runtime refuses a plugin whose Cordis differs from the runtime's. The plugin entries are TypeScript, also under an npm package's `node_modules`: the Node runtime loads them through tsx, not Node's own type stripping. Finding the file (`<prefix>/default-plugins.json`, the parent of `bin/`, or `DIMCODE_DEFAULT_PLUGINS`) and the App Server's `--defaults` flag are PluginManager's ([#485](https://github.com/arcships/dim/pull/485)); RuntimeManager reads the `runtimes` section of that file. With `--defaults` and without `--node`, the App Server acquires a runtime with RuntimeManager when its `auto` is on or it is recorded as installed; otherwise it behaves as today (explicit `--node`, `--js-runtime` and `--python` remain for development and tests).
 
 ## 7. Security
 

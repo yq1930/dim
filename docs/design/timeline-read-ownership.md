@@ -10,6 +10,8 @@ Rules: [design rules](../architecture/rust-agent/principles.md), [ADR 002](../ad
 
 This document states who reads a line's facts, which object serves each read, and which dependencies are allowed. It covers the client history read, the ended line's page, the collaboration read of a peer Session, the restore reads of `TimelineTree` and the database export.
 
+This document is the target. Where the code does not follow it yet, the section says so and names the implementation that closes the gap (`dim/1039-read-ownership`, based on this document). One adjacent defect is out of scope: the chain helper's range end is checked against an ancestor's sequence before the queried branch is reached, which truncates a chain read; it belongs to [#1039](https://github.com/arcships/dim/issues/1039) and changes no ownership rule.
+
 It does not restate the query contract ([plugin contract §5.4](plugin-contract.md#54-the-event-query)), the page shape of the client protocol ([session history window](appserver/session-history-window.md)), or the storage layout ([request delta storage](appserver/request-delta-storage.md)). It adds no event, service, state or format change.
 
 ## 2. Owners and their reads
@@ -17,18 +19,15 @@ It does not restate the query contract ([plugin contract §5.4](plugin-contract.
 | Read | Served by | Reads |
 | --- | --- | --- |
 | A live line's facts | `Timeline::query`, the checkpoint selection, the segments | its own hot window and the store, to the published head, plus the branch's not-yet-published facts when the request asks for them |
-| An ended line's page | `TimelineTree`, through the tree's service | the stored facts of a line whose `Timeline` is gone, at the fixed head the tree owns |
+| An ended line's page | `TimelineTree`, through the tree's service | the stored facts of a line whose `Timeline` is gone, at the fixed head the tree owns, up to the caller's `through`, in either direction |
 | A collaboration peer's facts | the peer Session's `Timeline`; the read acquires the peer first | the same as any live line |
 | Branches and their metadata | the store port's branch listing and head; titles from `session.summaries` | branch records and title metadata, not events |
-| Session files, titles, grants, fork, delete | `SessionStore` | not events |
+| Session files, titles, grants, fork, delete | `SessionStore` | not events; its event reads are gone from the client path |
 | A database file | `dimcode --export-timeline` | the database, with nothing mounted |
 
 A caller does not choose a read because it is cheaper; it reads through the object that owns the state. When no such object exists, the read is the ended line's row or the export, and says so.
 
-The tree's query selects one line's own facts with the event query's anchors,
-filters, ordering and paging. It forwards to the line's Timeline while open and
-uses its fixed ended head otherwise. Chain scope is invalid; an ended line has
-no publishing tail. The history window uses this read to select its anchors.
+The table is the target and the state of `dim/1039-read-ownership`: `AgentIndex::history_page` and `AgentIndex::read_page` acquire the Session and read through its query, and the client path has no `SessionStore` event read.
 
 ## 3. Read paths
 
@@ -67,7 +66,9 @@ across omitted non-text facts.
 
 A line that ended keeps its identity in `TimelineTree`: the ended head, the end record and the creation source. That state outlives the line's `Timeline`, which is why the tree, not the App Server, serves its page.
 
-No read holds a whole branch. A reader takes a page, consumes it and drops it before the next; the page size belongs to the caller. This holds for the client history read, the ended line's page and a part's fold. A copy shared by readers exists only while the readers and the branch's opening are alive together (ADR 021 D6).
+A read fetches from storage one page at a time: a page is consumed and dropped before the next is fetched, and the page size belongs to the caller. This bounds what a read takes from the store, not what a consumer keeps. The query contract lets a consumer fold a prefix from pages (plugin contract §5.4), and an export materializes what it writes.
+
+Two readers accumulate beyond one page today: `dim export` (`crates/dim-cli/src/export.rs`) and `chain_through` for the fork check (`crates/dim-app-server/src/agents.rs`), both in [#1065](https://github.com/arcships/dim/issues/1065). A branch's opening keeps no decoded copy of its history: every read goes to the store (ADR 021 D6, [#1063](https://github.com/arcships/dim/issues/1063)).
 
 ## 5. Dependencies
 
@@ -92,11 +93,11 @@ Not allowed:
 
 ## 6. Cross-module requirements
 
-- **Runtime (opening):** remove the shared decoded copy of a branch's opening, which kept `1..=head` in memory for replay and now has no regular reader ([#1063](https://github.com/arcships/dim/issues/1063)).
-- **Runtime (TimelineStore owner):** the ended line's page and the port's other reads are composed from `query` and `batch_end`; where the tree needs a selection the port cannot express, the port gains it in its own contract.
-- **App Server (session history owner):** `session.history` acquires the Session and never falls to `SessionStore` for a Session the process does not hold; an ended line is served by the tree whether or not the host keeps a store. `idle-unload.md` acceptance 1 and 2 are rewritten: `summaries` reads metadata, and a history read acquires the Session.
-- **TimelineTree owner:** the restore reads of `branch/ended`, `branch/end`, `branch/create` and the creation check move to the port's query, so the tree reads selections instead of ranges and decodes only the events it selects ([#1064](https://github.com/arcships/dim/issues/1064)).
-- **CLI (export owner):** `dim export` writes each page as it arrives instead of collecting the whole Session ([#1065](https://github.com/arcships/dim/issues/1065)).
+- **Runtime (opening):** the shared decoded copy of a branch's opening is gone; the Timeline reads the store on every read ([#1063](https://github.com/arcships/dim/issues/1063), carried by `dim/1039-read-ownership`).
+- **Runtime (TimelineStore owner):** a window page is composed from `query` and `batch_end` for both directions; `TimelineTree::page` keeps the port's `read_page`, which already ends a page on a batch. Where the tree needs a selection the port cannot express, the port gains it in its own contract.
+- **App Server (session history owner):** `session.history` acquires the Session and never falls to `SessionStore` for a Session the process does not hold; an ended line is served by the tree whether or not the host keeps a store (carried by `dim/1039-read-ownership`). The client path has no call to `SessionStore`'s event reads; the window's page is the loaded line's query with `batch_end` for its two ends, and a flow test reads the history of an idle Session and observes the acquire rather than a store read. `idle-unload.md` acceptance 1 and 2 are rewritten: `summaries` reads metadata, and a history read acquires the Session.
+- **TimelineTree owner:** the restore reads of `branch/ended`, `branch/end`, `branch/create` and the creation check move to the port's query, so the tree reads selections instead of ranges and decodes only the events it selects ([#1064](https://github.com/arcships/dim/issues/1064), carried by `dim/1039-read-ownership`).
+- **CLI (export owner):** `dim export` collects every page of the Session today; it writes each page as it arrives instead, and `chain_through` folds its prefix page by page ([#1065](https://github.com/arcships/dim/issues/1065)).
 
 ## 7. Rule check
 
@@ -117,8 +118,9 @@ Timeline::query(TimelineQuery) -> Result<TimelineQueryReply>
 Session::query(...) / Branch::query(...)   // forward, published bound
 
 // ended line
-TreeCommands::page(id: String, after: u64, limit: u64) -> Result<Vec<Arc<AgentEvent>>>
-TreeCommands::query(id: String, query: TimelineQuery) -> Result<TimelineQueryReply>
+TreeCommands::page(id: String, after: u64, limit: usize, through: u64) -> Result<Vec<Arc<AgentEvent>>>
+TreeCommands::query(id: String, TimelineQuery) -> Result<TimelineQueryReply>   // window anchors and pages
+TreeCommands::batch_end(id: String, sequence: u64) -> Result<()>                // a window page's ends
 
 // branches and metadata
 TimelineStore::branches(session_id) -> Result<Vec<StoredBranch>>

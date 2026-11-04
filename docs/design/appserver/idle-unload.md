@@ -482,11 +482,13 @@ milliseconds. Each waits on an observed transition (`Session::closed()` of the r
 `agent.list`, a call's reply) with a timeout, never on a sleep alone.
 
 1. **Measured cost (#126).** A test plugin launches 50 Sessions through `sessions`, runs one input, `idle` and the
-   `history` pages in each, then drops them. All are unloaded after the grace: `agent.list` reports none loaded, while
-   `session.summaries` lists all 50 and their history reads in full. A later `sessions.input` restores one, and its turn
-   runs. The implementation PR also reports `xtask measure` numbers, loaded count and tasks, before and after.
-2. **No restore inside a run.** Within one run (`input`, `idle`, three `history` pages) the Session is not restored
-   between the calls: no `branch/resume` is added to `main`.
+   `history` pages in each, then drops them. After the grace, `session.summaries` lists all 50 with their stored heads
+   and `agent.list` reports none loaded. A later `sessions.input` restores one Session and its turn runs. Each
+   `sessions.history` page acquires its Session, restoring it if unloaded. Paging through each run's original cutoff
+   returns the same events as before unload. The implementation PR also reports `xtask measure` numbers, loaded count
+   and tasks, before and after.
+2. **No restore inside a run.** When the gaps between `input`, `idle` and three `history` pages stay within the
+   grace period, each call acquires the same loaded Session and `main` gains no `branch/resume`.
 3. **Acquire during an unload.** A test Session part holds its own unload until the test releases it, so a release
    is under way when `sessions.history` and an Rpc `session.history` arrive. Both wait, then succeed on the restored
    Session; neither replies `session_closed`.

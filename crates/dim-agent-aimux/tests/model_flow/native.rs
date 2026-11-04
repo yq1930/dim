@@ -3574,21 +3574,40 @@ async fn a_stored_summary_index_loads_and_continues() {
         matchers::{method, path},
     };
 
-    let part = MessagePart::Thinking {
-        thinking: "earlier summary".into(),
-        start_time: None,
-        end_time: None,
-        provider_metadata: Some(ContentMetadata::OpenaiResponses {
+    // What the event store holds, as a session written before the upgrade:
+    // the part in its wire shape, not one the current serializer produced.
+    let stored = json!({
+        "type": "thinking",
+        "thinking": "earlier summary",
+        "providerMetadata": {
+            "protocol": "openai-responses",
+            "itemId": "rs-old",
+            "encryptedContent": "opaque",
+            "summaryIndex": 1
+        }
+    });
+    let loaded: MessagePart = serde_json::from_value(stored).unwrap();
+    let MessagePart::Thinking {
+        thinking,
+        start_time,
+        end_time,
+        provider_metadata,
+    } = &loaded
+    else {
+        panic!("a stored thinking part loads as thinking: {loaded:?}");
+    };
+    assert_eq!(thinking, "earlier summary");
+    assert_eq!(start_time, &None);
+    assert_eq!(end_time, &None);
+    assert_eq!(
+        provider_metadata,
+        &Some(ContentMetadata::OpenaiResponses {
             item_id: "rs-old".into(),
             encrypted_content: Some("opaque".into()),
             summary_index: Some(1),
             phase: None,
-        }),
-    };
-    // What the event store holds, as a session written before the upgrade.
-    let stored = serde_json::to_value(&part).unwrap();
-    let loaded: MessagePart = serde_json::from_value(stored).unwrap();
-    assert_eq!(loaded, part);
+        })
+    );
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/responses"))

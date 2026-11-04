@@ -415,7 +415,10 @@ whose omitted fields keep their stored values, at the revision `mcp.configuratio
 patch like `{"command": "npx", "cwd": "/work", "env": {"TOKEN": "value"}}` changes those fields
 only. A remote entry's patch names the `url` and the `headers` it changes, since the seed
 withholds both: `{"url": "https://mcp.example.com/mcp", "headers": {"X-Key": "value"}}`. An
-omitted `url` or header key keeps the stored one. `dimcode mcp remove ID` deletes one entry at its
+omitted `url` or header key keeps the stored one. A definition or a patch may state `timeout`, the
+entry's tool-call limit in milliseconds from 1000 to 86400000; a patch's `null` clears it and the
+ten-minute default applies, and `mcp inspect` prints a stated one. `dimcode mcp remove ID` deletes
+one entry at its
 source revision. `dimcode mcp test ID`
 runs the stored entry once and prints the tools the temporary connection found, and `dimcode mcp
 inspect ID` prints the effective configuration and the Session's connections without contacting

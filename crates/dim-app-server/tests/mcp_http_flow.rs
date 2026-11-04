@@ -26,7 +26,7 @@ use std::{
     fs,
     path::PathBuf,
     sync::{
-        Arc, OnceLock,
+        Arc, Mutex, OnceLock,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
@@ -148,7 +148,11 @@ impl Drop for Fixture {
 struct Remote {
     initializes: AtomicUsize,
     calls: AtomicUsize,
+    /// The request id of every `tools/call` the server saw.
+    call_ids: Mutex<Vec<Value>>,
     cancelled: AtomicUsize,
+    /// The request id and reason of every `notifications/cancelled`.
+    cancelled_ids: Mutex<Vec<Value>>,
     deletes: AtomicUsize,
     slow: Notify,
     release_call: Notify,
@@ -156,6 +160,8 @@ struct Remote {
     release_delete: Notify,
     repeating: AtomicBool,
     nullable: AtomicBool,
+    /// Makes the handshake take longer than a short entry `timeout`.
+    slow_initialize: AtomicBool,
     session: AtomicUsize,
     session_check: AtomicBool,
     expire_once: AtomicBool,
@@ -168,7 +174,9 @@ impl Remote {
         Arc::new(Self {
             initializes: AtomicUsize::new(0),
             calls: AtomicUsize::new(0),
+            call_ids: Mutex::new(Vec::new()),
             cancelled: AtomicUsize::new(0),
+            cancelled_ids: Mutex::new(Vec::new()),
             deletes: AtomicUsize::new(0),
             slow: Notify::new(),
             release_call: Notify::new(),
@@ -176,6 +184,7 @@ impl Remote {
             release_delete: Notify::new(),
             repeating: AtomicBool::new(false),
             nullable: AtomicBool::new(false),
+            slow_initialize: AtomicBool::new(false),
             session: AtomicUsize::new(0),
             session_check: AtomicBool::new(false),
             expire_once: AtomicBool::new(false),
@@ -208,12 +217,20 @@ async fn rpc(
     let result = match method {
         "initialize" => {
             remote.initializes.fetch_add(1, Ordering::SeqCst);
+            if remote.slow_initialize.load(Ordering::SeqCst) {
+                tokio::time::sleep(Duration::from_millis(1500)).await;
+            }
             response_session = format!("s{}", remote.session.fetch_add(1, Ordering::SeqCst) + 1);
             json!({"protocolVersion":message["params"]["protocolVersion"],"capabilities":{"tools":{"listChanged":true}},"serverInfo":{"name":"local-mcp","version":"1"}})
         }
         "notifications/initialized" => return StatusCode::ACCEPTED.into_response(),
         "notifications/cancelled" => {
             remote.cancelled.fetch_add(1, Ordering::SeqCst);
+            remote
+                .cancelled_ids
+                .lock()
+                .unwrap()
+                .push(message["params"].clone());
             remote.release_call.notify_waiters();
             return StatusCode::ACCEPTED.into_response();
         }
@@ -246,6 +263,7 @@ async fn rpc(
         }
         "tools/call" => {
             remote.calls.fetch_add(1, Ordering::SeqCst);
+            remote.call_ids.lock().unwrap().push(message["id"].clone());
             match message["params"]["name"].as_str().unwrap() {
                 "expire" => return StatusCode::NOT_FOUND.into_response(),
                 "expire-once" if remote.expire_once.swap(false, Ordering::SeqCst) => {
@@ -266,6 +284,10 @@ async fn rpc(
                     remote.slow.notify_one();
                     remote.release_call.notified().await;
                     json!({"content":[{"type":"text","text":"settled"}]})
+                }
+                "sleep" => {
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    json!({"content":[{"type":"text","text":"slept"}]})
                 }
                 "error" => json!({"content":[{"type":"text","text":"denied"}],"isError":true}),
                 _ => {
@@ -654,6 +676,230 @@ async fn http_plugin_discovers_calls_cancels_and_drains_the_remote_session() {
     tokio::time::timeout(Duration::from_secs(5), rejected.close())
         .await
         .unwrap();
+    fixture.close().await;
+    stop.cancel();
+    server.await.unwrap().unwrap();
+}
+
+/// #953: an entry `timeout` bounds its `tools/call` requests, names itself in
+/// the error, and cancels the request server-side.
+#[tokio::test]
+async fn a_tool_call_waits_its_entry_timeout_and_tells_the_server() {
+    let remote = Remote::new();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/mcp", listener.local_addr().unwrap());
+    let stop = CancellationToken::new();
+    let server = tokio::spawn(
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/mcp", post(rpc).get(events).delete(delete))
+                .with_state(remote.clone()),
+        )
+        .with_graceful_shutdown(stop.clone().cancelled_owned())
+        .into_future(),
+    );
+    let fixture = Fixture::configured(json!({
+        "type":"http","url":url,"auth":{"type":"bearer","token":"fixture-only"},"timeout":1000
+    }))
+    .await;
+    let cancel = CancellationToken::new();
+    let connection = fixture
+        .mcp
+        .server(None, "docs".into(), &cancel)
+        .await
+        .unwrap();
+    let started = std::time::Instant::now();
+    let error = tokio::time::timeout(
+        Duration::from_secs(5),
+        connection.call("sleep".into(), Default::default(), &cancel),
+    )
+    .await
+    .expect("the entry's one-second limit ends the call before this deadline")
+    .unwrap_err();
+    let elapsed = started.elapsed();
+    assert!(elapsed >= Duration::from_millis(900), "{elapsed:?}");
+    let message = error.to_string();
+    assert!(message.contains("1000 ms"), "{message}");
+    assert!(message.contains("the entry's timeout"), "{message}");
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while remote.cancelled.load(Ordering::SeqCst) == 0 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the server receives notifications/cancelled for the call");
+    let call = remote.call_ids.lock().unwrap().last().cloned().unwrap();
+    let notices = remote.cancelled_ids.lock().unwrap().clone();
+    assert_eq!(
+        notices
+            .iter()
+            .map(|notice| &notice["requestId"])
+            .collect::<Vec<_>>(),
+        vec![&call]
+    );
+    let reason = notices[0]["reason"].as_str().unwrap();
+    assert!(reason.contains("1000 ms"), "{reason}");
+    assert!(reason.contains("the entry's timeout"), "{reason}");
+    fixture.close().await;
+    stop.cancel();
+    server.await.unwrap().unwrap();
+}
+
+/// #953 D20: connecting counts against the call's limit. A call whose limit
+/// passed while the connection was starting fails with the entry's timeout
+/// and the request never leaves, so the server sees no call and no
+/// cancellation.
+#[tokio::test]
+async fn a_call_whose_deadline_passed_while_connecting_sends_nothing() {
+    let remote = Remote::new();
+    remote.slow_initialize.store(true, Ordering::SeqCst);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/mcp", listener.local_addr().unwrap());
+    let stop = CancellationToken::new();
+    let server = tokio::spawn(
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/mcp", post(rpc).get(events).delete(delete))
+                .with_state(remote.clone()),
+        )
+        .with_graceful_shutdown(stop.clone().cancelled_owned())
+        .into_future(),
+    );
+    let fixture = Fixture::configured(json!({
+        "type":"http","url":url,"auth":{"type":"bearer","token":"fixture-only"},"timeout":1000
+    }))
+    .await;
+    let cancel = CancellationToken::new();
+    // Acquiring the entry opens nothing; the call starts the connection, and
+    // this fixture's handshake outlasts the entry's one-second limit.
+    let connection = fixture
+        .mcp
+        .server(None, "docs".into(), &cancel)
+        .await
+        .unwrap();
+    let started = std::time::Instant::now();
+    let error = connection
+        .call("echo".into(), Default::default(), &cancel)
+        .await
+        .unwrap_err();
+    assert!(started.elapsed() >= Duration::from_millis(1000));
+    let message = error.to_string();
+    assert!(message.contains("1000 ms"), "{message}");
+    assert!(message.contains("the entry's timeout"), "{message}");
+    // A request sent after the deadline would still reach the fixture; give
+    // one time to arrive before asserting that none did.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(remote.initializes.load(Ordering::SeqCst), 1);
+    assert_eq!(remote.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(remote.cancelled.load(Ordering::SeqCst), 0);
+    fixture.close().await;
+    stop.cancel();
+    server.await.unwrap().unwrap();
+}
+
+/// #953: without an entry `timeout` the same call waits for the ten-minute
+/// default, so a two-second answer arrives.
+#[tokio::test]
+async fn a_tool_call_without_a_timeout_waits_for_the_default() {
+    let remote = Remote::new();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/mcp", listener.local_addr().unwrap());
+    let stop = CancellationToken::new();
+    let server = tokio::spawn(
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/mcp", post(rpc).get(events).delete(delete))
+                .with_state(remote.clone()),
+        )
+        .with_graceful_shutdown(stop.clone().cancelled_owned())
+        .into_future(),
+    );
+    let fixture = Fixture::new(&url, "fixture-only").await;
+    let cancel = CancellationToken::new();
+    let connection = fixture
+        .mcp
+        .server(None, "docs".into(), &cancel)
+        .await
+        .unwrap();
+    let started = std::time::Instant::now();
+    let result = connection
+        .call("sleep".into(), Default::default(), &cancel)
+        .await
+        .unwrap();
+    assert!(started.elapsed() >= Duration::from_secs(2));
+    let ToolContent::Blocks(blocks) = result.content else {
+        panic!("expected blocks")
+    };
+    assert!(
+        blocks
+            .iter()
+            .any(|block| matches!(block, ContentBlock::Text { text } if text == "slept"))
+    );
+    fixture.close().await;
+    stop.cancel();
+    server.await.unwrap().unwrap();
+}
+
+/// #953 design 4: an interrupt cancels the call and sends the same
+/// cancellation notice a timeout does.
+#[tokio::test]
+async fn an_interrupt_sends_the_cancellation_notice() {
+    let remote = Remote::new();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/mcp", listener.local_addr().unwrap());
+    let stop = CancellationToken::new();
+    let server = tokio::spawn(
+        axum::serve(
+            listener,
+            Router::new()
+                .route("/mcp", post(rpc).get(events).delete(delete))
+                .with_state(remote.clone()),
+        )
+        .with_graceful_shutdown(stop.clone().cancelled_owned())
+        .into_future(),
+    );
+    let fixture = Fixture::new(&url, "fixture-only").await;
+    let connected = CancellationToken::new();
+    let connection = fixture
+        .mcp
+        .server(None, "docs".into(), &connected)
+        .await
+        .unwrap();
+    let cancelled = CancellationToken::new();
+    let worker = {
+        let connection = connection.clone();
+        let cancel = cancelled.clone();
+        tokio::spawn(async move {
+            connection
+                .call("slow".into(), Default::default(), &cancel)
+                .await
+        })
+    };
+    tokio::time::timeout(Duration::from_secs(5), remote.slow.notified())
+        .await
+        .unwrap();
+    cancelled.cancel();
+    assert!(matches!(
+        tokio::time::timeout(Duration::from_secs(5), worker)
+            .await
+            .unwrap()
+            .unwrap(),
+        Err(McpServerError::Cancelled)
+    ));
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while remote.cancelled.load(Ordering::SeqCst) == 0 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the server receives notifications/cancelled for the call");
+    let call = remote.call_ids.lock().unwrap().last().cloned().unwrap();
+    let notices = remote.cancelled_ids.lock().unwrap().clone();
+    assert_eq!(notices.len(), 1);
+    assert_eq!(notices[0]["requestId"], call);
     fixture.close().await;
     stop.cancel();
     server.await.unwrap().unwrap();

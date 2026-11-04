@@ -327,7 +327,7 @@ fork 复制源 Session 的整个 `SessionConfig`；权限预设随复制过来�
 
 ### A.5 固定前缀读取
 
-带 `atLeast` 的 `sessions.history` 把 `through` 固定为调用时的已发布 head。若该 head 低于 `atLeast`，则以 `future_sequence` 失败，否则返回该分支自己截至该 head 的事件，按 `after` 与 `limit` 分页。它由现有门面组合实现：先用 `Session::sequence(branch)` 读 head，再用 `AgentIndex::history_page` 分页读取；已装载的线经该分支的 query 分页，已结束或本进程未装载的线经 App Server 自己的页读取。需要祖先前缀的分支部分用同一个 query 读祖先链（§9.2）。分支 Dispatcher 或 Session 广播投递的每个事件都已发布，因此只要分支存在，`atLeast = event.sequence` 就会成功。
+`sessions.history` 取得并持有 Session；未装载时先恢复它。带 `atLeast` 时把 `through` 固定为调用时的已发布 head。若该 head 低于 `atLeast`，则以 `future_sequence` 失败，否则返回该分支自己截至该 head 的事件，按 `after` 与 `limit` 分页。它由现有门面组合实现：先用 `Session::sequence(branch)` 读 head，再用 `AgentIndex::history_page` 分页读取。活跃线经自身 query 分页；已结束的线经 `TimelineTree` 按固定 head 和批次边界分页。此入口不会为本进程未持有的 Session 回退到存储读取。需要祖先前缀的分支部分用同一个 query 读祖先链（§9.2）。分支 Dispatcher 或 Session 广播投递的每个事件都已发布，因此只要分支存在，`atLeast = event.sequence` 就会成功。
 
 ### A.6 错误
 

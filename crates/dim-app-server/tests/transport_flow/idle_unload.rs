@@ -171,11 +171,6 @@ async fn pages(sessions: &Sessions, id: &str, through: u64, limit: usize) -> Vec
     events
 }
 
-/// §13 item 1: 50 runs through `sessions`, each one input, `idle` and the
-/// `history` pages. Once dropped, all are unloaded after the grace and every
-/// released instance is gone; `session.summaries` still lists each at its stored
-/// head and its history reads in full. A later input restores one, and its
-/// turn runs.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn fifty_dropped_runs_unload_and_the_next_input_restores_one() {
     let store = Store::new();
@@ -216,6 +211,7 @@ async fn fifty_dropped_runs_unload_and_the_next_input_restores_one() {
             .unwrap_or_else(|| panic!("{id} listed: {listed}"));
         assert_eq!(info["sequence"], *through, "{info}");
     }
+    assert_eq!(loaded(&mut client).await, 0);
 
     let (first, through, _) = &runs[0];
     let receipt = sessions
@@ -241,6 +237,7 @@ async fn fifty_dropped_runs_unload_and_the_next_input_restores_one() {
     );
     for (id, through, events) in &runs {
         assert_eq!(&pages(&sessions, id, *through, 4).await, events, "{id}");
+        assert!(loads.of(id).1, "expected Session {id} to be restored");
     }
     server.shutdown();
     server.join().await.unwrap();
@@ -410,6 +407,56 @@ async fn calls_during_an_unload_wait_and_read_the_restored_session() {
         "{rpc}"
     );
     assert_eq!(loads.of(&id), (2, true));
+    server.shutdown();
+    server.join().await.unwrap();
+}
+
+/// ADR 021 D3: a client `session.history` read of a Session the pass has
+/// unloaded acquires it and pages the same stored facts; the protocol has no
+/// branch that reads them without a Session.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_client_history_read_acquires_an_unloaded_session() {
+    let store = Store::new();
+    let loads = Loads::default();
+    let Served {
+        server,
+        agent,
+        sessions,
+        mut client,
+        ..
+    } = serve_unloading(&store, &loads, GRACE).await;
+    client_session(&mut client, &agent, host_policy()).await;
+    let id = launch(&sessions).await;
+    sessions
+        .ok("input", text_input(&id, "test:read", "hello"))
+        .await;
+    let through = sessions.ok("idle", at(&id)).await["sequence"]
+        .as_u64()
+        .unwrap();
+    let history = json!({"sessionId":id,"branchId":"main","after":0,"limit":256,
+        "through":through});
+    let before = client.rpc("session.history", history.clone()).await;
+    assert_ok(&before);
+    unloaded(agent.get_session(&id).unwrap()).await;
+    loads.released(&id).await;
+    assert_eq!(loads.of(&id), (1, false));
+
+    let page = client.rpc("session.history", history).await;
+    assert_ok(&page);
+    assert_eq!(loads.of(&id), (2, true), "the read acquired the Session");
+    assert_eq!(
+        page["result"]["events"], before["result"]["events"],
+        "the restored Session pages the same facts"
+    );
+    assert!(
+        page["result"]["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|event| event["type"] == "input"
+                && event["data"]["user"]["content"][0]["text"] == "hello"),
+        "{page}"
+    );
     server.shutdown();
     server.join().await.unwrap();
 }

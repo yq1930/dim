@@ -43,7 +43,7 @@ The rule from design rules §2 still holds. When the work needs a different iden
 
 | # | Scenario | Status |
 | --- | --- | --- |
-| S1 | **Plugin lines.** A plugin opens a line under its own design. Example: [Pursuit](plugins/Pursuit.md)'s evaluator, a host-sourced child cut at the worker's turn end, whose conclusion goes back as input (implemented, [#422](https://github.com/arcships/dim/issues/422); `runtime/plugins/goal`) | Delivered. This design adds the identity block (§7.1). Goal's recognition and end of the evaluator change with it ([Pursuit §13](plugins/Pursuit.md#13-ending-the-evaluator-with-427)) |
+| S1 | **Plugin lines.** A plugin opens a line under its own design. Example: [Pursuit](plugins/Pursuit.md)'s evaluator, a host-sourced child cut at the worker's turn end, whose conclusion goes back as input (implemented, [#422](https://github.com/arcships/dim/issues/422); `crates/dim-goal`) | Delivered. This design adds the identity block (§7.1). Goal's recognition and end of the evaluator change with it ([Pursuit §13](plugins/Pursuit.md#13-ending-the-evaluator-with-427)) |
 | S2 | **The agent opens lines from main.** Examples: test two hypotheses for a bug on two lines while main keeps reading; implement on main while a line reviews each change as it lands; research an API or one area of the code while main continues; try a second approach on separate files | This design |
 | S3 | **The user opens a line from a history point, compares it, adopts it.** `session.branch_create` already opens host lines. With this design the user can follow those lines, talk to them and end them. Compare and adopt need a design of their own: what adopting a line means for main's context and for a shared workspace | Later, after this design |
 
@@ -475,7 +475,7 @@ The coordination text for `main` is judged with [§12.3](#123-evaluation-scenari
 - `x`, then `y`, ends the selected line, refused on `main`.
 - Questions and approvals carry the line's label, so two lines asking for the same thing are told apart (`(branch NAME)` on a question, `Permission on branch NAME` on an approval).
 - A message between `main` and a line reads as sent on the sender (its `branch` tool call) and as received on the receiver (`◂ from C`).
-- Switching the shown line starts another transcript under a boundary row (`line C`), as a session switch does, because terminal scrollback is append-only. The line's own transcript folds from its events while it is shown or not, so opening a line reads no history.
+- Switching the shown line starts another transcript under a boundary row (`line C`), as a session switch does, because terminal scrollback is append-only. Discovery retains task inventory and branch-history state, not a full transcript for every line. The first open, through `/lines` or a side view, retains that line's transcript and reads its history from `after:0` through the [existing task-history queue](background-task-list.md#2-discover-and-fold-tasks), including when discovery previously failed. An initial read already in progress from `after:0` can serve that open. Later opens reuse the retained transcript, which continues folding live events even while another line is shown.
 
 The panel is separate from the tasks panel, which lists background commands, members and Workflow runs: its `x` stops a task, and an end is permanent, so the two do not share keys.
 
@@ -616,7 +616,7 @@ These are flows with a fake model, in `branch_flow.rs`, `flows.rs` and the App S
 12. The parent block: an idle line is told its parent moved without a turn starting, and the block is in the first request of its next turn, ahead of the input that starts it; a running line gets it with its next model request, once; a held block is not written over; a consumed block is followed by a new block for a new head; a line that read to the head is not told; the turn that only opened the line is not activity, while a later tool call or an operator input is; a reload with no movement writes nothing, and a reload with a block due writes one; an ending line and `main` get none; the block replays after a compaction of the line; a nested line's opening input carries the block that names its own parent at the cut, and a line cut from `main` gets none.
 13. The parent block changes no Goal decision on an evaluator line: it is an Append input whose first block is not a goal marker and whose key is not a goal key, so the fold's `driving`, `lastOperator`, count and conclusions are unchanged (`goal.test.mjs`).
 
-Goal flows, in `goal.test.mjs` and `transport_flow/goal.rs` (§7.4):
+Goal flows, in the crate's flow tests under `crates/dim-goal/tests` (§7.4):
 
 11. A line opened with `session.branch_create`, whose opening input carries the identity block, behaves exactly as `main` does: `set` on that line, its continuations, and a later operator input that resets the count.
 12. A Pursuit evaluator created under the new opening input is recognized and its conclusion is applied. The working line's count is unchanged.

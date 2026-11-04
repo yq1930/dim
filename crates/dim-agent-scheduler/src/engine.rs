@@ -17,6 +17,7 @@ use std::{collections::HashSet, sync::Arc, time::Duration as StdDuration};
 use tokio_util::sync::CancellationToken;
 
 const POLL: StdDuration = StdDuration::from_secs(1);
+const MAX_CONCURRENT_RUNS: usize = 8;
 
 const MANUAL: &str = "manual";
 /// Terminal runs kept per job, newest first (A.7).
@@ -53,7 +54,6 @@ async fn record(
     job: &Job,
     window: String,
     missed: bool,
-    max: usize,
 ) -> Result<Option<Run>, SchedulerError> {
     let accepted = job.clone();
     let job = job.clone();
@@ -76,7 +76,7 @@ async fn record(
             (RunState::Missed, "missed")
         } else if overlapping {
             (RunState::Skipped, "overlap")
-        } else if active >= max {
+        } else if active >= MAX_CONCURRENT_RUNS {
             (RunState::Skipped, "capacity")
         } else {
             (RunState::Launching, "")
@@ -140,8 +140,7 @@ pub async fn accept(shared: Arc<Shared>, job_id: &str) -> Result<Run, SchedulerE
         .find(|job| job.id == job_id)
         .cloned()
         .ok_or_else(|| SchedulerError::new("schedule_not_found", format!("no job {job_id}")))?;
-    let max = document.max_concurrent_runs as usize;
-    record(&shared, &job, MANUAL.into(), false, max)
+    record(&shared, &job, MANUAL.into(), false)
         .await?
         .ok_or_else(|| SchedulerError::invalid_data("a manual run is always recorded"))
 }
@@ -155,7 +154,6 @@ pub async fn tick(shared: &Arc<Shared>) -> Result<(), SchedulerError> {
     let document = read_document(shared, &cancel).await?.document;
     let history = runs::read(&shared.files).await?;
     let now = Utc::now();
-    let max = document.max_concurrent_runs as usize;
     for job in document.jobs.iter().filter(|job| job.enabled) {
         let Ok(next) = job.next_window(window_after(job, &history)) else {
             continue;
@@ -170,7 +168,7 @@ pub async fn tick(shared: &Arc<Shared>) -> Result<(), SchedulerError> {
                 .unwrap_or(due)
                 .max(due);
             let missed = now - latest >= Duration::seconds(GRACE_SECONDS);
-            record(shared, job, stamp(latest), missed, max).await?;
+            record(shared, job, stamp(latest), missed).await?;
             continue;
         }
         if matches!(job.schedule, Schedule::At(_))

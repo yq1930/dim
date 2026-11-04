@@ -280,8 +280,8 @@ Dispatcher 处理函数可能在发布（`activated`）之前收到开启阶段�
 
 ### R1. 有序消费与重建合为一次 Dispatcher 注册
 
-- **受阻：**[能力重载协议](../../architecture/rust-agent/single-tree.md#能力重载协议)中订阅与重建的步骤。每个 Capability 都手写一遍。例子有
-  `crates/dim-agent-capabilities/src/wait.rs:361-380` 和 `runtime/plugins/goal/branch.ts:120-128`。
+- **受阻：**[能力重载协议](../../architecture/rust-agent/single-tree.md#能力重载协议)中订阅与重建的步骤。每个 Capability 都自己陈述这些步骤。例子有
+  `crates/dim-agent-capabilities/src/wait.rs:395-413` 和 `crates/dim-goal/src/branch.rs:167-182`。
   一个错误（在订阅之前读取截点、读整条链而不是本分支）会无声地丢失或重复计算事件。
 - **考虑过的现有机制：**`subscribe`/`listen` 加 `committed` 与一次查询是正确的，但把协议留给每个作者。
   每种语言各自写一个 SDK 辅助函数会复制这个协议（ADR 006 D1）；一次注册、把重建与处理函数作为函数传入则不复制，
@@ -312,8 +312,9 @@ Dispatcher 处理函数可能在发布（`activated`）之前收到开启阶段�
 
 ### R3. Rpc 把贡献方法的服务错误映射为 wire 错误
 
-- **受阻：**ADR 002 D5（错误即数据）。`runtime/plugins/goal/session.ts:15` 把原生错误变体（`InvalidInput`、`UnknownBranch`、
-  `Closed`、`Reloading`）映射为 JSON-RPC `appError` 码。每个转发原生错误的方法提供者都得重复这个映射，
+- **受阻：**ADR 002 D5（错误即数据）。Goal 的 TypeScript Session 部件自己把原生错误变体（`InvalidInput`、`UnknownBranch`、
+  `Closed`、`Reloading`）映射为 JSON-RPC `appError` 码；原生部件改为经 `RpcError::from` 转发
+  （`crates/dim-goal/src/session.rs:164`）。每个转发原生错误的方法提供者否则都得重复这个映射，
   而新增一个原生错误码需要修改每个插件。
 - **考虑过的现有机制：**`MethodReply` 的错误形式 `{code, appError, message}` 把 wire 错误码放进了插件契约。
 - **所需机制：**贡献的方法返回 `{code, message}` 数据，或重新抛出它收到的服务错误。Rpc 把原生的和

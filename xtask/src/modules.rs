@@ -90,6 +90,7 @@ pub fn generate(workspace: &Path) -> Result<Vec<(&'static str, String)>> {
                             | "dim-cli"
                             | "dim-migration"
                             | "dim-session-title"
+                            | "dim-goal"
                     )
             })
         })
@@ -187,7 +188,7 @@ pub fn generate(workspace: &Path) -> Result<Vec<(&'static str, String)>> {
     let report = json!({
         "analysis": {
             "source":"syn AST: mod declarations, use trees, item definitions and symbol paths",
-            "scope":"dim-agent-*, dim-app-server, dim-client, dim-acp, dim-cli, dim-migration and dim-session-title library/binary targets; cfg branches are conservatively included",
+            "scope":"dim-agent-*, dim-app-server, dim-client, dim-acp, dim-cli, dim-migration, dim-session-title and dim-goal library/binary targets; cfg branches are conservatively included",
             "glob":"glob/re-export chains are resolved for referenced names; an unused glob does not create every possible dependency",
             "limitations":["Macros are not expanded; unexpandedMacros names are reported per module", "Method receiver types, local-variable shadowing and trait-associated item inference are not resolved", "Qualified unresolved paths are reported; this graph supplements cargo check and is not complete rustc name resolution"],
             "typesAllowedDependencies":TYPES_VALUE_DEPENDENCIES,

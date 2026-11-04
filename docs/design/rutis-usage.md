@@ -623,5 +623,5 @@ A part that reads nothing registers with `listen`, which delivers live facts onl
 registration for one that rebuilds.
 
 The repository's fixtures show the form in both languages: `runtime/fixtures/branch-part.ts`,
-`runtime/fixtures/python/python_branch_part.py` and `runtime/plugins/goal/branch.ts` consume the
+`runtime/fixtures/python/python_branch_part.py` and `crates/dim-goal/src/branch.rs` consume the
 branch this way.

@@ -92,6 +92,11 @@ async fn an_at_job_runs_once_when_its_instant_arrives_and_then_disables() {
     let home = tempfile::tempdir().unwrap();
     std::fs::set_permissions(home.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
     std::fs::create_dir_all(home.path().join("scheduler")).unwrap();
+    std::fs::write(
+        home.path().join("schedule.json"),
+        json!({"jobs": [], "max_concurrent_runs": 17}).to_string(),
+    )
+    .unwrap();
 
     let model = Arc::new(Script::default());
     let mut builder = AgentBuilder::new(AgentConfig::default());
@@ -178,6 +183,17 @@ async fn an_at_job_runs_once_when_its_instant_arrives_and_then_disables() {
     })
     .await
     .expect("the at job is disabled after its instant");
+
+    let body: String = rusqlite::Connection::open(home.path().join("dimcode.sqlite"))
+        .unwrap()
+        .query_row(
+            "SELECT document FROM settings_documents WHERE source = 'user/schedule'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let document: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(document["max_concurrent_runs"], 17, "{document}");
 
     drop(client);
     server.shutdown();

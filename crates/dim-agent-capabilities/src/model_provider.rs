@@ -191,6 +191,7 @@ impl ModelProvider {
                     .await?;
                 crate::context_policy::check_cancel(&cancel)?;
                 let request = images::adapt(&call.request);
+                let request = stamped_session(request, &self.identity);
                 let resolved = match &self.resolver {
                     Some(resolver) => resolver.0.resolve(request.clone(), cancel.clone()).await?,
                     None => ResolvedModelConnection {
@@ -491,4 +492,22 @@ impl DynPlugin for ModelProviderPlugin {
             Ok(Effect::Done)
         })
     }
+}
+
+/// The Session a request belongs to, which an adopted configuration does not
+/// carry. OpenCode Go routes on this member and refuses a request without it.
+fn stamped_session(request: Arc<ModelRequest>, identity: &TimelineIdentity) -> Arc<ModelRequest> {
+    let carried = request
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.session_id.as_deref());
+    if carried == Some(identity.session_id.as_str()) {
+        return request;
+    }
+    let mut metadata = request.metadata.clone().unwrap_or_default();
+    metadata.session_id = Some(identity.session_id.clone());
+    Arc::new(ModelRequest {
+        metadata: Some(metadata),
+        ..(*request).clone()
+    })
 }

@@ -20327,6 +20327,7 @@
         "path Call::AgentCreate",
         "path Call::AgentList",
         "path Call::ApprovalRespond",
+        "path Call::Archive",
         "path Call::Attach",
         "path Call::BranchCreate",
         "path Call::BranchEnd",
@@ -25824,6 +25825,7 @@
       "from": "dim_app_server::storage::catalog",
       "to": "dim_agent_runtime::error",
       "references": [
+        "path AgentError::Closed",
         "path AgentError::InvalidInput",
         "path Result",
         "use dim_agent_runtime::AgentError",

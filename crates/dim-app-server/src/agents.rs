@@ -908,6 +908,18 @@ impl AgentIndex {
         self.directory.inner.lock().expect("agent index").sweep();
     }
 
+    pub(crate) async fn archive(
+        &self,
+        session_id: String,
+        archived: bool,
+    ) -> dim_agent_runtime::Result<()> {
+        self.session_store
+            .as_ref()
+            .ok_or_else(|| AgentError::InvalidInput("Archiving needs native storage".into()))?
+            .set_archived(session_id, archived)
+            .await
+    }
+
     pub(crate) async fn session_catalog(
         &self,
         request: crate::protocol::Catalog,

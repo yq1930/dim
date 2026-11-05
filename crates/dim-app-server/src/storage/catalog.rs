@@ -132,6 +132,39 @@ pub(super) fn backfill(connection: &Connection) -> Result<()> {
 }
 
 impl SessionStore {
+    pub(crate) async fn set_archived(&self, session_id: String, archived: bool) -> Result<()> {
+        self.timeline
+            .db
+            .run(move |connection| {
+                let tx = connection.transaction().map_err(error)?;
+                let exists: bool = tx
+                    .query_row(
+                        "SELECT EXISTS(SELECT 1 FROM agent_sessions WHERE session_id=?1)",
+                        [&session_id],
+                        |row| row.get(0),
+                    )
+                    .map_err(error)?;
+                if !exists {
+                    return Err(AgentError::Closed(session_id));
+                }
+                if archived {
+                    tx.execute(
+                        "INSERT OR IGNORE INTO session_archives(session_id) VALUES (?1)",
+                        [&session_id],
+                    )
+                    .map_err(error)?;
+                } else {
+                    tx.execute(
+                        "DELETE FROM session_archives WHERE session_id=?1",
+                        [&session_id],
+                    )
+                    .map_err(error)?;
+                }
+                tx.commit().map_err(error)
+            })
+            .await
+    }
+
     pub(crate) async fn catalog(
         &self,
         request: Catalog,
@@ -150,6 +183,7 @@ impl SessionStore {
                     request.with_preview,
                     request.with_internal,
                     request.with_acp_sessions,
+                    request.archived,
                 ))
                 .map_err(error)?
             )
@@ -175,11 +209,12 @@ impl SessionStore {
                  m.revision, m.title, m.title_source, c.preview, c.updated_at_ms AS updated_at_ms, \
                  CASE WHEN json_valid(s.config) THEN json_extract(s.config, '$.model.providerId') END, \
                  CASE WHEN json_valid(s.config) THEN json_extract(s.config, '$.model.modelId') END, \
-                 s.origin, s.leader_session_id \
+                 s.origin, s.leader_session_id, a.session_id IS NOT NULL \
                  FROM session_catalog c INDEXED BY {index} CROSS JOIN agent_sessions s ON s.session_id=c.session_id \
                  CROSS JOIN session_owners o ON o.session_id=c.session_id \
                  CROSS JOIN timeline_branches b ON b.session_id=c.session_id AND b.branch_id='main' \
                  LEFT JOIN session_metadata m ON m.session_id=c.session_id \
+                 LEFT JOIN session_archives a ON a.session_id=c.session_id \
                  WHERE o.protocol_version=?1 AND o.agent_id IN (SELECT value FROM json_each(?2)) \
                  AND c.session_id NOT IN (SELECT value FROM json_each(?3))"
             );
@@ -187,6 +222,9 @@ impl SessionStore {
             if request.with_preview { sql.push_str(" AND c.preview IS NOT NULL"); }
             if !request.with_internal { sql.push_str(" AND s.origin != 'internal'"); }
             if !request.with_acp_sessions { sql.push_str(" AND s.origin != 'acp'"); }
+            if let Some(archived) = request.archived {
+                sql.push_str(if archived { " AND a.session_id IS NOT NULL" } else { " AND a.session_id IS NULL" });
+            }
             if let Some(agent) = agent { values.push(agent.into()); sql.push_str(&format!(" AND o.agent_id=?{}", values.len())); }
             if let Some(cwd) = request.cwd { values.push(serde_json::to_string(&cwd).map_err(error)?.into()); sql.push_str(&format!(" AND c.cwd IN (SELECT value FROM json_each(?{}))", values.len())); }
             if let Some(query) = request.query {
@@ -232,6 +270,7 @@ impl SessionStore {
                         // Agents marks the rows this daemon closed; the query
                         // already leaves them out unless it asked for them.
                         closed: false,
+                        archived: row.get(14).map_err(error)?,
                     })
                 })();
                 match parsed {

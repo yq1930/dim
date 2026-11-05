@@ -2,7 +2,8 @@
 import { computed, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import { useI18n } from "vue-i18n"
-import { Check, ChevronDown, Folder } from "lucide-vue-next"
+import { Check, ChevronDown, Folder, FolderOpen } from "lucide-vue-next"
+import { canChooseWorkspace, chooseWorkspace } from "../../desktop"
 import BrandMark from "../../components/BrandMark.vue"
 import ComposerPanel from "./ComposerPanel.vue"
 import { MAIN_BRANCH, type ModelId } from "../../rpc/protocol"
@@ -26,6 +27,8 @@ const menu = ref<HTMLDetailsElement>()
 /** The directory the session will run in, seeded from `?cwd=` or the latest workspace. */
 const cwd = ref(typeof route.query.cwd === "string" ? route.query.cwd : "")
 const typed = ref("")
+const choosing = ref(false)
+const pickerError = ref("")
 watch(() => sessions.workspaces, (workspaces) => {
   if (cwd.value === "" && workspaces[0] !== undefined) cwd.value = workspaces[0].cwd
 }, { immediate: true })
@@ -53,6 +56,20 @@ function useTyped(): void {
   typed.value = ""
 }
 
+async function browse(): Promise<void> {
+  if (choosing.value) return
+  choosing.value = true
+  pickerError.value = ""
+  try {
+    const dir = await chooseWorkspace(cwd.value)
+    if (dir !== null) choose(dir)
+  } catch (cause) {
+    pickerError.value = cause instanceof Error ? cause.message : String(cause)
+  } finally {
+    choosing.value = false
+  }
+}
+
 async function send(text: string): Promise<void> {
   if (cwd.value === "") throw new Error(t("newThread.workspaceRequired"))
   const sessionId = await sessions.create(cwd.value, picked.value)
@@ -77,6 +94,10 @@ async function send(text: string): Promise<void> {
             <ChevronDown class="workspace-chevron" aria-hidden="true" />
           </summary>
           <div class="composer-popover-content workspace-menu-content ui-popover" data-width="lg">
+            <button v-if="canChooseWorkspace" type="button" class="ui-menu-item" :disabled="choosing" @click="browse">
+              <FolderOpen aria-hidden="true" />{{ t("newThread.browseWorkspace") }}
+            </button>
+            <p v-if="pickerError" class="ui-banner" data-tone="danger" role="alert">{{ pickerError }}</p>
             <form class="workspace-path-form" @submit.prevent="useTyped">
               <input v-model="typed" class="ui-field" data-size="sm" type="text" spellcheck="false" autocapitalize="off" :placeholder="t('newThread.pathPlaceholder')" :aria-label="t('newThread.pathLabel')">
               <button type="submit" class="ui-button" data-variant="secondary" data-size="sm" :disabled="typed.trim() === ''">{{ t("newThread.usePath") }}</button>

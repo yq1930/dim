@@ -152,6 +152,7 @@ export function readSummaries(value: unknown): SessionSummary[] {
       sequence: num(source, "sequence", at),
       ...(preview === undefined ? {} : { preview }),
       updatedAt: num(source, "updatedAt", at),
+      ...(source.archived === undefined ? {} : { archived: bool(source, "archived", at) }),
     }
   })
 }

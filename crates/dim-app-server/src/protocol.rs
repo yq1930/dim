@@ -109,6 +109,7 @@ pub enum Call {
     Stop(Stop),
     Idle(Idle),
     Close(SessionId),
+    Archive(Archive),
     Delete(Delete),
     Fork(Fork),
     ApprovalRespond(ApprovalRespond),
@@ -561,10 +562,14 @@ pub struct Summaries {
     /// keep their stored rows.
     #[serde(default)]
     pub include_closed: bool,
+    #[serde(default, deserialize_with = "optional_non_null")]
+    pub archived: Option<bool>,
 }
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Catalog {
+    #[serde(default, deserialize_with = "optional_non_null")]
+    pub archived: Option<bool>,
     #[serde(default, deserialize_with = "optional_non_null")]
     pub limit: Option<usize>,
     #[serde(default, deserialize_with = "optional_non_null")]
@@ -637,6 +642,12 @@ pub struct CatalogCancel {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SessionId {
     pub session_id: String,
+}
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Archive {
+    pub session_id: String,
+    pub archived: bool,
 }
 /// `session.delete`: with `requireInactive`, a Session in use refuses the
 /// delete with `session_active` instead of being closed and removed.
@@ -752,7 +763,7 @@ pub struct BranchCreate {
 /// Methods still decoded by the built-in protocol cannot be shadowed by
 /// runtime contributions. Session-looking names not listed here remain valid
 /// contributed names (for example `session.shell`).
-const BUILTIN_METHODS: [&str; 34] = [
+const BUILTIN_METHODS: [&str; 35] = [
     "hello",
     "daemon.ping",
     "daemon.shutdown",
@@ -778,6 +789,7 @@ const BUILTIN_METHODS: [&str; 34] = [
     "session.stop",
     "session.idle",
     "session.close",
+    "session.archive",
     "session.delete",
     "session.fork",
     "approval.respond",
@@ -843,6 +855,7 @@ pub fn decode(bytes: &[u8]) -> Result<Request, (Option<RequestId>, RpcError)> {
             "session.stop" => Call::Stop(params(raw_params)?),
             "session.idle" => Call::Idle(params(raw_params)?),
             "session.close" => Call::Close(params(raw_params)?),
+            "session.archive" => Call::Archive(params(raw_params)?),
             "session.delete" => Call::Delete(params(raw_params)?),
             "session.fork" => Call::Fork(params(raw_params)?),
             "approval.respond" => Call::ApprovalRespond(params(raw_params)?),
@@ -1172,6 +1185,7 @@ pub struct SessionSummary {
     /// Whether this daemon closed the Session; its rows stay stored, and
     /// only a read that asked for closed Sessions lists it.
     pub closed: bool,
+    pub archived: bool,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

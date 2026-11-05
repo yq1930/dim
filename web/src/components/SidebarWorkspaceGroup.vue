@@ -1,15 +1,37 @@
 <script setup lang="ts">
 import { computed, ref } from "vue"
-import { RouterLink } from "vue-router"
+import { RouterLink, useRouter } from "vue-router"
 import { useI18n } from "vue-i18n"
-import { ChevronRight, Folder, FolderOpen, Loader2, Plus } from "lucide-vue-next"
-import type { Workspace } from "../stores/sessions"
+import { Archive, ChevronRight, Folder, FolderOpen, Loader2, Plus } from "lucide-vue-next"
+import { useSessionsStore, type Workspace } from "../stores/sessions"
+import { useConnectionStore } from "../stores/connection"
+import { useToastStore } from "../stores/toast"
+import { useUiStore } from "../stores/ui"
 import { formatRelativeTimeShort } from "../features/chat/timeline-time"
 
 /** One workspace (a working directory) and its sessions, most recent first. */
 const props = defineProps<{ workspace: Workspace; expanded: boolean; activeSessionId?: string; nowMs: number }>()
 const emit = defineEmits<{ toggle: []; navigate: [] }>()
 const { t } = useI18n()
+const router = useRouter()
+const sessions = useSessionsStore()
+const connection = useConnectionStore()
+const archiving = ref<string>()
+
+async function archive(sessionId: string): Promise<void> {
+  if (archiving.value) return
+  archiving.value = sessionId
+  try {
+    await sessions.setArchived(sessionId, true)
+    const ui = useUiStore()
+    if (ui.lastSessionId === sessionId) ui.lastSessionId = undefined
+    if (props.activeSessionId === sessionId) await router.replace({ name: "chat-new", query: { cwd: props.workspace.cwd } })
+  } catch (cause) {
+    useToastStore().push({ tone: "danger", title: t("sidebar.archiveFailed"), description: cause instanceof Error ? cause.message : String(cause) })
+  } finally {
+    archiving.value = undefined
+  }
+}
 
 // A group shows five sessions until "show more" walks out twenty at a time.
 const FIRST = 5
@@ -56,7 +78,7 @@ function toggleReveal(): void {
       </div>
     </div>
     <ul v-if="expanded" class="session-list">
-      <li v-for="session in shown" :key="session.sessionId">
+      <li v-for="session in shown" :key="session.sessionId" class="session-row">
         <RouterLink
           class="session-open"
           :to="{ name: 'chat-session', params: { sessionId: session.sessionId } }"
@@ -69,6 +91,9 @@ function toggleReveal(): void {
           <strong>{{ session.preview ?? t("sidebar.untitled") }}</strong>
           <small>{{ formatRelativeTimeShort(new Date(session.updatedAt), nowMs) }}</small>
         </RouterLink>
+        <button v-if="connection.supports('session.archive')" class="ui-icon-button session-archive" data-variant="ghost" data-size="sm" type="button" :disabled="!!archiving || session.running || connection.phase !== 'connected'" :aria-label="t('sidebar.archiveSession', { name: session.preview ?? t('sidebar.untitled') })" v-tooltip="t('sidebar.archive')" @click="archive(session.sessionId)">
+          <Loader2 v-if="archiving === session.sessionId" class="is-spinning" aria-hidden="true" /><Archive v-else aria-hidden="true" />
+        </button>
       </li>
       <li v-if="workspace.sessions.length > FIRST">
         <button class="ui-button reveal-more" data-variant="ghost" data-size="sm" type="button" @click="toggleReveal">
@@ -97,11 +122,16 @@ function toggleReveal(): void {
 .workspace-row:is(:hover, :focus-within) .workspace-running { opacity: 0; }
 /* The session link reuses the row geometry of the kit's .session-open. */
 .session-list .session-open { grid-template-columns: var(--control-xs) minmax(0, 1fr) auto; border-radius: var(--control-sm-radius); color: inherit; text-decoration: none; }
+.session-row { display: flex; align-items: center; gap: 2px; }
+.session-row .session-open { flex: 1; min-width: 0; }
+.session-archive { flex: none; opacity: 0; }
+.session-row:is(:hover, :focus-within) .session-archive { opacity: 1; }
 .session-list .session-open .status-dot { justify-self: center; }
 .session-list .session-open:hover { background: var(--hover); }
 .session-list .session-open[data-open="true"] { background: var(--card); box-shadow: var(--shadow-xs), 0 0 0 1px var(--border); }
 @media (hover: none) {
   .workspace-row-actions { opacity: 1; }
   .workspace-running { display: none; }
+  .session-archive { opacity: 1; }
 }
 </style>

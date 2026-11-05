@@ -444,6 +444,7 @@ impl Connection {
                     | Call::CatalogCancel(_)
                     | Call::SessionMethods(_)
                     | Call::Delete(_)
+                    | Call::Archive(_)
                     | Call::Fork(_)
                     | Call::BranchEnd(_)
             )
@@ -521,6 +522,16 @@ impl Connection {
             Call::Delete(p) => {
                 self.authorize_version(rpc, &p.session_id)?;
                 (None, None)
+            }
+            Call::Archive(p) => {
+                if rpc.config.database_path.is_none() {
+                    return Err(RpcError::app(
+                        -32601,
+                        "unknown_method",
+                        "Method requires native storage",
+                    ));
+                }
+                (Some(&p.session_id), None)
             }
             Call::Fork(p) => {
                 if rpc.config.database_path.is_none() {
@@ -739,6 +750,7 @@ impl Connection {
                 Ok(Reply::empty())
             }
             Call::Catalog(mut params) => {
+                params.archived.get_or_insert(false);
                 let limit = params.limit.unwrap_or(50);
                 if !(1..=200).contains(&limit) {
                     return Some(Err(RpcError::invalid(
@@ -770,7 +782,9 @@ impl Connection {
                     Err(error) => Err(RpcError::from(error)),
                 }
             }
-            Call::Summaries(Summaries { agent_id, .. }) => {
+            Call::Summaries(Summaries {
+                agent_id, archived, ..
+            }) => {
                 if let Some(agent_id) = agent_id.as_deref()
                     && let Some(reason) = rpc.index.unavailable_agent(agent_id)
                 {
@@ -785,6 +799,7 @@ impl Connection {
                             .index
                             .session_catalog(
                                 Catalog {
+                                    archived,
                                     with_internal: true,
                                     with_acp_sessions: true,
                                     ..Catalog::default()
@@ -867,11 +882,15 @@ impl Connection {
                         Err(error) => return Some(Err(RpcError::from(error))),
                     };
                     summaries.push(SessionSummary {
+                        archived: false,
                         closed: rpc.index.closed(&session.session_id),
                         session,
                         preview,
                         updated_at,
                     });
+                }
+                if archived == Some(true) {
+                    summaries.clear();
                 }
                 Ok(Reply::Summaries(summaries))
             }
@@ -962,6 +981,12 @@ impl Connection {
                 rpc.index.remove_version(&params.session_id);
                 result.map(|_| Reply::empty())
             }
+            Call::Archive(params) => rpc
+                .index
+                .archive(params.session_id, params.archived)
+                .await
+                .map(|_| Reply::empty())
+                .map_err(RpcError::from),
             Call::Delete(params) if params.require_inactive => {
                 match rpc.index.delete_if_inactive(&params.session_id).await {
                     Ok(DeleteOutcome::Removed(deleted)) => {

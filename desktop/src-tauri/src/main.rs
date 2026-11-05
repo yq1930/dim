@@ -94,6 +94,44 @@ fn show_main(app: &AppHandle) {
     }
 }
 
+#[tauri::command]
+async fn choose_workspace(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    initial_directory: Option<String>,
+) -> std::result::Result<Option<String>, String> {
+    let url = window.url().map_err(|error| error.to_string())?;
+    if window.label() != "main"
+        || !app
+            .state::<Arc<Desktop>>()
+            .workspace
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|workspace| workspace.origin() == url.origin())
+    {
+        return Err("The folder picker is only available in the local workspace".into());
+    }
+    let mut dialog = app.dialog().file().set_parent(&window);
+    if let Some(path) = initial_directory.filter(|path| Path::new(path).is_absolute()) {
+        dialog = dialog.set_directory(path);
+    }
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    dialog.pick_folder(move |folder| {
+        let _ = sender.send(folder);
+    });
+    receiver
+        .await
+        .map_err(|error| error.to_string())?
+        .map(|folder| {
+            let path = folder.into_path().map_err(|error| error.to_string())?;
+            path.into_os_string()
+                .into_string()
+                .map_err(|_| "The folder path is not valid UTF-8".into())
+        })
+        .transpose()
+}
+
 fn open_external(app: &AppHandle, url: &Url) {
     if matches!(url.scheme(), "http" | "https") {
         let _ = app.opener().open_url(url.as_str(), None::<&str>);
@@ -153,6 +191,13 @@ async fn hold_workspace(app: AppHandle, state: Arc<Desktop>) -> Result<()> {
                     continue;
                 };
                 *state.workspace.lock().unwrap() = Some(url.clone());
+                app.add_capability(
+                    tauri::ipc::CapabilityBuilder::new("workspace-picker")
+                        .window("main")
+                        .local(false)
+                        .remote(format!("{}/*", url.origin().ascii_serialization()))
+                        .permission("allow-choose-workspace"),
+                )?;
                 connected = true;
                 state.finish_startup();
                 if !state.quitting.load(Ordering::Acquire) {
@@ -222,6 +267,7 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![choose_workspace])
         .setup(|app| {
             let home = std::env::var_os("DIM_DESKTOP_HOME")
                 .map(PathBuf::from)

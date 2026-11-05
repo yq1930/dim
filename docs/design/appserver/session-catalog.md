@@ -141,7 +141,27 @@ page is never hidden by what the page already fetched. [#557](https://github.com
 who writes it and why `unknown` is always listed is [Session classification](session-classification.md#35-catalog-visibility).
 A row's position, the cursor and the client's row count stay consistent across refreshes with them in place.
 
-### 3.6 Cancelling a read
+### 3.6 Archive classification
+
+`session.archive {sessionId, archived: boolean} -> {}` is a protocol-v3 built-in advertised only with native
+storage and Session execution. Agents routes it to SessionStore without loading or closing the Session.
+The write is idempotent, validates the Session identity and protocol owner, and returns only after its transaction
+commits. A missing Session fails `session_closed`. `true` archives; `false` restores the catalog classification.
+Archiving does not stop a running turn, close a Session, delete history, or change its activity ordering.
+
+`session.catalog` accepts `archived?: boolean`, default `false`; `true` lists only archived Sessions.
+`session.summaries` accepts the same optional filter, but omission preserves its existing all-classifications view
+for cleanup clients. Both replies add `archived: boolean`. The filter is applied before the page boundary and is
+part of the cursor digest. A daemon without storage reports loaded Sessions as unarchived and cannot archive them.
+
+The durable rows belong to SessionStore ([native format v34](native-storage-format.md#session-archive-v34-格式决定)).
+Delete removes the archive row in the same visibility transaction, and a fork starts unarchived. Client mutation
+replies publish no Timeline fact: the caller refreshes its catalog after success, and reconnects read the same
+persisted classification. The sidebar requests unarchived summaries; Settings pages archived catalog rows and
+restores them with `session.archive` before reloading the sidebar. Deletion still requires the existing explicit
+confirmation. The sidebar disables archive while its Session is running.
+
+### 3.7 Cancelling a read
 
 `session.catalog.cancel {requestId} -> {}` cancels an in-flight `session.catalog` or `session.summaries` read on the
 same connection. An absent, completed or non-catalog request is a no-op. Protocol v3 advertises this method with
@@ -154,7 +174,7 @@ connection, so cancellation cannot interrupt a later write. RPC ownership lasts 
 
 ## 4. Events and state
 
-This part writes no event and owns no state. The projection is derived state: every column follows from events the
+Catalog reads write no event and own no state. Archive classification is SessionStore-owned durable metadata (§3.6). The projection is derived state: every column follows from events the
 Timeline already holds, and the upgrade rebuilds it once for the whole store from them
 ([native storage format](native-storage-format.md#556-v23-格式决定)). The creation class and the parent are not taken
 from the projection: they are creation input, recorded on the stored Session record and read from the row this query

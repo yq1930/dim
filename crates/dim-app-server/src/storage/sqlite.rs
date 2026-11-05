@@ -15,7 +15,7 @@ use std::{
 };
 
 /// The native store format this daemon creates and opens.
-pub const FORMAT: u32 = 33;
+pub const FORMAT: u32 = 34;
 /// The oldest schema the startup transaction upgrades: the first step of
 /// `UPGRADES`, which is ordered oldest first.
 const MIN_FORMAT: u32 = UPGRADES[0].0;
@@ -54,7 +54,7 @@ const LEGACY_INDEXES: &[(&str, &str, u32, u32)] = &[
 pub(super) const SCHEMA: &[(&str, &str)] = &[
     (
         "agent_store_format",
-        "CREATE TABLE agent_store_format (version INTEGER NOT NULL PRIMARY KEY CHECK (version = 33))",
+        "CREATE TABLE agent_store_format (version INTEGER NOT NULL PRIMARY KEY CHECK (version = 34))",
     ),
     (
         "settings_documents",
@@ -177,6 +177,10 @@ pub(super) const SCHEMA: &[(&str, &str)] = &[
         "CREATE TABLE session_catalog (session_id TEXT NOT NULL PRIMARY KEY REFERENCES agent_sessions(session_id), updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= 0), preview TEXT, cwd TEXT NOT NULL)",
     ),
     (
+        "session_archives",
+        "CREATE TABLE session_archives (session_id TEXT NOT NULL PRIMARY KEY REFERENCES agent_sessions(session_id))",
+    ),
+    (
         "session_catalog_by_activity",
         "CREATE INDEX session_catalog_by_activity ON session_catalog(updated_at_ms DESC, session_id)",
     ),
@@ -212,7 +216,7 @@ ALTER TABLE timeline_events ADD COLUMN context_state INTEGER NOT NULL DEFAULT 0;
 /// The one-way upgrade steps, oldest first: the format a step starts from
 /// and the `SCHEMA` entries it adds, which are created in `SCHEMA` order,
 /// tables before their indexes. An upgrade also replaces the marker table.
-const UPGRADES: [(u32, &[&str]); 19] = [
+const UPGRADES: [(u32, &[&str]); 20] = [
     (
         13,
         &[
@@ -279,6 +283,7 @@ const UPGRADES: [(u32, &[&str]); 19] = [
             "session_worktrees_by_directory",
         ],
     ),
+    (33, &["session_archives"]),
 ];
 
 fn format_table(version: u32) -> String {

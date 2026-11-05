@@ -157,7 +157,7 @@ The frontend directory is fixed when the daemon starts (§2.4); a daemon started
 | Lines | Right detail panel with a Lines tree and one tab per opened line; each tab folds that line's own history and sends, stops, approves and ends on its `branchId` (§4.1) |
 | i18n | `en` and `zh-CN` |
 
-Features outside the settings scope with no v3 backend are left out rather than stubbed: follow-up queue, attachments and file previews, file-history rewind, rename, goal, workflows, subagent panes, directory picker and git branch menu. Settings and saved-session management follow §4.3.
+Features outside the settings scope with no v3 backend are left out rather than stubbed: follow-up queue, attachments and file previews, file-history rewind, rename, goal, workflows, subagent panes and git branch menu. The macOS desktop host supplies a native directory picker; a browser uses the absolute-path input. Settings and saved-session management follow §4.3.
 
 ### 4.1 Lines and branch
 
@@ -357,7 +357,7 @@ optional account feature must not prevent identity or usage from loading.
 | Plugins | List, enable/disable, installation/update/removal and the owner's typed settings surfaces |
 | Skills | List, enable/disable, source installation, update and confirmed removal |
 | Permissions | Default execution/network settings and user-scope command-rule management (exact/prefix allow/deny; project scope, patterns and per-rule ask are rejected, [§10.1](appserver/permission-command-rules.md#101-legacy-rule-kinds)), with confirmation for privilege increases. The Execution card reads `host.execution.backend` and shows the owner's sandbox-backend reason when the host has none; the browser never infers the platform |
-| Archived sessions | Search, restore/open and confirmed permanent deletion |
+| Archived sessions | `session.archive` commits the classification before the sidebar refreshes; `session.catalog {archived:true}` searches archived rows, restore clears the classification, and permanent deletion keeps its confirmation. Older servers without archive support display saved history. |
 | Diagnostics | Safe version, protocol, connection and metadata with refresh, the model-request recording switch, and the start-up rule for process logs instead of a log-mode control ([logging controls](#diagnostics-the-legacy-logging-controls)) |
 
 Use the current owner's semantics when old terminology no longer describes the

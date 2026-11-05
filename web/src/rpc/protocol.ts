@@ -33,6 +33,7 @@ export type SessionSummary = {
   preview?: string
   /** Unix milliseconds of the last main-branch event. */
   updatedAt: number
+  archived?: boolean
 }
 
 export type CreateResult = { sessionId: string; model: ModelId; sequence: number }

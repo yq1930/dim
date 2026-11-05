@@ -1,6 +1,6 @@
 import { computed, ref } from "vue"
 import { defineStore } from "pinia"
-import { readCreate, readSummaries } from "../rpc/read"
+import { readAck, readCreate, readSummaries } from "../rpc/read"
 import type { ModelId, SessionSummary } from "../rpc/protocol"
 import { useConnectionStore } from "./connection"
 
@@ -33,7 +33,8 @@ export const useSessionsStore = defineStore("sessions", () => {
 
   /** Reloads the directory; concurrent callers share one request. */
   function refresh(): Promise<void> {
-    refreshing ??= useConnectionStore().client.call("session.summaries", {}, readSummaries)
+    const connection = useConnectionStore()
+    refreshing ??= connection.client.call("session.summaries", connection.supports("session.archive") ? { archived: false } : {}, readSummaries)
       .then((list) => {
         summaries.value = list
         loaded.value = true
@@ -65,7 +66,14 @@ export const useSessionsStore = defineStore("sessions", () => {
     summaries.value = summaries.value.filter((session) => session.sessionId !== sessionId)
   }
 
-  return { summaries, loaded, error, byId, workspaces, refresh, create, setRunning, forget }
+  async function setArchived(sessionId: string, archived: boolean): Promise<void> {
+    await refreshing
+    await useConnectionStore().client.call("session.archive", { sessionId, archived }, readAck)
+    if (archived) forget(sessionId)
+    await refresh()
+  }
+
+  return { summaries, loaded, error, byId, workspaces, refresh, create, setRunning, forget, setArchived }
 })
 
 export function workspaceName(cwd: string): string {

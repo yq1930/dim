@@ -380,6 +380,9 @@ const V33_ADDITIONS: &[&str] = &[
     "CREATE TABLE session_worktrees (session_id TEXT NOT NULL REFERENCES agent_sessions(session_id), repository TEXT NOT NULL, root TEXT NOT NULL, subtree TEXT NOT NULL, PRIMARY KEY (session_id, repository, root), FOREIGN KEY (repository, root) REFERENCES worktree_directories(repository, root))",
     "CREATE INDEX session_worktrees_by_directory ON session_worktrees(repository, root, session_id)",
 ];
+const V34_ADDITIONS: &[&str] = &[
+    "CREATE TABLE session_archives (session_id TEXT NOT NULL PRIMARY KEY REFERENCES agent_sessions(session_id))",
+];
 const V23_ADDITIONS: &[&str] = &[
     "CREATE TABLE session_catalog (session_id TEXT NOT NULL PRIMARY KEY REFERENCES agent_sessions(session_id), updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= 0), preview TEXT, cwd TEXT NOT NULL)",
     "CREATE INDEX session_catalog_by_activity ON session_catalog(updated_at_ms DESC, session_id)",
@@ -398,6 +401,7 @@ fn schema_of(version: u32) -> Vec<String> {
         .chain(V31_ADDITIONS.iter().filter(|_| version >= 31))
         .chain(V32_ADDITIONS.iter().filter(|_| version >= 32))
         .chain(V33_ADDITIONS.iter().filter(|_| version >= 33))
+        .chain(V34_ADDITIONS.iter().filter(|_| version >= 34))
         .filter(|sql| version <= 24 || !sql.starts_with("CREATE INDEX timeline_events_by_end "))
         .map(|sql| sql.replace("(version = 13)", &format!("(version = {version})")))
         .map(|sql| {
@@ -3714,8 +3718,8 @@ fn a_newer_store_leaves_an_actionable_startup_note() {
     Connection::open(&database.0)
         .unwrap()
         .execute_batch(
-            "CREATE TABLE agent_store_format (version INTEGER NOT NULL PRIMARY KEY CHECK (version = 34));
-             INSERT INTO agent_store_format VALUES (34);",
+            "CREATE TABLE agent_store_format (version INTEGER NOT NULL PRIMARY KEY CHECK (version = 35));
+             INSERT INTO agent_store_format VALUES (35);",
         )
         .unwrap();
     let original = std::fs::read(&database.0).unwrap();
@@ -3725,10 +3729,10 @@ fn a_newer_store_leaves_an_actionable_startup_note() {
     assert!(message.contains("unsupported SQLite schema"), "{message}");
     assert_eq!(std::fs::read(&database.0).unwrap(), original);
     let note = read_startup_note(&database.0);
-    assert!(note.contains("Store format: v34"), "{note}");
-    assert!(note.contains("Daemon format: v33"), "{note}");
+    assert!(note.contains("Store format: v35"), "{note}");
+    assert!(note.contains("Daemon format: v34"), "{note}");
     assert!(note.contains("Existing data was preserved"), "{note}");
-    assert!(note.contains("Run a build supporting v34"), "{note}");
+    assert!(note.contains("Run a build supporting v35"), "{note}");
     assert!(note.contains("--home PATH"), "{note}");
 }
 
@@ -3746,7 +3750,7 @@ fn a_mismatched_store_note_does_not_claim_a_downgrade() {
     assert!(SqliteStorage::open(database.0.clone()).is_err());
     assert_eq!(std::fs::read(&database.0).unwrap(), original);
     let note = read_startup_note(&database.0);
-    assert!(note.contains("Store format: v29 (schema is v33)"), "{note}");
+    assert!(note.contains("Store format: v29 (schema is v34)"), "{note}");
     assert!(note.contains("marker and schema disagree"), "{note}");
     assert!(
         note.contains("Use the build that wrote this store"),
@@ -3790,7 +3794,7 @@ fn an_empty_marker_table_is_reported_as_missing_or_ambiguous() {
     assert_eq!(std::fs::read(&database.0).unwrap(), original);
     let note = read_startup_note(&database.0);
     assert!(
-        note.contains("Store format: v33 (format marker is missing or ambiguous)"),
+        note.contains("Store format: v34 (format marker is missing or ambiguous)"),
         "{note}"
     );
     assert!(!note.contains("Run a build supporting"), "{note}");
@@ -3883,20 +3887,20 @@ fn a_failed_open_replaces_the_previous_startup_note() {
     Connection::open(&database.0)
         .unwrap()
         .execute_batch(
-            "CREATE TABLE agent_store_format (version INTEGER NOT NULL PRIMARY KEY CHECK (version = 34));
-             INSERT INTO agent_store_format VALUES (34);",
+            "CREATE TABLE agent_store_format (version INTEGER NOT NULL PRIMARY KEY CHECK (version = 35));
+             INSERT INTO agent_store_format VALUES (35);",
         )
         .unwrap();
     std::fs::write(
         startup_note(&database.0),
-        "dimcode-startup-failure v1 pid=1\nCannot open native store /previous.\n  Store format: v35\n",
+        "dimcode-startup-failure v1 pid=1\nCannot open native store /previous.\n  Store format: v36\n",
     )
     .unwrap();
     assert!(SqliteStorage::open(database.0.clone()).is_err());
     let note = read_startup_note(&database.0);
-    assert!(note.contains("Store format: v34"), "{note}");
+    assert!(note.contains("Store format: v35"), "{note}");
     assert!(!note.contains("/previous"), "{note}");
-    assert!(!note.contains("v35"), "{note}");
+    assert!(!note.contains("v36"), "{note}");
 }
 
 #[test]
@@ -3943,6 +3947,7 @@ async fn upgrades_in_place_once(database: &Database, connection: Connection, fro
         .chain(V28_TABLES.iter().filter(|_| from < 28))
         .chain(V29_TABLES.iter().filter(|_| from < 29))
         .chain(V33_TABLES.iter().filter(|_| from < 33))
+        .chain(["session_archives"].iter().filter(|_| from < 34))
         .copied()
         .collect();
     let kept: Vec<&str> = BUSINESS_TABLES

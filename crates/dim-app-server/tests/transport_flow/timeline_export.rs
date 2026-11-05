@@ -432,7 +432,7 @@ async fn timeline_export_reads_a_live_product_home_and_its_copies() {
                 ""
             };
             changed(&database, &older, &format!("{catalog} {grants} {output} {dropped} {end_index}
-                DROP TABLE session_worktrees; DROP TABLE worktree_directories; DROP TABLE agent_store_format;
+                DROP TABLE session_archives; DROP TABLE session_worktrees; DROP TABLE worktree_directories; DROP TABLE agent_store_format;
                 CREATE TABLE agent_store_format (version INTEGER NOT NULL PRIMARY KEY CHECK (version = {version}));
                 INSERT INTO agent_store_format VALUES ({version});"));
             if version < 31 {
@@ -460,8 +460,8 @@ async fn timeline_export_reads_a_live_product_home_and_its_copies() {
 
         for (name, sql) in [
             ("newer.sqlite", "DROP TABLE agent_store_format;
-                CREATE TABLE agent_store_format (version INTEGER NOT NULL PRIMARY KEY CHECK (version = 34));
-                INSERT INTO agent_store_format VALUES (34);"),
+                CREATE TABLE agent_store_format (version INTEGER NOT NULL PRIMARY KEY CHECK (version = 35));
+                INSERT INTO agent_store_format VALUES (35);"),
             ("changed.sqlite", "CREATE TABLE extra (id TEXT)"),
         ] {
             let path = directory.join("copies").join(name);

@@ -736,6 +736,7 @@ async fn run_connection(
                                         }
                                         if hub.config().database_path.is_some() {
                                             features.push("session.fork");
+                                            features.push("session.archive");
                                             features.push("session.history.latestTurn");
                                         }
                                     }

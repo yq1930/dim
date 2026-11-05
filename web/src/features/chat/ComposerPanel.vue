@@ -137,7 +137,7 @@ const canSend = computed(() => (text.value.trim() !== "" || images.value.length 
 
 function resize(): void {
   const element = field.value
-  if (element === undefined) return
+  if (!element) return
   element.style.height = "auto"
   element.style.height = `${Math.min(element.scrollHeight, 300)}px`
 }

@@ -15,7 +15,7 @@ A plugin is a directory with a manifest. It may carry code (a rutis plugin in Ty
 | Plugin code: create, turn on/off, replace, reload loader rows (§3) | yes, TypeScript and Python, once their runtimes are supplied (§2.5) | |
 | `plugin.*` management methods and `dimcode plugin` commands (§6, A.1) | yes | client notifications of changes |
 | Agent tools through a Session part (§6) | yes | |
-| The default CLI loads the built-in SessionTitle, Scheduler, Goal and Web and the configured default plugin (plugin-authoring) | yes | |
+| The default CLI loads the built-in SessionTitle, Scheduler, Goal and Web and the configured default plugins (plugin-authoring, project-init) | yes | |
 | Settings sources registered at run time by every plugin itself (§9 R1) | yes, built-in and TypeScript plugins together | |
 | Content kinds: skills, MCP configuration, hooks (§3, §9 R2) | skills and MCP if their owners land in time; hooks (Hooks is M1) | |
 
@@ -145,7 +145,8 @@ Shipped with Dim, read-only, given to the App Server with `--defaults PATH` (the
 ```json
 {
   "plugins": {
-    "plugin-authoring": "plugins/plugin-authoring"
+    "plugin-authoring": "plugins/plugin-authoring",
+    "project-init": "plugins/project-init"
   },
   "locked": ["PluginManager", "Rpc", "Transport"]
 }
@@ -265,6 +266,7 @@ PluginManager adds no text of its own to model context beyond the `plugin` tool.
 
   The tool's description carries only the one-line command list; `help` gives the details, and a malformed command's error result carries that command's usage. The tool is a tool call: Permission decides each one ([requirement 5](../plugin-management.md), [ADR 003](../../adr/003-approval-scope.md)). Its declared risk is `persistent_configuration`; `list` and `help` are admitted as `read_filesystem` (R3); `config`, whose documents may hold secrets and user content, is admitted at the declared risk, as the sources' own tools are.
 - Plugin authoring: the default plugin `plugin-authoring` carries one Skill, `plugin-authoring`, which teaches the agent to write a TypeScript plugin and install it with this tool. It is content only (§2.1) and can be turned off like any default plugin.
+- Project initialization: the default plugin `project-init` carries one Skill, `init`, which writes or refreshes the workspace's `AGENTS.md` from what the repository contains. It is content only, as plugin-authoring is.
 - Owner operations PluginManager calls: `register` / `withdraw` on SkillsCatalog, Mcp and Hooks (§9 R2).
 
 ## 7. Security

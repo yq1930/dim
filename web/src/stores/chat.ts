@@ -5,6 +5,8 @@ import { Projection, type TimelineRow } from "../projection"
 import { Lines, type LineView } from "../lines"
 import { ConnectionLost, RpcError } from "../rpc/client"
 import type { Goal, GoalCall } from "../goal"
+import { canChooseWorkspace as inDesktopShell, notifyDesktop } from "../desktop"
+import { translate, type TranslationKey } from "../i18n"
 import { MAIN_BRANCH, type ApprovalDecision, type ApprovalRequest, type DraftAttachments, type FileCandidate, type ModelId, type Notification, type PendingQuestion, type PermissionPreset, type PermissionPolicy, type QueuedInput, type QuestionAnswer, type SessionEvent, type UserInput, type WithdrawResult } from "../rpc/protocol"
 import { readRevision, readRules } from "../rpc/general-settings"
 import { ProtocolError, readAck, readAttachmentPath, readBranchCreate, readCompactResult, readConfigurationOutcome, readContextUsage, readFileCandidates, readForkedSessionId, readHistory, readModelUpdate, readMemberApproval, readPermissionState, readPermissionVersion, readSessionMethods, readWithdrawResult } from "../rpc/read"
@@ -74,6 +76,10 @@ type Channel = {
   branches: Map<string, BranchStream>
   lines: Lines
   states: Map<string, { running: boolean; stopping: boolean }>
+  /** Set once history has applied: what arrives after this happens now and may alert the user. */
+  live: boolean
+  /** The questions already seen waiting, so each alerts once. */
+  asked: Set<string>
   /** While `syncing`, every notification waits here so history applies first. */
   syncing: boolean
   queued: Notification[]
@@ -140,6 +146,8 @@ export const useChatStore = defineStore("chat", () => {
       lines: new Lines(),
       states: new Map(),
       syncing: false,
+      live: false,
+      asked: new Set(),
       queued: [],
       historyQueue: [],
       historyRunning: false,
@@ -207,7 +215,14 @@ export const useChatStore = defineStore("chat", () => {
       channel.main.syncing = false
       channel.queued = []
       publish(channel)
+      channel.live = true
     }
+  }
+
+  function alertUser(channel: Channel, key: TranslationKey): void {
+    if (!channel.live || !inDesktopShell) return
+    const session = useSessionsStore().byId.get(channel.view.sessionId)
+    notifyDesktop(translate(key), session?.title ?? session?.preview ?? translate("sidebar.untitled"))
   }
 
   function receive(notification: Notification): void {
@@ -247,7 +262,10 @@ export const useChatStore = defineStore("chat", () => {
       }
       case "session.state": {
         if (notification.branchId === MAIN_BRANCH) {
-          if (view.running && !notification.running) refreshDirectorySoon()
+          if (view.running && !notification.running) {
+            refreshDirectorySoon()
+            alertUser(channel, "desktop.runFinished")
+          }
         }
         channel.states.set(notification.branchId, { running: notification.running, stopping: notification.stopping })
         channel.lines.setRunning(notification.branchId, notification.running)
@@ -263,6 +281,7 @@ export const useChatStore = defineStore("chat", () => {
       case "approval.request":
         if (!view.approvals.some((approval) => approval.requestId === notification.request.requestId && approval.branchId === notification.request.branchId)) {
           view.approvals = [...view.approvals, notification.request]
+          alertUser(channel, "desktop.needsApproval")
         }
         break
       case "approval.resolved":
@@ -441,6 +460,9 @@ export const useChatStore = defineStore("chat", () => {
       ...channel.main.projection.waiting().map((ask) => ({ branchId: MAIN_BRANCH, ...ask })),
       ...[...channel.branches].flatMap(([id, branch]) => branch.projection.waiting().map((ask) => ({ branchId: id, ...ask }))),
     ]
+    const asked = view.questions.filter((ask) => !channel.asked.has(ask.requestId))
+    for (const ask of asked) channel.asked.add(ask.requestId)
+    if (asked.length > 0) alertUser(channel, "desktop.needsAnswer")
     const branches: Record<string, BranchView> = {}
     for (const [id, branch] of channel.branches) {
       const state = stateOf(channel, id)
@@ -481,9 +503,10 @@ export const useChatStore = defineStore("chat", () => {
       body = `${body}${body === "" ? "" : "\n"}[Pasted text: ${path} (${paste.split("\n").length} lines)]`
     }
     for (const file of attachments.files ?? []) {
-      const path = await client().call("attachment.put", { sessionId, text: file.text }, readAttachmentPath)
+      const path = await client().call("attachment.put", file.pdfBase64 === undefined ? { sessionId, text: file.text } : { sessionId, pdfBase64: file.pdfBase64 }, readAttachmentPath)
       const name = file.name.replace(/([\\`*_\[\]<>!])/g, "\\$1").replace(/[\r\n]/g, " ")
-      body = `${body}${body === "" ? "" : "\n"}[File: ${name}; ${path} (${file.text.split("\n").length} lines)]`
+      const size = file.pdfBase64 === undefined ? `${file.text.split("\n").length} lines` : "PDF"
+      body = `${body}${body === "" ? "" : "\n"}[File: ${name}; ${path} (${size})]`
     }
     const params: Record<string, unknown> = { sessionId, branchId, submissionId: crypto.randomUUID(), mode: "queue" }
     if (attachments.images.length === 0) params.text = body

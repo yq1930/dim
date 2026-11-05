@@ -6,8 +6,10 @@ import { Check, ChevronDown, Folder, FolderOpen } from "lucide-vue-next"
 import { canChooseWorkspace, chooseWorkspace } from "../../desktop"
 import BrandMark from "../../components/BrandMark.vue"
 import ComposerPanel from "./ComposerPanel.vue"
+import { readSkills } from "../../rpc/general-settings"
 import { MAIN_BRANCH, type DraftAttachments, type ModelId } from "../../rpc/protocol"
 import { useChatStore } from "../../stores/chat"
+import { useConnectionStore } from "../../stores/connection"
 import { useModelsStore } from "../../stores/models"
 import { useSessionsStore, workspaceName } from "../../stores/sessions"
 
@@ -22,12 +24,18 @@ const router = useRouter()
 const sessions = useSessionsStore()
 const chat = useChatStore()
 const models = useModelsStore()
+const connection = useConnectionStore()
 const menu = ref<HTMLDetailsElement>()
 let active = true
 onBeforeUnmount(() => { active = false })
 
 /** The directory the session will run in, seeded from `?cwd=` or the latest workspace. */
 const cwd = ref(typeof route.query.cwd === "string" ? route.query.cwd : "")
+const listSkills = computed(() => {
+  if (cwd.value === "" || !connection.supports("skills.catalog")) return undefined
+  const dir = cwd.value
+  return async () => (await connection.client.call("skills.catalog", { cwd: dir }, readSkills)).entries.filter((skill) => skill.enabled && skill.shadowedBy === undefined)
+})
 const typed = ref("")
 const choosing = ref(false)
 const pickerError = ref("")
@@ -92,7 +100,7 @@ async function send(text: string, attachments: DraftAttachments): Promise<void> 
       <BrandMark class="new-session-mark" />
       <h1 data-route-heading tabindex="-1">{{ t("newThread.title") }}</h1>
     </div>
-    <ComposerPanel class="is-new-thread" :draft-key="`new:${cwd}`" :running="false" :model="model" :model-selectable="true" :send="send" :stores-pastes="true" :select-model="(next) => { picked = next }" :reasoning-effort="reasoningEffort" :select-effort="(value) => { reasoningEffort = value }">
+    <ComposerPanel class="is-new-thread" :draft-key="`new:${cwd}`" :running="false" :model="model" :model-selectable="true" :send="send" :stores-pastes="true" :select-model="(next) => { picked = next }" :reasoning-effort="reasoningEffort" :select-effort="(value) => { reasoningEffort = value }" :list-skills="listSkills">
       <template #status>
         <details ref="menu" class="composer-popover workspace-menu">
           <summary class="ui-button" data-variant="ghost" data-size="xs" data-trailing v-tooltip="cwd || undefined">

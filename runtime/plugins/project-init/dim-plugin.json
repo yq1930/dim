@@ -1,0 +1,5 @@
+{
+  "name": "project-init",
+  "description": "A Skill that writes or refreshes a project's AGENTS.md",
+  "skills": "skills"
+}

@@ -94,7 +94,7 @@ export type UserInput = { content: Array<Record<string, unknown>> }
 /** A base64 image content block, as the server's `ContentBlock::Image` reads it. */
 export type ImageBlock = { type: "image"; source: { type: "base64"; mediaType: string; data: string } }
 
-export type DraftFile = { name: string; text: string }
+export type DraftFile = { name: string; text: string; pdfBase64?: string }
 /** Images as content blocks; pasted text and UTF-8 files stored as Session attachments. */
 export type DraftAttachments = { images: ImageBlock[]; pastes: string[]; files?: DraftFile[] }
 

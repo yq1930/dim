@@ -146,7 +146,7 @@ The CLI owns terminal and command interactions; the App Server owns host configu
 - `/reload-skills`: reload Skills.
 - Skill sources: user directories, project directories, plugins and configured Skill directories.
 - `plan` Skill: investigate a task and generate a Markdown implementation plan; it is not a separate runtime mode. Not planned ([overview](design/overview.md#1-scope-and-premises) §1).
-- `AGENTS.md`: load project and global working conventions.
+- `AGENTS.md`: load project and global working conventions. The default `init` Skill writes or refreshes the project's file from what the repository contains.
 - `/mcp`: manage MCP services and tools.
 - MCP connections: support local processes, HTTP and SSE, including testing, enablement, disablement and OAuth authorization.
 - `/workflow`: view workflows, supply parameters and start execution.
@@ -156,14 +156,14 @@ The CLI owns terminal and command interactions; the App Server owns host configu
 - External Agents: integrate locally available Claude Code, Codex, Cursor, OpenCode, ZCode and similar tools.
 - Parallel subagents: delegate tasks, choose models, control concurrency, view results and cancel tasks.
 - Hooks: review, enable, disable or globally disable command Hooks.
-- Web search and fetching: search information and read webpage text, with the required configuration or account permissions.
+- Web search and fetching: search information and read webpage text, with the required configuration or account permissions. Search runs through the Dim account or a configured DeepSeek, Tavily or Brave Search key; the Web workspace configures it under Settings.
 - Slack and Feishu: send messages and task completion notifications when the corresponding service is enabled and configured.
 
 ## Workspace tools
 
-- `read`: read text files; vision models can read supported image formats.
+- `read`: read text files and the text of PDF files; vision models can read supported image formats.
 - `write`: create or overwrite files.
-- `edit`: make precise file-content changes.
+- `edit`: make precise file-content changes; recovers from copied line numbers, doubled escaping and differing indentation when the match stays unique.
 - `glob`: find files by path pattern.
 - `grep`: search file contents.
 - `exec`: execute Shell commands, project scripts and tests, with background execution support.

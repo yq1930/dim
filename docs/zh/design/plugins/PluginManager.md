@@ -15,7 +15,7 @@ PluginManager 保存一个宿主的插件配置：装了哪些插件，它们从
 | 插件代码：创建、打开/关闭、替换、重新加载 loader 行（§3） | 是，TypeScript 和 Python，前提是运行时已经提供（§2.5） | |
 | `plugin.*` 管理方法和 `dimcode plugin` 命令（§6、A.1） | 是 | 变更的客户端通知 |
 | 通过 Session 部件提供的 agent 工具（§6） | 是 | |
-| 默认 CLI 加载内置 SessionTitle、Scheduler、Goal 和 Web 以及配置的默认插件（plugin-authoring） | 是 | |
+| 默认 CLI 加载内置 SessionTitle、Scheduler、Goal 和 Web 以及配置的默认插件（plugin-authoring、project-init） | 是 | |
 | 每个插件在运行时自己登记 Settings 来源（§9 R1） | 是，内置插件和 TypeScript 插件一起 | |
 | 内容种类：skill、MCP 配置、hook（§3、§9 R2） | skill 和 MCP，前提是它们的所有者按时落地；hook（Hooks 属于 M1） | |
 
@@ -143,7 +143,8 @@ flowchart LR
 ```json
 {
   "plugins": {
-    "plugin-authoring": "plugins/plugin-authoring"
+    "plugin-authoring": "plugins/plugin-authoring",
+    "project-init": "plugins/project-init"
   },
   "locked": ["PluginManager", "Rpc", "Transport"]
 }

@@ -1,6 +1,7 @@
 {
   "plugins": {
-    "plugin-authoring": "plugins/plugin-authoring"
+    "plugin-authoring": "plugins/plugin-authoring",
+    "project-init": "plugins/project-init"
   },
   "locked": ["PluginManager", "Rpc", "Transport"],
   "runtimes": {

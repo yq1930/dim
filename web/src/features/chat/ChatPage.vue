@@ -11,6 +11,7 @@ import QueuedInputs from "./QueuedInputs.vue"
 import QuestionPrompt from "./QuestionPrompt.vue"
 import TimelineView from "./TimelineView.vue"
 import { MAIN_BRANCH, type ContextUsage, type DraftAttachments, type ModelId, type PermissionPreset } from "../../rpc/protocol"
+import { readSkills } from "../../rpc/general-settings"
 import { goalCall, goalObjective, parseGoalRequest, type Goal, type GoalStatus } from "../../goal"
 import { useChatStore } from "../../stores/chat"
 import { useConnectionStore } from "../../stores/connection"
@@ -75,6 +76,21 @@ const sessionCommands = computed(() => {
   }
 })
 
+const listSkills = computed(() => {
+  const cwd = summary.value?.cwd
+  if (cwd === undefined || !connection.supports("skills.catalog")) return undefined
+  return async () => (await connection.client.call("skills.catalog", { cwd }, readSkills)).entries.filter((skill) => skill.enabled && skill.shadowedBy === undefined)
+})
+const contextUsage = ref<ContextUsage>()
+watch(() => props.sessionId, () => { contextUsage.value = undefined })
+watch(() => [props.sessionId, view.value?.status, view.value?.running] as const, async ([sessionId, status, running]) => {
+  if (status !== "ready" || running || !view.value?.methods.includes("session.context.usage")) return
+  try {
+    const reading = await chat.usage(sessionId)
+    if (sessionId === props.sessionId) contextUsage.value = reading
+  } catch { /* the meter keeps its last reading; /usage reports the failure */ }
+}, { immediate: true })
+
 function send(text: string, attachments: DraftAttachments): Promise<void> {
   return chat.submit(props.sessionId, MAIN_BRANCH, text, attachments)
 }
@@ -110,7 +126,10 @@ function failure(cause: unknown): void {
 async function compact(): Promise<void> {
   try {
     const result = await chat.compact(props.sessionId)
-    if (result.status === "completed") toast.push({ tone: "success", title: t("command.compacted") })
+    if (result.status === "completed") {
+      toast.push({ tone: "success", title: t("command.compacted") })
+      contextUsage.value = await chat.usage(props.sessionId)
+    }
     else toast.push({ tone: "info", title: t("command.compactSkipped"), description: result.reason })
   } catch (cause) {
     failure(cause)
@@ -316,6 +335,8 @@ async function fork(): Promise<void> {
       :create-branch="canNewLine ? createBranch : undefined"
       :open-lines="branchable ? () => ui.openLines(sessionId) : undefined"
       :session-commands="sessionCommands"
+      :list-skills="listSkills"
+      :context-usage="contextUsage"
     />
   </section>
 </template>

@@ -123,13 +123,13 @@ test('the default list stages only its content plugin and runs no npm ci', {skip
   assert.equal(existsSync(log),false,'no default plugin needs npm ci');
   const record=JSON.parse(readFileSync(path.join(output,'.stage-plugins.json'),'utf8'));
   assert.equal(record.schemaVersion,1);
-  assert.deepEqual(Object.keys(record.plugins),['plugin-authoring']);
+  assert.deepEqual(Object.keys(record.plugins),['plugin-authoring','project-init']);
   for (const name of ['goal','workflow']) {
     assert.equal(existsSync(path.join(output,'plugins',name)),false,name);
   }
   assert(existsSync(path.join(output,'plugins/plugin-authoring/dim-plugin.json')));
   const defaults=JSON.parse(readFileSync(path.join(output,'default-plugins.json')));
-  assert.deepEqual(Object.keys(defaults.plugins),['plugin-authoring']);
+  assert.deepEqual(Object.keys(defaults.plugins),['plugin-authoring','project-init']);
 });
 
 test('staging a package plugin update is incremental and never leaves a half stage', {skip:process.platform==='win32'}, (t)=>{
@@ -549,8 +549,8 @@ test('the current default plugins pass the portable check', {skip:process.platfo
   const staged=run('stage-plugins.mjs',[output,'--portable'],{PATH:`${bin}:${process.env.PATH}`});
   assert.equal(staged.status,0,staged.stderr);
   const defaults=JSON.parse(readFileSync(path.join(output,'default-plugins.json')));
-  assert.deepEqual(Object.keys(defaults.plugins),['plugin-authoring']);
-  assert.deepEqual(readdirSync(path.join(output,'plugins')),['plugin-authoring']);
+  assert.deepEqual(Object.keys(defaults.plugins),['plugin-authoring','project-init']);
+  assert.deepEqual(readdirSync(path.join(output,'plugins')),['plugin-authoring','project-init']);
 });
 
 test('stages public native payload, packs it and rejects modified content', {skip:process.platform==='win32'}, (t)=>{
@@ -604,7 +604,7 @@ test('stages the default plugins beside bin/ in the native archive and the npm p
   writeFileSync(path.join(npmBin,'npm'),'#!/bin/bash\nmkdir -p "$PWD/node_modules/@arcships/rutis"\nexit 0\n',{mode:0o755});
   const selected=run('stage-plugins.mjs',[plugins],{PATH:`${npmBin}:${process.env.PATH}`});
   assert.equal(selected.status,0,selected.stderr);
-  assert.deepEqual(readdirSync(path.join(plugins,'plugins')),['plugin-authoring']);
+  assert.deepEqual(readdirSync(path.join(plugins,'plugins')),['plugin-authoring','project-init']);
   assert.notEqual(run('stage-release.mjs',[bin,path.join(temporary,'empty'),version,commit,'--plugins',bin]).status,0);
   const stage=path.join(temporary,'stage');
   assert.notEqual(run('stage-release.mjs',[bin,stage,version,commit,'--plugins',plugins]).status,0);
@@ -616,7 +616,7 @@ test('stages the default plugins beside bin/ in the native archive and the npm p
   assert.equal(staged.status,0,staged.stderr);
   const manifest=JSON.parse(readFileSync(path.join(stage,'release-manifest.json')));
   const defaults=JSON.parse(readFileSync(path.join(stage,'default-plugins.json'))).plugins;
-  assert.deepEqual(Object.keys(defaults),['plugin-authoring']);
+  assert.deepEqual(Object.keys(defaults),['plugin-authoring','project-init']);
   for (const file of ['default-plugins.json','plugins/plugin-authoring/dim-plugin.json','plugins/plugin-authoring/skills/plugin-authoring/SKILL.md']) assert(manifest.files[file],file);
   const packed=run('pack-release.mjs',[stage,path.join(temporary,'packed')]);
   assert.equal(packed.status,0,packed.stderr);

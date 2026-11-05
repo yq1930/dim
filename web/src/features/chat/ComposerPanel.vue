@@ -3,7 +3,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } fro
 import { useRoute, useRouter } from "vue-router"
 import { useI18n } from "vue-i18n"
 import { ArrowUp, FileSearch, FileText, Paperclip, Square, X } from "lucide-vue-next"
-import type { DraftAttachments, FileCandidate, ImageBlock, ModelId, PermissionPreset, PermissionPolicy } from "../../rpc/protocol"
+import type { ContextUsage, DraftAttachments, FileCandidate, ImageBlock, ModelId, PermissionPreset, PermissionPolicy } from "../../rpc/protocol"
+import { formatTokens } from "./usage-format"
 import { linkMentions, mentionTrigger, type FileMention, type MentionTrigger } from "../../mentions"
 import { useModelsStore } from "../../stores/models"
 import { useSessionsStore } from "../../stores/sessions"
@@ -41,6 +42,10 @@ const props = withDefaults(defineProps<{
   send: (text: string, attachments: DraftAttachments) => Promise<void>
   /** False where a draft cannot carry attachments. */
   attachments?: boolean
+  /** The Skills a `/` command can reference; the menu lists only built-in commands without it. */
+  listSkills?: () => Promise<Array<{ name: string; description: string }>>
+  /** The latest context window reading, shown beside the model. */
+  contextUsage?: ContextUsage
   /** True when the Session stores long pastes through `attachment.put`. */
   storesPastes?: boolean
   /** Finds the files an `@` mention offers for a query; absent where the Session serves no file search. */
@@ -104,7 +109,7 @@ const images = computed({ get: () => draft.value.images, set: (value) => { draft
 const pastes = computed({ get: () => draft.value.pastes, set: (value) => { draft.value.pastes = value } })
 const files = computed({ get: () => draft.value.files, set: (value) => { draft.value.files = value } })
 const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"])
-const FILE_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,text/*,application/json,application/javascript,application/xml,.ts,.tsx,.jsx,.vue,.rs,.go,.py,.php,.sql,.md,.yaml,.yml,.toml,.ini,.sh,.css,.scss,.jsonc,.log,.diff,.patch,.svg"
+const FILE_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,application/pdf,.pdf,text/*,application/json,application/javascript,application/xml,.ts,.tsx,.jsx,.vue,.rs,.go,.py,.php,.sql,.md,.yaml,.yml,.toml,.ini,.sh,.css,.scss,.jsonc,.log,.diff,.patch,.svg"
 watch(() => props.draftKey, () => { mention.value = undefined; candidates.value = []; fileDialog.value?.close(); void nextTick(resize) })
 
 const availableCommands = computed(() => ([
@@ -119,10 +124,26 @@ const availableCommands = computed(() => ([
   { category: "session", name: "lines", available: props.openLines !== undefined },
   { category: "session", name: "new", available: true },
 ] as const).filter((command) => command.available))
-const commandPrefix = computed(() => /^\/[a-z]*$/i.test(text.value) ? text.value.slice(1).toLowerCase() : undefined)
-const matches = computed(() => {
+const commandPrefix = computed(() => /^\/[\w-]*$/.test(text.value) ? text.value.slice(1).toLowerCase() : undefined)
+const skills = ref<Array<{ name: string; description: string }>>([])
+watch(() => commandPrefix.value !== undefined, async (typing) => {
+  if (!typing || props.listSkills === undefined) return
+  try { skills.value = await props.listSkills() } catch { skills.value = [] }
+})
+type MenuEntry = { category: string; name: string; description?: string }
+const matches = computed<MenuEntry[]>(() => {
   const prefix = commandPrefix.value
-  return prefix === undefined ? [] : availableCommands.value.filter((command) => command.name.startsWith(prefix))
+  if (prefix === undefined) return []
+  const skillEntries = skills.value.map((skill) => ({ category: "skill", name: skill.name, description: skill.description }))
+  return [...availableCommands.value, ...skillEntries].filter((entry) => entry.name.toLowerCase().startsWith(prefix))
+})
+const contextLabel = computed(() => {
+  const reading = props.contextUsage
+  return reading === undefined || reading.contextWindow <= 0 ? undefined : `${formatTokens(reading.estimatedInputTokens)} / ${formatTokens(reading.contextWindow)}`
+})
+const contextNearLimit = computed(() => {
+  const reading = props.contextUsage
+  return reading !== undefined && reading.thresholdTokens > 0 && reading.estimatedInputTokens >= reading.thresholdTokens * 0.9
 })
 const commandMode = computed(() => !composing.value && !dismissed.value && matches.value.length > 0)
 const menuOpen = computed(() => focused.value && commandMode.value)
@@ -154,6 +175,20 @@ function readImage(file: File): Promise<{ url: string; block: ImageBlock }> {
   })
 }
 
+async function readPdf(file: File): Promise<string> {
+  const head = new TextDecoder("latin1").decode(await file.slice(0, 5).arrayBuffer())
+  if (head !== "%PDF-") throw new Error(t("composer.unsupportedFile", { name: file.name }))
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const url = String(reader.result)
+      resolve(url.slice(url.indexOf(",") + 1))
+    }
+    reader.onerror = () => reject(reader.error ?? new Error(t("composer.unsupportedFile", { name: file.name })))
+    reader.readAsDataURL(file)
+  })
+}
+
 function attachmentCount(target: ComposerDraft): number { return target.images.length + target.pastes.length + target.files.length }
 
 async function addFiles(selected: File[]): Promise<void> {
@@ -170,6 +205,9 @@ async function addFiles(selected: File[]): Promise<void> {
           const image = await readImage(file)
           if (target.images.reduce((size, item) => size + item.block.source.data.length, 0) + image.block.source.data.length > MAX_PASTE) { target.error = t("composer.imagesTooLarge"); continue }
           if (attachmentCount(target) < MAX_ATTACHMENTS) target.images = [...target.images, { id: ++target.nextId, ...image }]
+        } else if (textAllowed && (file.type === "application/pdf" || /\.pdf$/i.test(file.name))) {
+          const pdfBase64 = await readPdf(file)
+          if (attachmentCount(target) < MAX_ATTACHMENTS) target.files = [...target.files, { id: ++target.nextId, name: file.name, text: "", pdfBase64 }]
         } else {
           if (!textAllowed || /\.(pdf|docx?|xlsx?|pptx?|zip|gz|7z|rar|exe|dmg|mp[34]|mov|wav|bin)$/i.test(file.name) || (file.type.startsWith("image/") && file.type !== "image/svg+xml")) throw new Error(t("composer.unsupportedFile", { name: file.name }))
           const bytes = await file.arrayBuffer()
@@ -289,8 +327,8 @@ async function submit(): Promise<void> {
   if (!canSend.value || composing.value) return
   const target = draft.value
   if (commandMode.value) {
-    const command = matches.value[activeIndex.value]
-    if (command !== undefined) await runCommand(command.name)
+    const entry = matches.value[activeIndex.value]
+    if (entry !== undefined) await runMenuEntry(entry)
     return
   }
   const message = text.value
@@ -329,7 +367,7 @@ async function submit(): Promise<void> {
       const sentPastes = target.pastes
       const sentFiles = target.files
       if (new TextEncoder().encode(JSON.stringify({ text: linkMentions(message, sentMentions), images: sentImages.map((image) => image.block) })).length > 14 * 1024 * 1024) throw new Error(t("composer.messageTooLarge"))
-      await props.send(linkMentions(message, sentMentions), { images: sentImages.map((image) => image.block), pastes: sentPastes.map((paste) => paste.text), ...(sentFiles.length ? { files: sentFiles.map(({ name, text }) => ({ name, text })) } : {}) })
+      await props.send(linkMentions(message, sentMentions), { images: sentImages.map((image) => image.block), pastes: sentPastes.map((paste) => paste.text), ...(sentFiles.length ? { files: sentFiles.map(({ id: _id, ...file }) => file) } : {}) })
       target.mentions = target.mentions.filter((mention) => !sentMentions.includes(mention))
       target.images = target.images.filter((image) => !sentImages.includes(image))
       target.pastes = target.pastes.filter((paste) => !sentPastes.includes(paste))
@@ -382,7 +420,17 @@ async function onEffort(effort: string | undefined): Promise<void> {
   }
 }
 
-async function runCommand(name: typeof availableCommands.value[number]["name"]): Promise<void> {
+async function runMenuEntry(entry: MenuEntry): Promise<void> {
+  if (entry.category !== "skill") return runCommand(entry.name)
+  if (composing.value) return
+  error.value = ""
+  text.value = `$skill: ${entry.name} `
+  await nextTick()
+  resize()
+  field.value?.focus()
+}
+
+async function runCommand(name: string): Promise<void> {
   if (composing.value) return
   error.value = ""
   const argument = name === "branch" || name === "goal" || name === "effort"
@@ -483,11 +531,11 @@ defineExpose({ focus: () => field.value?.focus(), quote })
           :data-highlighted="index === activeIndex ? '' : undefined"
           @mousedown.prevent
           @mouseenter="activeIndex = index"
-          @click.stop="runCommand(command.name)"
+          @click.stop="runMenuEntry(command)"
         >
           <span class="command-category">{{ index === 0 || matches[index - 1]?.category !== command.category ? t(`composer.category.${command.category}`) : '' }}</span>
           <span class="command-name">/{{ command.name }}<span v-if="command.name === 'branch'" class="command-argument"> &lt;prompt&gt;</span><span v-else-if="command.name === 'goal' || command.name === 'effort'" class="command-argument"> [args]</span></span>
-          <span class="command-description">{{ t(`composer.command.${command.name}`) }}</span>
+          <span class="command-description">{{ command.category === 'skill' ? command.description : t(`composer.command.${command.name}`) }}</span>
         </button>
         <p class="command-keys">{{ t("composer.commandKeys") }}</p>
       </div>
@@ -536,6 +584,7 @@ defineExpose({ focus: () => field.value?.focus(), quote })
           <ComposerPermissionMenu v-if="permission && variant !== 'panel'" ref="permissionMenu" :policy="permission.policy" @select="permission.select" />
         </div>
         <div class="composer-run-group">
+          <span v-if="contextLabel" class="composer-context" :data-near="contextNearLimit ? '' : undefined" v-tooltip="t('composer.contextUsage')">{{ contextLabel }}</span>
           <ComposerModelMenu v-if="variant !== 'panel'" ref="modelMenu" :model="model" :selectable="modelSelectable" :disabled="changingModel || changingEffort" @select="onModel" />
           <ComposerReasoningMenu v-if="variant !== 'panel' && selectEffort && effortChoices.length" :choices="effortChoices" :value="reasoningEffort" :disabled="changingModel || changingEffort" @select="onEffort" />
           <button
@@ -565,6 +614,8 @@ defineExpose({ focus: () => field.value?.focus(), quote })
 .draft-file-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .attachment-status { padding: var(--space-2); color: var(--muted-foreground); font-size: var(--text-sm); }
 .composer-toolbar { flex-wrap: wrap; }
+.composer-context { color: var(--muted-foreground); font-size: var(--text-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.composer-context[data-near] { color: var(--danger); }
 .composer-run-group { margin-left: auto; max-width: 100%; flex-wrap: wrap; }
 .composer-input { display: block; width: 100%; min-height: 60px; max-height: 300px; resize: none; padding: 0; border: 0; background: transparent; color: var(--foreground); font: var(--text-base)/var(--leading-relaxed) var(--font-sans); outline: none; }
 .composer-input::placeholder { color: var(--muted-foreground); }

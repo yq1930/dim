@@ -1386,44 +1386,20 @@ async fn leader_delegates_and_team_members_communicate() {
             .input_schema,
     )
     .unwrap();
-    for (action, required) in [
-        ("request", json!(["action", "prompt", "agentId"])),
-        ("cancel", json!(["action", "agentId", "sessionId"])),
-        ("close", json!(["action", "agentId", "sessionId"])),
-        (
-            "message",
-            json!(["action", "agentId", "sessionId", "content"]),
-        ),
-        ("read", json!(["action", "agentId", "sessionId"])),
-        ("inspect", json!(["action", "agentId"])),
-        ("result", json!(["action", "resultId"])),
-        ("list", json!(["action"])),
-    ] {
-        let variant = schema["anyOf"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|variant| variant["properties"]["action"]["enum"][0] == action)
-            .unwrap();
-        assert_eq!(variant["required"], required, "{action}");
-        for field in required.as_array().unwrap() {
-            assert!(
-                variant["properties"].get(field.as_str().unwrap()).is_some(),
-                "{variant}"
-            );
-        }
-    }
-    assert!(
-        schema["anyOf"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|variant| variant["required"] == json!(["action", "prompt", "profile"]))
+    assert_eq!(schema["type"], "object");
+    assert_eq!(schema["required"], json!(["action"]));
+    assert_eq!(schema["additionalProperties"], false);
+    assert!(schema.get("anyOf").is_none());
+    assert_eq!(
+        schema["properties"]["action"]["enum"],
+        json!([
+            "request", "cancel", "close", "message", "read", "list", "inspect", "result"
+        ])
     );
     let validator = jsonschema::validator_for(&schema).unwrap();
-    assert!(!validator.is_valid(&json!({"action":"cancel","agentId":"exec-unknown"})));
-    assert!(!validator.is_valid(&json!({"action":"list","agentId":"unexpected"})));
-    assert!(!validator.is_valid(&json!({"action":"request","prompt":"work","agentId":default_agent,"profile":{"name":"worker","description":"","systemPrompt":"work","tools":[]}})));
+    assert!(!validator.is_valid(&json!({})));
+    assert!(!validator.is_valid(&json!({"action":"unknown"})));
+    assert!(!validator.is_valid(&json!({"action":"list","unknown":"unexpected"})));
     assert!(validator.is_valid(
         &json!({"action":"request","prompt":"work","agentId":default_agent,"sessionId":member})
     ));
@@ -1450,6 +1426,15 @@ async fn leader_delegates_and_team_members_communicate() {
             && rejected.contains("no member action was performed"),
         "{rejected}"
     );
+    for input in [
+        json!({"action":"list","agentId":"unexpected"}),
+        json!({"action":"request","prompt":"work","agentId":default_agent,"profile":{"name":"worker","description":"","systemPrompt":"work","tools":[]}}),
+    ] {
+        say(&mut client, &lead, tool(input), "queue").await;
+        idle(&mut client, &lead).await;
+        let rejected = last_error(&events(&lead_session).await);
+        assert!(rejected.starts_with("invalid_input"), "{rejected}");
+    }
     assert_eq!(facts(&lead_session).await, before);
 
     server.shutdown();

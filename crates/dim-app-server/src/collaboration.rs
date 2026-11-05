@@ -2687,43 +2687,11 @@ fn agent_definition(
         ),
     };
     properties["action"] = json!({"type": "string", "enum": actions});
-    let mut variants = Vec::new();
-    for action in &actions {
-        let choices = match *action {
-            "request" => vec![
-                vec!["action", "prompt", "agentId"],
-                vec!["action", "prompt", "profile"],
-            ],
-            "cancel" | "close" | "read" => vec![vec!["action", "agentId", "sessionId"]],
-            "message" => vec![vec!["action", "agentId", "sessionId", "content"]],
-            "inspect" => vec![vec!["action", "agentId"]],
-            "result" => vec![vec!["action", "resultId"]],
-            "list" | "models" => vec![vec!["action"]],
-            _ => unreachable!("declared agent action"),
-        };
-        for required in choices {
-            let mut fields = serde_json::Map::new();
-            for field in &required {
-                fields.insert((*field).into(), properties[*field].clone());
-            }
-            let optional: &[&str] = match *action {
-                "request" if required.contains(&"agentId") => &["sessionId"],
-                "message" => &["mode"],
-                "read" => &["after", "limit"],
-                _ => &[],
-            };
-            for field in optional {
-                fields.insert((*field).into(), properties[*field].clone());
-            }
-            fields.insert("action".into(), json!({"type":"string","enum":[action]}));
-            variants.push(json!({"type":"object","properties":fields,"required":required,"additionalProperties":false}));
-        }
-    }
     definition(
         AGENT_TOOL,
         &description,
         json!({"type": "object", "required": ["action"], "additionalProperties": false,
-            "properties": properties, "anyOf": variants}),
+            "properties": properties}),
     )
 }
 

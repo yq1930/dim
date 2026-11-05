@@ -9,6 +9,7 @@ use std::{
 };
 use tauri::{AppHandle, Manager, RunEvent, Url, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_shell::{
     ShellExt,
@@ -32,6 +33,87 @@ fn webview_store_id(home: &Path) -> Result<[u8; 16]> {
         }
         Err(error) => Err(error.into()),
     }
+}
+
+/// The proxy macOS's network settings name, as environment variables for the
+/// local service: an app opened from Finder inherits no `HTTPS_PROXY`, and the
+/// service's HTTP clients read the environment rather than the system settings.
+/// An environment that already names a proxy keeps it.
+fn system_proxy_env() -> Vec<(&'static str, String)> {
+    const NAMES: [&str; 6] = [
+        "HTTPS_PROXY",
+        "https_proxy",
+        "HTTP_PROXY",
+        "http_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+    ];
+    if NAMES.iter().any(|name| std::env::var_os(name).is_some()) {
+        return Vec::new();
+    }
+    match std::process::Command::new("/usr/sbin/scutil")
+        .arg("--proxy")
+        .output()
+    {
+        Ok(output) if output.status.success() => {
+            proxy_env_of(&String::from_utf8_lossy(&output.stdout))
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// `scutil --proxy` is one `Key : Value` per line, with `ExceptionsList` as a
+/// nested block of `index : entry` lines.
+fn proxy_env_of(settings: &str) -> Vec<(&'static str, String)> {
+    let (mut values, mut exceptions, mut in_exceptions) = (Vec::new(), Vec::new(), false);
+    for line in settings.lines().map(str::trim) {
+        if line.starts_with("ExceptionsList") {
+            in_exceptions = true;
+        } else if line == "}" {
+            in_exceptions = false;
+        } else if let Some((key, value)) = line.split_once(" : ") {
+            if in_exceptions {
+                exceptions.push(value.strip_prefix('*').unwrap_or(value).to_owned());
+            } else {
+                values.push((key, value));
+            }
+        }
+    }
+    let value = |key: String| {
+        values
+            .iter()
+            .find(|(name, _)| *name == key)
+            .map(|(_, value)| *value)
+    };
+    let proxy = |scheme: &str| {
+        (value(format!("{scheme}Enable")) == Some("1"))
+            .then(|| {
+                let host = value(format!("{scheme}Proxy"))?;
+                let port = value(format!("{scheme}Port"))?;
+                Some(format!("http://{host}:{port}"))
+            })
+            .flatten()
+    };
+    let (http, https) = (proxy("HTTP"), proxy("HTTPS"));
+    if http.is_none() && https.is_none() {
+        return Vec::new();
+    }
+    let mut env = Vec::new();
+    if let Some(http) = http {
+        env.extend([("HTTP_PROXY", http.clone()), ("http_proxy", http)]);
+    }
+    if let Some(https) = https {
+        env.extend([("HTTPS_PROXY", https.clone()), ("https_proxy", https)]);
+    }
+    let mut bypass = vec![
+        "localhost".to_owned(),
+        "127.0.0.1".to_owned(),
+        "::1".to_owned(),
+    ];
+    bypass.append(&mut exceptions);
+    let bypass = bypass.join(",");
+    env.extend([("NO_PROXY", bypass.clone()), ("no_proxy", bypass)]);
+    env
 }
 
 struct Desktop {
@@ -75,6 +157,9 @@ impl Desktop {
                 "DIMCODE_DEFAULT_PLUGINS",
                 self.resources.join("plugins-payload/default-plugins.json"),
             );
+        for (name, value) in system_proxy_env() {
+            command = command.env(name, value);
+        }
         if let Some(path) = &self.model_config {
             command = command.args([std::ffi::OsStr::new("--model-config"), path.as_os_str()]);
         }
@@ -94,22 +179,48 @@ fn show_main(app: &AppHandle) {
     }
 }
 
+/// Commands answer only the main window on the local service's origin.
+fn in_local_workspace(app: &AppHandle, window: &tauri::WebviewWindow) -> Result<bool> {
+    let url = window.url()?;
+    Ok(window.label() == "main"
+        && app
+            .state::<Arc<Desktop>>()
+            .workspace
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|workspace| workspace.origin() == url.origin()))
+}
+
+#[tauri::command]
+fn notify_attention(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    title: String,
+    body: String,
+) -> std::result::Result<(), String> {
+    if !in_local_workspace(&app, &window).map_err(|error| error.to_string())? {
+        return Err("Notifications are only available in the local workspace".into());
+    }
+    if window.is_focused().unwrap_or(false) {
+        return Ok(());
+    }
+    let _ = window.request_user_attention(Some(tauri::UserAttentionType::Informational));
+    app.notification()
+        .builder()
+        .title(title)
+        .body(body)
+        .show()
+        .map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 async fn choose_workspace(
     app: AppHandle,
     window: tauri::WebviewWindow,
     initial_directory: Option<String>,
 ) -> std::result::Result<Option<String>, String> {
-    let url = window.url().map_err(|error| error.to_string())?;
-    if window.label() != "main"
-        || !app
-            .state::<Arc<Desktop>>()
-            .workspace
-            .lock()
-            .unwrap()
-            .as_ref()
-            .is_some_and(|workspace| workspace.origin() == url.origin())
-    {
+    if !in_local_workspace(&app, &window).map_err(|error| error.to_string())? {
         return Err("The folder picker is only available in the local workspace".into());
     }
     let mut dialog = app.dialog().file().set_parent(&window);
@@ -196,7 +307,8 @@ async fn hold_workspace(app: AppHandle, state: Arc<Desktop>) -> Result<()> {
                         .window("main")
                         .local(false)
                         .remote(format!("{}/*", url.origin().ascii_serialization()))
-                        .permission("allow-choose-workspace"),
+                        .permission("allow-choose-workspace")
+                        .permission("allow-notify-attention"),
                 )?;
                 connected = true;
                 state.finish_startup();
@@ -267,7 +379,8 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![choose_workspace])
+        .plugin(tauri_plugin_notification::init())
+        .invoke_handler(tauri::generate_handler![choose_workspace, notify_attention])
         .setup(|app| {
             let home = std::env::var_os("DIM_DESKTOP_HOME")
                 .map(PathBuf::from)

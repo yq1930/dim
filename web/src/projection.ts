@@ -46,6 +46,7 @@ export class Projection {
   lastTurnEnd: number | undefined
   /** The model the branch last adopted (`context/configured`). */
   model: ModelId | undefined
+  reasoningEffort: string | undefined
   private answers = new Map<string, Stream>()
   private thoughts = new Map<string, Stream>()
   private requestStarts = new Map<string, number>()
@@ -180,6 +181,7 @@ export class Projection {
         break
       case "context-configured":
         this.model = content.model
+        this.reasoningEffort = content.reasoningEffort
         break
       case "other":
         break

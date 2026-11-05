@@ -511,8 +511,11 @@ function content(type: string, name: string, data: Json, at: string): EventConte
       const error = str(data, "status", at) === "failed" ? str(data, "error", at) : undefined
       return { kind: "model-end", requestId: str(data, "request_id", at), ...(error === undefined ? {} : { error }) }
     }
-    case "context/configured":
-      return { kind: "context-configured", model: { providerId: str(data, "provider_id", at), modelId: str(data, "model_id", at) } }
+    case "context/configured": {
+      const preferences = data.model_preferences === undefined ? undefined : obj(data.model_preferences, `${at}.model_preferences`)
+      const reasoningEffort = preferences === undefined ? undefined : optStr(preferences, "reasoningEffort", `${at}.model_preferences`)
+      return { kind: "context-configured", model: { providerId: str(data, "provider_id", at), modelId: str(data, "model_id", at) }, ...(reasoningEffort === undefined ? {} : { reasoningEffort }) }
+    }
     default:
       return { kind: "other" }
   }

@@ -51,6 +51,7 @@ export type SessionView = {
   /** Messages queued on the main line while it runs, oldest first. */
   queued: readonly QueuedInput[]
   model: ModelId | undefined
+  reasoningEffort: string | undefined
   /** Every line of the session, main first, in tree order. */
   lines: LineView[]
   /** Opened line transcripts, by branch id. */
@@ -127,6 +128,7 @@ export const useChatStore = defineStore("chat", () => {
       goal: undefined,
       queued: [],
       model: stored?.model,
+      reasoningEffort: undefined,
       lines: [],
       branches: {},
       lastTurnEnd: undefined,
@@ -431,6 +433,7 @@ export const useChatStore = defineStore("chat", () => {
     view.stopping = main.stopping
     view.sessionRunning = anyRunning(channel)
     view.model = channel.main.projection.model ?? useSessionsStore().byId.get(view.sessionId)?.model
+    view.reasoningEffort = channel.main.projection.reasoningEffort
     view.lines = channel.lines.views()
     view.goal = channel.main.projection.goal
     view.queued = channel.main.projection.queued()
@@ -578,7 +581,6 @@ export const useChatStore = defineStore("chat", () => {
     return client().call("session.files.search", { sessionId, query, limit: 20 }, readFileCandidates)
   }
 
-  /** Writes the main line's reasoning effort through `session.model.update`'s preferences; returns the server's outcome. */
   /** Withdraws a queued message; with `steer`, the same content joins the running turn at its next boundary. */
   async function withdrawInput(sessionId: string, inputId: string, steer: UserInput | undefined): Promise<WithdrawResult> {
     return client().call("session.input.withdraw", { sessionId, branchId: MAIN_BRANCH, inputId, ...(steer === undefined ? {} : { steer }) }, readWithdrawResult)
@@ -616,8 +618,8 @@ export const useChatStore = defineStore("chat", () => {
     return "updated"
   }
 
-  async function setEffort(sessionId: string, effort: string): Promise<string> {
-    return client().call("session.model.update", { sessionId, branchId: MAIN_BRANCH, modelPreferences: { reasoningEffort: effort } }, readConfigurationOutcome)
+  async function setEffort(sessionId: string, effort: string | undefined): Promise<string> {
+    return client().call("session.model.update", { sessionId, branchId: MAIN_BRANCH, modelPreferences: { reasoningEffort: effort ?? { action: "clear" } } }, readConfigurationOutcome)
   }
 
   async function setModel(sessionId: string, model: ModelId): Promise<void> {

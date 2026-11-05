@@ -42,6 +42,7 @@ assert(existsSync(path.join(stage, 'web/THIRD-PARTY-NOTICES.txt')), 'The fronten
 const protocolVersion = Number(readFileSync(path.join(repo, 'crates/dim-app-server/src/protocol.rs'), 'utf8')
   .match(/pub const PROTOCOL_VERSION: u32 = (\d+);/)[1]);
 const sourceCommit = read('git', ['rev-parse', 'HEAD']);
+const sourceBranch = read('git', ['branch', '--show-current']) || null;
 writeFileSync(path.join(stage, 'web/dimcode-web.json'), `${JSON.stringify({ version, protocolVersion, sourceCommit }, null, 2)}\n`);
 
 run('node', ['scripts/stage-plugins.mjs', path.join(stage, 'plugins-payload')]);
@@ -62,7 +63,7 @@ assert.equal(read('lipo', ['-archs', binary]), 'arm64', 'The backend must be App
 copyFileSync(binary, path.join(stage, `dimcode-${target}`));
 chmodSync(path.join(stage, `dimcode-${target}`), 0o755);
 writeFileSync(path.join(stage, 'build-info.json'), `${JSON.stringify({
-  version, sourceCommit, sourceDirty: read('git', ['status', '--porcelain']).length > 0,
+  version, sourceCommit, sourceBranch, sourceDirty: read('git', ['status', '--porcelain']).length > 0,
   target, profile, backendVersion: read(binary, ['--version']), builtAt: new Date().toISOString(),
 }, null, 2)}\n`);
 

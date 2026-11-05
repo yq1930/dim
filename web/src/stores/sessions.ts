@@ -48,9 +48,10 @@ export const useSessionsStore = defineStore("sessions", () => {
   }
 
   /** Creates a session in `cwd` (an absolute directory); `model` overrides the directory's default. */
-  async function create(cwd: string, model: ModelId | undefined): Promise<string> {
+  async function create(cwd: string, model: ModelId | undefined, reasoningEffort?: string): Promise<string> {
     const params: Record<string, unknown> = { cwd }
     if (model !== undefined) params.model = { provider: model.providerId, modelId: model.modelId }
+    if (reasoningEffort !== undefined) params.modelPreferences = { reasoningEffort }
     const created = await useConnectionStore().client.call("session.create", params, readCreate)
     void refresh()
     return created.sessionId

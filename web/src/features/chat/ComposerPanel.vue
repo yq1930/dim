@@ -9,6 +9,7 @@ import { useModelsStore } from "../../stores/models"
 import { useSessionsStore } from "../../stores/sessions"
 import ComposerModelMenu from "./ComposerModelMenu.vue"
 import ComposerPermissionMenu from "./ComposerPermissionMenu.vue"
+import ComposerReasoningMenu from "./ComposerReasoningMenu.vue"
 import { quoteInto } from "./quote"
 
 /** The Session commands the menu lists, each only when given. Errors are reported by the callee. */
@@ -45,6 +46,8 @@ const props = withDefaults(defineProps<{
   permission?: { policy: PermissionPolicy | undefined; select: (preset: PermissionPreset) => Promise<void> }
   stop?: () => Promise<void>
   selectModel: (model: ModelId) => Promise<void> | void
+  reasoningEffort?: string
+  selectEffort?: (effort: string | undefined) => Promise<void> | void
   /** The narrower line panel: no model menu, less vertical chrome. */
   variant?: "main" | "panel"
   placeholder?: string
@@ -66,6 +69,8 @@ const menuId = useId()
 const text = ref("")
 const sending = ref(false)
 const changingModel = ref(false)
+const changingEffort = ref(false)
+const effortChoices = computed(() => models.providers?.find((provider) => provider.providerId === props.model?.providerId)?.models.find((model) => model.id === props.model?.modelId)?.reasoningEfforts ?? [])
 const error = ref("")
 const composing = ref(false)
 const focused = ref(false)
@@ -117,7 +122,7 @@ watch(text, () => {
 watch(matches, () => { activeIndex.value = 0 }, { flush: "sync" })
 
 const showStop = computed(() => props.running && props.stop !== undefined && text.value.trim() === "" && images.value.length === 0 && pastes.value.length === 0)
-const canSend = computed(() => (text.value.trim() !== "" || images.value.length > 0 || pastes.value.length > 0) && !sending.value)
+const canSend = computed(() => (text.value.trim() !== "" || images.value.length > 0 || pastes.value.length > 0) && !sending.value && !changingModel.value && !changingEffort.value)
 
 function resize(): void {
   const element = field.value
@@ -303,6 +308,7 @@ async function stop(): Promise<void> {
 }
 
 async function onModel(model: ModelId): Promise<void> {
+  if (changingModel.value || changingEffort.value) return
   changingModel.value = true
   error.value = ""
   try {
@@ -311,6 +317,19 @@ async function onModel(model: ModelId): Promise<void> {
     error.value = cause instanceof Error ? cause.message : String(cause)
   } finally {
     changingModel.value = false
+  }
+}
+
+async function onEffort(effort: string | undefined): Promise<void> {
+  if (!props.selectEffort || changingEffort.value || changingModel.value) return
+  changingEffort.value = true
+  error.value = ""
+  try {
+    await props.selectEffort(effort)
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : String(cause)
+  } finally {
+    changingEffort.value = false
   }
 }
 
@@ -462,7 +481,8 @@ defineExpose({ focus: () => field.value?.focus(), quote })
           <ComposerPermissionMenu v-if="permission && variant !== 'panel'" ref="permissionMenu" :policy="permission.policy" @select="permission.select" />
         </div>
         <div class="composer-run-group">
-          <ComposerModelMenu v-if="variant !== 'panel'" ref="modelMenu" :model="model" :selectable="modelSelectable" :disabled="changingModel" @select="onModel" />
+          <ComposerModelMenu v-if="variant !== 'panel'" ref="modelMenu" :model="model" :selectable="modelSelectable" :disabled="changingModel || changingEffort" @select="onModel" />
+          <ComposerReasoningMenu v-if="variant !== 'panel' && selectEffort && effortChoices.length" :choices="effortChoices" :value="reasoningEffort" :disabled="changingModel || changingEffort" @select="onEffort" />
           <button
             class="ui-icon-button"
             :data-variant="showStop ? 'contrast' : 'primary'"

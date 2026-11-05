@@ -43,6 +43,8 @@ watch(cwd, async (dir) => {
   if (cwd.value === dir) fallback.value = model
 }, { immediate: true })
 const model = computed(() => picked.value ?? fallback.value)
+const reasoningEffort = ref<string>()
+watch([() => model.value?.providerId, () => model.value?.modelId], () => { reasoningEffort.value = undefined })
 
 function choose(dir: string): void {
   cwd.value = dir
@@ -72,7 +74,8 @@ async function browse(): Promise<void> {
 
 async function send(text: string): Promise<void> {
   if (cwd.value === "") throw new Error(t("newThread.workspaceRequired"))
-  const sessionId = await sessions.create(cwd.value, picked.value)
+  const selected = picked.value ?? (reasoningEffort.value === undefined ? undefined : model.value)
+  const sessionId = await sessions.create(cwd.value, selected, reasoningEffort.value)
   chat.open(sessionId)
   await chat.submit(sessionId, MAIN_BRANCH, text)
   await router.push({ name: "chat-session", params: { sessionId } })
@@ -85,7 +88,7 @@ async function send(text: string): Promise<void> {
       <BrandMark class="new-session-mark" />
       <h1 data-route-heading tabindex="-1">{{ t("newThread.title") }}</h1>
     </div>
-    <ComposerPanel class="is-new-thread" :running="false" :model="model" :model-selectable="true" :send="send" :attachments="false" :select-model="(next) => { picked = next }">
+    <ComposerPanel class="is-new-thread" :running="false" :model="model" :model-selectable="true" :send="send" :attachments="false" :select-model="(next) => { picked = next }" :reasoning-effort="reasoningEffort" :select-effort="(value) => { reasoningEffort = value }">
       <template #status>
         <details ref="menu" class="composer-popover workspace-menu">
           <summary class="ui-button" data-variant="ghost" data-size="xs" data-trailing v-tooltip="cwd || undefined">

@@ -16,9 +16,13 @@ node scripts/build-macos-app.mjs
 
 桌面壳使用独立 Cargo workspace，锁文件位于 `desktop/src-tauri/Cargo.lock`。它通过现有 CLI 管理本地服务，不改变 Agent 的组装或协议。桌面应用版本与 `npm/package.json` 保持一致。
 
+`Contents/Resources/build-info.json` 记录 `sourceBranch`、`sourceCommit` 和 `sourceDirty`。
+这些字段描述实际构建时的代码来源；之后合并分支不会改变已安装应用的构建信息。
+
 ## 使用
 
 - 首次打开后，在设置中配置模型服务，再新建会话。工作区菜单中的“选择项目文件夹…”打开 macOS 原生选择窗口，也可手输绝对路径。取消选择保留原工作区。
+- 支持思考程度配置的模型会在输入框底部显示选择器。新会话可预先选择；已有会话显示当前配置，并在重新打开后恢复。
 - 左侧会话行的归档按钮将会话移入“已归档会话”，历史保持完整；从左侧底部或设置页可恢复。归档状态在重启后保留，正在运行的会话完成后可归档。
 - 会话和模型配置保存在 `~/Library/Application Support/com.yetang.dim`，与命令行版本的 home 分开，不自动迁移或修改已有会话。`webview-id` 保存一个 UUID，对应 macOS 管理的独立 WebKit 存储空间，隔离不同 home 的 Cookie、界面偏好和最近工作区。
 - 关闭窗口会隐藏应用；再次点击 Dock 图标或启动应用会显示原窗口。`Cmd+Q` 退出应用并停止这个独立 home 下的本地服务。

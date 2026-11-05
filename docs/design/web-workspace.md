@@ -224,6 +224,19 @@ commands are handled locally rather than submitted as model input.
 
 `/compact`, `/usage`, `/fork`, `/goal` and `/effort` belong to the main Session composer; a line composer does not list them, because the Session-wide cut and compaction are decided on main. `/rename` is not listed: the App Server does not serve `session.rename` yet (the SessionTitle design).
 
+The model toolbar also shows a reasoning-effort selector when the catalog declares choices. Its labels are localized,
+but its values are the provider's exact strings. A new Session passes an explicit choice through
+`session.create.modelPreferences`; its initial model uses the workspace selection, then the global selection when
+the workspace has none. Switching the draft's model clears that override. In an existing Session the selector
+uses `session.model.update`, and Default sends `{reasoningEffort:{action:"clear"}}`. The displayed current value comes
+from the main line's `context/configured.data.model_preferences`, including history replay and changes from another
+client. A missing preference displays Default; a model with no declared choices has no selector. Configuration failures
+keep the authoritative value and appear at the composer. Sending waits for a pending model or effort change.
+
+```text
+[ Model ▾ ] [ Reasoning: High ▾ ] [ Send ]
+```
+
 Commands whose action is unavailable are omitted. Native-only commands are not
 advertised. Shared actions follow the TUI's canonical names and argument flow,
 not terminal-specific shortcuts. `/keys` and a separate `/help` are unnecessary;

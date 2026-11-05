@@ -139,7 +139,7 @@ export type EventContent =
   | { kind: "tool-completed"; callId: string; result: ToolResult }
   | { kind: "tool-result"; requestId: string; results: Array<{ callId: string; result: ToolResult }> }
   | { kind: "model-end"; requestId: string; error?: string }
-  | { kind: "context-configured"; model: ModelId }
+  | { kind: "context-configured"; model: ModelId; reasoningEffort?: string }
   | { kind: "other" }
 
 export type SessionEvent = {

@@ -309,6 +309,8 @@ async function fork(): Promise<void> {
       :stop="stop"
       :model-selectable="connection.supports('session.model.update')"
       :select-model="selectModel"
+      :reasoning-effort="view.reasoningEffort"
+      :select-effort="connection.supports('session.model.update') ? async (value) => { await chat.setEffort(sessionId, value) } : undefined"
       :create-branch="canNewLine ? createBranch : undefined"
       :open-lines="branchable ? () => ui.openLines(sessionId) : undefined"
       :session-commands="sessionCommands"

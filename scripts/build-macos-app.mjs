@@ -14,9 +14,6 @@ const desktop = path.join(repo, 'desktop');
 const stage = path.join(repo, 'staging/macos-app');
 const profile = args.includes('--debug') ? 'debug' : 'release';
 const target = 'aarch64-apple-darwin';
-const version = JSON.parse(readFileSync(path.join(repo, 'npm/package.json'), 'utf8')).version;
-assert.equal(JSON.parse(readFileSync(path.join(desktop, 'package.json'), 'utf8')).version, version,
-  'Keep desktop/package.json and npm/package.json at the same product version.');
 const env = { ...process.env, CARGO_INCREMENTAL: '0' };
 delete env.RUSTC_WRAPPER;
 
@@ -30,6 +27,25 @@ function read(command, parameters, cwd = repo) {
   return execFileSync(command, parameters, { cwd, env, encoding: 'utf8' }).trim();
 }
 
+const sourceBranch = read('git', ['branch', '--show-current']);
+assert.equal(sourceBranch, 'master', 'Build Dim.app from master; switch branches before building.');
+assert.equal(read('git', ['status', '--porcelain']), '', 'Build Dim.app from a clean worktree.');
+run('git', ['fetch', '--no-tags', 'origin', 'refs/heads/master:refs/remotes/origin/master']);
+const sourceCommit = read('git', ['rev-parse', 'origin/master']);
+
+function verifySource() {
+  assert.equal(read('git', ['branch', '--show-current']), sourceBranch,
+    'The build branch changed; build again from master.');
+  assert.equal(read('git', ['rev-parse', 'HEAD']), sourceCommit,
+    'Local master must match origin/master. Update with git merge --ff-only origin/master; do not build unpushed commits.');
+  assert.equal(read('git', ['status', '--porcelain']), '', 'The build worktree must remain clean.');
+}
+
+verifySource();
+const version = JSON.parse(readFileSync(path.join(repo, 'npm/package.json'), 'utf8')).version;
+assert.equal(JSON.parse(readFileSync(path.join(desktop, 'package.json'), 'utf8')).version, version,
+  'Keep desktop/package.json and npm/package.json at the same product version.');
+
 run('npm', ['ci', '--prefix', desktop, '--ignore-scripts', '--no-audit', '--no-fund', '--registry=https://registry.npmjs.org']);
 const binary = path.join(repo, 'target', profile, 'dimcode');
 
@@ -41,8 +57,6 @@ run('npm', ['run', 'build', '--prefix', path.join(repo, 'web'), '--', '--outDir'
 assert(existsSync(path.join(stage, 'web/THIRD-PARTY-NOTICES.txt')), 'The frontend must carry its license notices.');
 const protocolVersion = Number(readFileSync(path.join(repo, 'crates/dim-app-server/src/protocol.rs'), 'utf8')
   .match(/pub const PROTOCOL_VERSION: u32 = (\d+);/)[1]);
-const sourceCommit = read('git', ['rev-parse', 'HEAD']);
-const sourceBranch = read('git', ['branch', '--show-current']) || null;
 writeFileSync(path.join(stage, 'web/dimcode-web.json'), `${JSON.stringify({ version, protocolVersion, sourceCommit }, null, 2)}\n`);
 
 run('node', ['scripts/stage-plugins.mjs', path.join(stage, 'plugins-payload')]);
@@ -62,8 +76,9 @@ run('cargo', ['build', '--locked', '-p', 'dimcode', ...(profile === 'release' ? 
 assert.equal(read('lipo', ['-archs', binary]), 'arm64', 'The backend must be Apple Silicon native.');
 copyFileSync(binary, path.join(stage, `dimcode-${target}`));
 chmodSync(path.join(stage, `dimcode-${target}`), 0o755);
+verifySource();
 writeFileSync(path.join(stage, 'build-info.json'), `${JSON.stringify({
-  version, sourceCommit, sourceBranch, sourceDirty: read('git', ['status', '--porcelain']).length > 0,
+  version, sourceCommit, sourceBranch, sourceRemote: 'origin', sourceRef: 'refs/heads/master', sourceDirty: false,
   target, profile, backendVersion: read(binary, ['--version']), builtAt: new Date().toISOString(),
 }, null, 2)}\n`);
 
@@ -76,6 +91,9 @@ for (const name of ['dim-desktop', 'dimcode']) {
 }
 run('codesign', ['--verify', '--deep', '--strict', bundle]);
 
+verifySource();
+assert.equal(read('git', ['ls-remote', '--exit-code', '--heads', 'origin', 'refs/heads/master']),
+  `${sourceCommit}\trefs/heads/master`, 'Remote master changed during the build; update master and build again.');
 const output = path.join(repo, 'dist/macos/Dim.app');
 mkdirSync(path.dirname(output), { recursive: true });
 rmSync(output, { recursive: true, force: true });

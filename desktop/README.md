@@ -7,8 +7,13 @@ Apple Silicon 自用桌面入口。Tauri 窗口复用现有 Web 工作区，通�
 在 macOS 14 或更新版本的 Apple Silicon Mac 上安装 Xcode Command Line Tools、仓库指定的 Rust 工具链和 Node.js，然后在仓库根目录执行：
 
 ```sh
+git fetch origin master
+git switch master
+git merge --ff-only origin/master
 node scripts/build-macos-app.mjs
 ```
+
+安装包始终从远程 `origin/master` 的最新提交构建。构建入口会重新获取远程主线，并要求本地位于 `master`、工作区干净且提交完全一致；功能分支、未提交改动，以及未推送或落后的提交都会被拒绝。构建结束时再次核对本地代码和远程主线，主线在构建期间变化时须重新构建。`--debug` 同样遵守这些来源约束。
 
 产物是 `dist/macos/Dim.app`，可以拖入用户的 `Applications` 目录后双击打开。`--debug` 可生成同样结构的开发包。构建会安装锁定的前端与桌面依赖，编译 Rust 后端，打包 Web 资源、默认插件和应用图标，并验证两个可执行文件的 ARM64 架构及应用签名。
 
@@ -16,7 +21,8 @@ node scripts/build-macos-app.mjs
 
 桌面壳使用独立 Cargo workspace，锁文件位于 `desktop/src-tauri/Cargo.lock`。它通过现有 CLI 管理本地服务，不改变 Agent 的组装或协议。桌面应用版本与 `npm/package.json` 保持一致。
 
-`Contents/Resources/build-info.json` 记录 `sourceBranch`、`sourceCommit` 和 `sourceDirty`。
+`Contents/Resources/build-info.json` 记录 `sourceRemote`、`sourceRef`、`sourceBranch`、`sourceCommit` 和 `sourceDirty`。
+正常安装包必须标记为 `origin`、`refs/heads/master`、`master`，且 `sourceDirty=false`。
 这些字段描述实际构建时的代码来源；之后合并分支不会改变已安装应用的构建信息。
 
 ## 使用

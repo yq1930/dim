@@ -3,16 +3,17 @@ import { computed, onMounted, ref } from "vue"
 import { RouterLink } from "vue-router"
 import { useSettingsText } from "../../i18n/settings-general"
 import { readSavedSessions, type SavedSessions } from "../../rpc/general-settings"
-import { readAck } from "../../rpc/read"
 import type { SessionSummary } from "../../rpc/protocol"
 import { useConnectionStore } from "../../stores/connection"
 import { useSessionsStore } from "../../stores/sessions"
+import { useComposerDrafts } from "../chat/composer-drafts"
 import GeneralSettingsStatus from "./GeneralSettingsStatus.vue"
 import { messageFrom, reloadSettingsOnReconnect } from "./context"
 
 const s = useSettingsText()
 const connection = useConnectionStore()
 const sessions = useSessionsStore()
+const drafts = useComposerDrafts()
 const archiveSupported = computed(() => connection.supports("session.archive"))
 const page = ref<SavedSessions>()
 const query = ref("")
@@ -40,9 +41,9 @@ async function remove(session: SessionSummary): Promise<void> {
   busy.value = true
   error.value = ""
   try {
-    await connection.client.call("session.delete", { sessionId: session.sessionId }, readAck)
+    await sessions.remove(session.sessionId)
     if (page.value) page.value.sessions = page.value.sessions.filter((item) => item.sessionId !== session.sessionId)
-    sessions.forget(session.sessionId)
+    drafts.discardSession(session.sessionId)
   } catch (cause) { error.value = messageFrom(cause) }
   finally { busy.value = false }
 }
@@ -65,7 +66,7 @@ onMounted(() => load())
     <header><h2 data-route-heading tabindex="-1">{{ archiveSupported ? s('Archived sessions', '已归档会话') : s('Saved sessions', '已保存的会话') }}</h2></header>
     <form class="settings-card settings-form" role="search" @submit.prevent="load()"><label><span>{{ s('Search history', '搜索历史') }}</span><input v-model="query" class="ui-field" data-size="md" type="search" /></label><label><span>{{ s('Project directory (optional)', '项目目录（可选）') }}</span><input v-model="cwd" class="ui-field" data-size="md" placeholder="/path/to/project" /></label><button class="ui-button" data-size="md" data-variant="secondary" :disabled="busy">{{ s('Search', '搜索') }}</button></form>
     <GeneralSettingsStatus :busy="busy" :error="error" @reload="load()" />
-    <section v-for="session in page?.sessions" :key="session.sessionId" class="settings-card"><h3>{{ session.preview || session.sessionId }}</h3><p><code>{{ session.cwd }}</code></p><p><time :datetime="new Date(session.updatedAt).toISOString()">{{ new Date(session.updatedAt).toLocaleString() }}</time> · {{ session.model.modelId }}<template v-if="session.running"> · {{ s('Running', '正在运行') }}</template></p><div class="settings-actions"><button v-if="archiveSupported" class="ui-button" data-size="md" data-variant="secondary" :disabled="busy" @click="restore(session)">{{ s('Restore', '恢复') }}</button><RouterLink v-else class="ui-button" data-size="md" data-variant="secondary" :to="{ name: 'chat-session', params: { sessionId: session.sessionId } }">{{ s('Reopen', '重新打开') }}</RouterLink><button class="ui-button" data-size="md" data-variant="danger-ghost" :disabled="busy || session.running || !connection.supports('session.delete')" @click="remove(session)">{{ s('Delete permanently', '永久删除') }}</button></div></section>
+    <section v-for="session in page?.sessions" :key="session.sessionId" class="settings-card"><h3>{{ session.title || session.preview || session.sessionId }}</h3><p><code>{{ session.cwd }}</code></p><p><time :datetime="new Date(session.updatedAt).toISOString()">{{ new Date(session.updatedAt).toLocaleString() }}</time> · {{ session.model.modelId }}<template v-if="session.running"> · {{ s('Running', '正在运行') }}</template></p><div class="settings-actions"><button v-if="archiveSupported" class="ui-button" data-size="md" data-variant="secondary" :disabled="busy" @click="restore(session)">{{ s('Restore', '恢复') }}</button><RouterLink v-else class="ui-button" data-size="md" data-variant="secondary" :to="{ name: 'chat-session', params: { sessionId: session.sessionId } }">{{ s('Reopen', '重新打开') }}</RouterLink><button class="ui-button" data-size="md" data-variant="danger-ghost" :disabled="busy || session.running || !connection.supports('session.delete')" @click="remove(session)">{{ s('Delete permanently', '永久删除') }}</button></div></section>
     <p v-if="page && !page.sessions.length" role="status">{{ archiveSupported ? s('No matching archived sessions.', '没有匹配的已归档会话。') : s('No matching saved sessions.', '没有匹配的已保存会话。') }}</p><button v-if="page?.nextCursor" class="ui-button" data-size="md" data-variant="secondary" :disabled="busy" @click="load(true)">{{ s('Load more', '加载更多') }}</button>
   </article>
 </template>

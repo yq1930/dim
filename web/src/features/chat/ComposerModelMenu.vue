@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from "vue"
 import { useI18n } from "vue-i18n"
-import { Check, LoaderCircle, Search } from "lucide-vue-next"
+import { RouterLink } from "vue-router"
+import { Check, LoaderCircle, Search, Settings, Star } from "lucide-vue-next"
 import type { ModelId } from "../../rpc/protocol"
 import { useModelsStore } from "../../stores/models"
+import { useConnectionStore } from "../../stores/connection"
+import { useToastStore } from "../../stores/toast"
 
 /**
  * Provider and model picker: a popover with search, a provider pane and a model
@@ -16,6 +19,8 @@ const props = defineProps<{ model: ModelId | undefined; selectable: boolean; dis
 const emit = defineEmits<{ select: [model: ModelId] }>()
 const { t } = useI18n()
 const models = useModelsStore()
+const connection = useConnectionStore()
+const savingDefault = ref(false)
 const details = ref<HTMLDetailsElement>()
 const searchInput = ref<HTMLInputElement>()
 const query = ref("")
@@ -66,6 +71,18 @@ async function onToggle(): Promise<void> {
 function select(option: Option): void {
   if (details.value) details.value.open = false
   if (!isCurrent(option)) emit("select", { providerId: option.providerId, modelId: option.modelId })
+}
+
+async function makeDefault(): Promise<void> {
+  const model = props.model
+  if (!model || savingDefault.value) return
+  savingDefault.value = true
+  try {
+    await models.setGlobalDefault(model)
+    if (details.value) details.value.open = false
+    useToastStore().push({ tone: "success", title: t("composer.defaultSaved", { model: models.nameOf(model) }) })
+  } catch (cause) { useToastStore().push({ tone: "danger", title: t("composer.defaultFailed"), description: cause instanceof Error ? cause.message : String(cause) }) }
+  finally { savingDefault.value = false }
 }
 
 function onSearchKey(event: KeyboardEvent): void {
@@ -138,6 +155,10 @@ defineExpose({ open: () => {
           </button>
         </div>
       </div>
+      <div class="model-actions">
+        <button v-if="model && connection.supports('provider.select') && connection.supports('provider.selection')" type="button" class="ui-menu-item" :disabled="savingDefault || connection.phase !== 'connected'" @click="makeDefault"><Star aria-hidden="true" />{{ t("composer.setDefault") }}</button>
+        <RouterLink class="ui-menu-item" to="/settings/providers" @click="details && (details.open = false)"><Settings aria-hidden="true" />{{ t("composer.modelSettings") }}</RouterLink>
+      </div>
     </div>
   </details>
 </template>
@@ -154,4 +175,10 @@ defineExpose({ open: () => {
 .model-pane { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; overflow-y: auto; padding: 0 var(--space-1); }
 .model-check { display: flex; width: 14px; height: 14px; flex: none; align-items: center; justify-content: center; color: var(--primary-ink); }
 .model-check svg { width: 14px; height: 14px; }
+.model-actions { border-top: 1px solid var(--border); margin-top: var(--space-1); padding-top: var(--space-1); }
+.model-actions a { color: inherit; text-decoration: none; }
+@container composer (max-width: 640px) {
+  .model-menu { position: static; }
+  .model-content.is-end { right: 0; left: 0; width: auto; max-width: none; transform-origin: bottom center; }
+}
 </style>

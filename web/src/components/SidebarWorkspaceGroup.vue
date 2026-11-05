@@ -1,37 +1,20 @@
 <script setup lang="ts">
 import { computed, ref } from "vue"
-import { RouterLink, useRouter } from "vue-router"
+import { RouterLink } from "vue-router"
 import { useI18n } from "vue-i18n"
-import { Archive, ChevronRight, Folder, FolderOpen, Loader2, Plus } from "lucide-vue-next"
+import { Archive, ChevronRight, Copy, Folder, FolderOpen, Loader2, Pencil, Plus, Trash2, X } from "lucide-vue-next"
 import { useSessionsStore, type Workspace } from "../stores/sessions"
 import { useConnectionStore } from "../stores/connection"
-import { useToastStore } from "../stores/toast"
-import { useUiStore } from "../stores/ui"
+import type { SessionSummary } from "../rpc/protocol"
+import RowActionMenu from "./RowActionMenu.vue"
 import { formatRelativeTimeShort } from "../features/chat/timeline-time"
 
 /** One workspace (a working directory) and its sessions, most recent first. */
-const props = defineProps<{ workspace: Workspace; expanded: boolean; activeSessionId?: string; nowMs: number }>()
-const emit = defineEmits<{ toggle: []; navigate: [] }>()
+const props = defineProps<{ workspace: Workspace; expanded: boolean; activeSessionId?: string; nowMs: number; busy?: boolean }>()
+const emit = defineEmits<{ toggle: []; navigate: []; action: [kind: "rename" | "archive" | "delete", session: SessionSummary]; copy: [path: string] }>()
 const { t } = useI18n()
-const router = useRouter()
 const sessions = useSessionsStore()
 const connection = useConnectionStore()
-const archiving = ref<string>()
-
-async function archive(sessionId: string): Promise<void> {
-  if (archiving.value) return
-  archiving.value = sessionId
-  try {
-    await sessions.setArchived(sessionId, true)
-    const ui = useUiStore()
-    if (ui.lastSessionId === sessionId) ui.lastSessionId = undefined
-    if (props.activeSessionId === sessionId) await router.replace({ name: "chat-new", query: { cwd: props.workspace.cwd } })
-  } catch (cause) {
-    useToastStore().push({ tone: "danger", title: t("sidebar.archiveFailed"), description: cause instanceof Error ? cause.message : String(cause) })
-  } finally {
-    archiving.value = undefined
-  }
-}
 
 // A group shows five sessions until "show more" walks out twenty at a time.
 const FIRST = 5
@@ -75,6 +58,10 @@ function toggleReveal(): void {
           v-tooltip="t('sidebar.newInWorkspace', { name: workspace.name })"
           @click="emit('navigate')"
         ><Plus aria-hidden="true" /></RouterLink>
+        <RowActionMenu :label="t('workspace.actions', { name: workspace.name })">
+          <button type="button" class="ui-menu-item" @click="emit('copy', workspace.cwd)"><Copy aria-hidden="true" />{{ t("workspace.copyPath") }}</button>
+          <button v-if="!workspace.sessions.length" type="button" class="ui-menu-item" @click="sessions.forgetWorkspace(workspace.cwd)"><X aria-hidden="true" />{{ t("workspace.removeRecent") }}</button>
+        </RowActionMenu>
       </div>
     </div>
     <ul v-if="expanded" class="session-list">
@@ -84,16 +71,19 @@ function toggleReveal(): void {
           :to="{ name: 'chat-session', params: { sessionId: session.sessionId } }"
           :data-open="session.sessionId === activeSessionId ? 'true' : undefined"
           :aria-current="session.sessionId === activeSessionId ? 'page' : undefined"
-          :title="session.preview"
+          :title="session.title ?? session.preview"
           @click="emit('navigate')"
         >
           <span class="status-dot" :data-state="session.running ? 'running' : 'idle'" aria-hidden="true" />
-          <strong>{{ session.preview ?? t("sidebar.untitled") }}</strong>
+          <strong>{{ session.title ?? session.preview ?? t("sidebar.untitled") }}</strong>
           <small>{{ formatRelativeTimeShort(new Date(session.updatedAt), nowMs) }}</small>
         </RouterLink>
-        <button v-if="connection.supports('session.archive')" class="ui-icon-button session-archive" data-variant="ghost" data-size="sm" type="button" :disabled="!!archiving || session.running || connection.phase !== 'connected'" :aria-label="t('sidebar.archiveSession', { name: session.preview ?? t('sidebar.untitled') })" v-tooltip="t('sidebar.archive')" @click="archive(session.sessionId)">
-          <Loader2 v-if="archiving === session.sessionId" class="is-spinning" aria-hidden="true" /><Archive v-else aria-hidden="true" />
-        </button>
+        <span class="session-actions"><RowActionMenu :label="t('sidebar.sessionActions', { name: session.title ?? session.preview ?? t('sidebar.untitled') })">
+          <button v-if="connection.supports('session.methods')" type="button" class="ui-menu-item" :disabled="busy || connection.phase !== 'connected'" @click="emit('action', 'rename', session)"><Pencil aria-hidden="true" />{{ t("sidebar.rename") }}</button>
+          <button v-if="connection.supports('session.archive')" type="button" class="ui-menu-item" :disabled="busy || session.running || connection.phase !== 'connected'" @click="emit('action', 'archive', session)"><Archive aria-hidden="true" />{{ t("sidebar.archive") }}</button>
+          <button type="button" class="ui-menu-item" @click="emit('copy', session.cwd)"><Copy aria-hidden="true" />{{ t("workspace.copyPath") }}</button>
+          <button v-if="connection.supports('session.delete')" type="button" class="ui-menu-item" :disabled="busy || session.running || connection.phase !== 'connected'" @click="emit('action', 'delete', session)"><Trash2 aria-hidden="true" />{{ t("sidebar.delete") }}</button>
+        </RowActionMenu></span>
       </li>
       <li v-if="workspace.sessions.length > FIRST">
         <button class="ui-button reveal-more" data-variant="ghost" data-size="sm" type="button" @click="toggleReveal">
@@ -102,6 +92,7 @@ function toggleReveal(): void {
         </button>
       </li>
     </ul>
+    <p v-if="expanded && !workspace.sessions.length" class="sidebar-empty">{{ t("workspace.empty") }}</p>
   </section>
 </template>
 
@@ -124,14 +115,14 @@ function toggleReveal(): void {
 .session-list .session-open { grid-template-columns: var(--control-xs) minmax(0, 1fr) auto; border-radius: var(--control-sm-radius); color: inherit; text-decoration: none; }
 .session-row { display: flex; align-items: center; gap: 2px; }
 .session-row .session-open { flex: 1; min-width: 0; }
-.session-archive { flex: none; opacity: 0; }
-.session-row:is(:hover, :focus-within) .session-archive { opacity: 1; }
+.session-actions { flex: none; opacity: .4; }
+.session-row:is(:hover, :focus-within) .session-actions { opacity: 1; }
 .session-list .session-open .status-dot { justify-self: center; }
 .session-list .session-open:hover { background: var(--hover); }
 .session-list .session-open[data-open="true"] { background: var(--card); box-shadow: var(--shadow-xs), 0 0 0 1px var(--border); }
 @media (hover: none) {
   .workspace-row-actions { opacity: 1; }
   .workspace-running { display: none; }
-  .session-archive { opacity: 1; }
+  .session-actions { opacity: 1; }
 }
 </style>

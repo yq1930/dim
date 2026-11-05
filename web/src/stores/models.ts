@@ -3,6 +3,7 @@ import { defineStore } from "pinia"
 import { readAccountProviders, readProviderCatalog, readProviderList, readProviderSelection } from "../rpc/read"
 import type { ModelId, ProviderModel } from "../rpc/protocol"
 import { useConnectionStore } from "./connection"
+import { readDefaultSelection, readSelectedModel } from "../rpc/general-settings"
 
 export type ProviderModels = { providerId: string; name: string; models: ProviderModel[] }
 
@@ -70,5 +71,12 @@ export const useModelsStore = defineStore("models", () => {
     return provider?.models.find((item) => item.id === model.modelId)?.name ?? model.modelId
   }
 
-  return { providers, error, available, load, defaultFor, nameOf }
+  async function setGlobalDefault(model: ModelId): Promise<void> {
+    const client = useConnectionStore().client
+    const current = await client.call("provider.selection", {}, readDefaultSelection)
+    if (current?.providerId === model.providerId && current.modelId === model.modelId) return
+    await client.call("provider.select", { providerId: model.providerId, modelId: model.modelId, ...(current ? { expectedVersion: current.version } : {}) }, readSelectedModel)
+  }
+
+  return { providers, error, available, load, defaultFor, nameOf, setGlobalDefault }
 })

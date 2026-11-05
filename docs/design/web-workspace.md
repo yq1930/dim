@@ -151,13 +151,27 @@ The frontend directory is fixed when the daemon starts (§2.4); a daemon started
 | `rpc/client.ts` | JSON-RPC over `/ws`: `hello` v3 (`clientKind: "web"`), request timeout, heartbeat with `daemon.ping`, reconnect with backoff and re-attach. Strict readers at this boundary; the rest of the app uses typed data |
 | `rpc/protocol.ts` | Hand-written types for the v3 methods and notifications the UI uses (`session.*`, `approval.*`, `session.event`, `session.state`, `session.model.progress`) |
 | `projection.ts` | Folds `session.history` pages, `session.event` and `session.model.progress` into timeline rows (user, assistant text, thinking, tool call and result, approval), following `crates/dim-cli/src/projection.rs`; also tracks the waiting `ask_user` calls of each branch (`step/tool-call` until its batch's `step/tool-result`) and folds each branch's goal (`goal.ts`, a port of `crates/dim-cli/src/goal.rs`) |
-| Sidebar | Workspaces are Session summaries grouped by `cwd`; new Session by `session.create {cwd}` with a typed path or a known workspace |
+| Sidebar | Workspaces combine Session summaries grouped by `cwd` with recently opened directories; new Session by `session.create {cwd}` with a typed path, native directory picker or known workspace. Session actions offer rename, archive, copy workspace path and confirmed deletion |
 | Chat | Timeline (markdown, Shiki) with a message rail (one marker per user message from three messages on, as dim-agent's rail: hover shows the message and its first reply, a click scrolls it into view and marks it for a moment; `/timeline` is not offered, dim-agent has none), composer (submit, stop, model menu and permission preset picker, below), approval prompt (`approval.request` → `approval.respond`; "Allow for this session" → `session.grants.add` and "Always allow" for a simple `exec` command → `permission.set_rules`, both before the allow), question prompt for `ask_user` (`step/tool-call` → `session.question.respond`, closed by `step/tool-result`); the approval and question prompts take the composer's place; queued messages of the main line above the composer (`input/message` until `input/applied` or `input/deleted`; Steer and Remove → `session.input.withdraw`, Steer resends the message's content with the withdrawal); composer attachments: pasted or dropped images are sent as image content blocks (`session.submit` with `user.content`), a paste longer than 16 KiB is stored with `attachment.put` when the Session serves it and its path is named in the message, as the TUI does (`crates/dim-cli/src/attachments.rs`); `@` file mentions: the composer offers the files of the Session's workspace from `session.files.search` (WorkspaceTools; the TUI picker's index and ranking), inserts a file as `@path` and sends it as a Markdown link to its absolute path (`[@path](/abs)`, as the TUI sends it); a directory steps into `@dir/` |
 | Session permissions | The composer and `/permissions` select the `main` preset under [ADR 018](../adr/018-permission-is-the-preset.md) and the [Permission policy contract](../architecture/rust-agent/plugins/Permission.md#policy-contract). The client reads `session.permission.get` and `permission/changed`, displays the preset and tool lists, and preserves both lists in a versioned `session.permission.update`. Conflicts refresh without retrying. Choosing Full access requires confirmation. Process isolation links to its Settings control. |
 | Lines | Right detail panel with a Lines tree and one tab per opened line; each tab folds that line's own history and sends, stops, approves and ends on its `branchId` (§4.1) |
 | i18n | `en` and `zh-CN` |
 
-Features outside the settings scope with no v3 backend are left out rather than stubbed: follow-up queue, attachments and file previews, file-history rewind, rename, goal, workflows, subagent panes and git branch menu. The macOS desktop host supplies a native directory picker; a browser uses the absolute-path input. Settings and saved-session management follow §4.3.
+Features without a usable v3 backend are left out rather than stubbed: file previews, file-history rewind, workflows and git branch menu. The macOS desktop host supplies a native directory picker; a browser uses the absolute-path input. Settings and saved-session management follow §4.3.
+
+### Workspace navigation and drafts
+
+Opening a directory adds it to the sidebar before a Session exists. The last 20 opened directories are local navigation preferences, persisted in browser storage; saved Sessions still come exclusively from `session.summaries`. An empty directory can be removed from recent workspaces without deleting files. The new-Session route uses `?cwd=` to select a directory and restores its own draft. Once creation returns the canonical directory, that path replaces the typed alias in recent workspaces. A pending creation may finish after navigation, but only the still-active originating page can navigate to its new Session.
+
+Composer drafts retain text, file mentions and unsent attachments in memory for the lifetime of the frontend application. New-Session drafts are scoped by working directory; existing drafts by Session and line. Switching pages or opening settings preserves these drafts; reloading or quitting clears them. Pending file reads and submission replies apply to the draft that started them. Successful submission clears only the submitted content; failure preserves it. Deleting a Session discards its drafts.
+
+The attachment button and drag-and-drop accept UTF-8 text/code files and PNG, JPEG, WebP or GIF images, including on the first message of a new Session. Text files use `attachment.put`; the message names the original filename and returned path. The frontend rejects unsupported binary files, limits each file to 10 MiB, caps the combined image base64 payload at 10 MiB and permits at most 20 attachments. JSON payload limits leave space for RPC framing. It does not resize images. The project-file button searches `session.files.search` and inserts the same `@` references as the inline mention picker; it does not send a message or upload the project. It is available only after a Session provides file search.
+
+### Session titles and actions
+
+The sidebar, header, window title and archive list use the server title, falling back to the preview when absent. The rename dialog checks the Session's method table before calling `session.rename`; validation errors remain in the dialog. Replies and `SessionStore/title` notices carry revisions, so an older notice or directory snapshot cannot overwrite a newer title. Title ownership and persistence remain with [SessionTitle](plugins/SessionTitle.md).
+
+Archive and delete actions are disabled while the Session is running. Deletion requires an explicit confirmation; cancellation does not call `session.delete`. Successful archive or deletion of the currently displayed Session navigates to a new draft in that workspace. Archive keeps the history and uses the existing restore page; deletion is permanent.
 
 ### 4.1 Lines and branch
 
@@ -222,7 +236,7 @@ commands are handled locally rather than submitted as model input.
 | `session` | `/lines` | Open the existing Session lines panel |
 | `session` | `/new` | Navigate to the existing new-Session page, seeded with the current Session's working directory |
 
-`/compact`, `/usage`, `/fork`, `/goal` and `/effort` belong to the main Session composer; a line composer does not list them, because the Session-wide cut and compaction are decided on main. `/rename` is not listed: the App Server does not serve `session.rename` yet (the SessionTitle design).
+`/compact`, `/usage`, `/fork`, `/goal` and `/effort` belong to the main Session composer; a line composer does not list them, because the Session-wide cut and compaction are decided on main. Rename is offered through the sidebar's Session action menu using `session.rename`.
 
 The model toolbar also shows a reasoning-effort selector when the catalog declares choices. Its labels are localized,
 but its values are the provider's exact strings. A new Session passes an explicit choice through
@@ -232,6 +246,8 @@ uses `session.model.update`, and Default sends `{reasoningEffort:{action:"clear"
 from the main line's `context/configured.data.model_preferences`, including history replay and changes from another
 client. A missing preference displays Default; a model with no declared choices has no selector. Configuration failures
 keep the authoritative value and appear at the composer. Sending waits for a pending model or effort change.
+
+The model picker links directly to provider settings and can save the current model as the global default. This reads `provider.selection` and uses its version in `provider.select`; a concurrent update is reported instead of overwritten. The action changes the global fallback for future Sessions, preserving workspace-specific defaults and the models of existing Sessions.
 
 ```text
 [ Model ▾ ] [ Reasoning: High ▾ ] [ Send ]

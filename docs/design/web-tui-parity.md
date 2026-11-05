@@ -12,7 +12,7 @@ The TUI registers 36 commands and several interaction flows that the web workspa
 | P0 | Approval: always allow a simple command | `[y/a/N]` | Only "Allow once" and "Reject" | `permission.rules`, `permission.set_rules`, `approval.respond` | Implemented in this change |
 | P0 | Approval: allow a file path for this Session | Permission prompt, grant option | Not offered | `session.grants.add`, `approval.respond` | Implemented in this change |
 | P1 | Compact the context, show usage, fork the Session | `/compact`, `/usage`, `/fork` | Not offered | `session.context.compact`, `session.context.usage`, `session.fork` | Implemented: command menu, main Session composer |
-| P1 | Rename the Session | `/rename` | Not offered | `session.rename` | Blocked: the App Server does not serve `session.rename` yet (SessionTitle design) |
+| P1 | Rename the Session | `/rename` | Sidebar action menu | `session.rename` | Implemented: manual title, revisioned live updates and preview fallback |
 | P1 | Session goal: set, edit, pause, resume, clear | `/goal` | Not offered | `session.goal.set`, `session.goal.edit`, `session.goal.pause`, `session.goal.resume`, `session.goal.clear` | Implemented: the goal is folded from the line's events (`goal.ts`), command menu |
 | P2 | Attachments: pasted images and long pastes, dropped images, `@` file mentions | Composer | Text only | `session.submit` (`user.content` with image blocks), `attachment.put`, `session.files.search` | Implemented: images pasted or dropped, pastes over 16 KiB stored as attachments when the Session serves `attachment.put`, `@` mentions from `session.files.search` (a new Session method on WorkspaceTools, the TUI's index and ranking) |
 | P2 | Reasoning effort in chat | `/effort` | Only in provider preferences | `session.model.update` (`modelPreferences`), `provider.catalog` | Implemented: command menu, main Session composer |
@@ -53,7 +53,7 @@ All P2 items are implemented or dropped (`/fast`). The P3 items remain planned; 
 
 ## 4. Protocol checks
 
-- Attachments: `session.submit` accepts image content blocks in `user.content`, as the TUI's `submit_draft` sends them. The server's image size limit is not checked: the TUI scales images before sending, the web sends them as picked.
+- Attachments: `session.submit` accepts image content blocks in `user.content`, as the TUI's `submit_draft` sends them. The web checks file and encoded-payload sizes but sends images without resizing. Text/code files use `attachment.put`; see [Web workspace §4](web-workspace.md#4-frontend) for formats and limits.
 
 
 
@@ -71,7 +71,6 @@ All P2 items are implemented or dropped (`/fast`). The P3 items remain planned; 
 ## 7. Remaining
 
 - P3, not started: background task output and stop (`/tasks`), workflow status and stop, session agent switch (`/agent`), session MCP state (`/mcp`), and Hooks settings (needs a Settings allowlist change in `web-workspace.md` §4.3 first).
-- `/rename` waits for the App Server's `session.rename` (SessionTitle). The sidebar and header still show the preview, not a manual title.
-- Not yet run end to end: none of the P0 to P2 features has been exercised in a browser against a running App Server. `session.files.search` is compiled and unit-checked, not called over RPC.
+- The sidebar offers renaming; a `/rename` shortcut is not implemented.
 - Known gaps inside the done items: images are sent without the TUI's scaling; `@` links are matched by their text, so a user who edits a mention's text loses the link; the queue strip covers the main line only, and Steer applies to the oldest message only.
 - The approval prompt's member panel still has English-only strings from before this plan ("Retry", "Subagent tool approval", "Loading member action...").

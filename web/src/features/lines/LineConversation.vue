@@ -142,6 +142,7 @@ function noModel(): void {
       <ComposerPanel
         v-else-if="open"
         ref="composer"
+        :draft-key="`session:${sessionId}:${branchId}`"
         :running="running"
         :stopping="stopping"
         :model="view.model"

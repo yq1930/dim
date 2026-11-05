@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, useId, watch } from "vue"
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import { useI18n } from "vue-i18n"
-import { ArrowUp, Square, X } from "lucide-vue-next"
+import { ArrowUp, FileSearch, FileText, Paperclip, Square, X } from "lucide-vue-next"
 import type { DraftAttachments, FileCandidate, ImageBlock, ModelId, PermissionPreset, PermissionPolicy } from "../../rpc/protocol"
 import { linkMentions, mentionTrigger, type FileMention, type MentionTrigger } from "../../mentions"
 import { useModelsStore } from "../../stores/models"
@@ -10,6 +10,8 @@ import { useSessionsStore } from "../../stores/sessions"
 import ComposerModelMenu from "./ComposerModelMenu.vue"
 import ComposerPermissionMenu from "./ComposerPermissionMenu.vue"
 import ComposerReasoningMenu from "./ComposerReasoningMenu.vue"
+import WorkspaceFileDialog from "./WorkspaceFileDialog.vue"
+import { createComposerDraft, useComposerDrafts, type ComposerDraft } from "./composer-drafts"
 import { quoteInto } from "./quote"
 
 /** The Session commands the menu lists, each only when given. Errors are reported by the callee. */
@@ -32,11 +34,12 @@ const props = withDefaults(defineProps<{
   running: boolean
   stopping?: boolean
   model: ModelId | undefined
+  draftKey?: string
   /** False when this connection may not change the model; the menu then only names it. */
   modelSelectable: boolean
   /** Sends the text and the draft's attachments; resolves once the server accepted it. */
   send: (text: string, attachments: DraftAttachments) => Promise<void>
-  /** False where a draft cannot carry attachments, as on a new Session's page. */
+  /** False where a draft cannot carry attachments. */
   attachments?: boolean
   /** True when the Session stores long pastes through `attachment.put`. */
   storesPastes?: boolean
@@ -63,20 +66,25 @@ const router = useRouter()
 const models = useModelsStore()
 const sessions = useSessionsStore()
 const field = ref<HTMLTextAreaElement>()
+const upload = ref<HTMLInputElement>()
+const fileDialog = ref<InstanceType<typeof WorkspaceFileDialog>>()
+const drafts = useComposerDrafts()
+const localDraft = createComposerDraft()
+const draft = computed(() => props.draftKey === undefined ? localDraft : drafts.get(props.draftKey))
 const modelMenu = ref<InstanceType<typeof ComposerModelMenu>>()
 const permissionMenu = ref<InstanceType<typeof ComposerPermissionMenu>>()
 const menuId = useId()
-const text = ref("")
-const sending = ref(false)
+const text = computed({ get: () => draft.value.text, set: (value) => { draft.value.text = value } })
+const sending = computed({ get: () => draft.value.sending, set: (value) => { draft.value.sending = value } })
 const changingModel = ref(false)
 const changingEffort = ref(false)
 const effortChoices = computed(() => models.providers?.find((provider) => provider.providerId === props.model?.providerId)?.models.find((model) => model.id === props.model?.modelId)?.reasoningEfforts ?? [])
-const error = ref("")
+const error = computed({ get: () => draft.value.error, set: (value) => { draft.value.error = value } })
 const composing = ref(false)
 const focused = ref(false)
 const dismissed = ref(false)
 /** The files inserted into the draft; each sends as a Markdown link to its path. */
-const fileMentions = ref<FileMention[]>([])
+const fileMentions = computed({ get: () => draft.value.mentions, set: (value: FileMention[]) => { draft.value.mentions = value } })
 const mention = ref<MentionTrigger | undefined>()
 const mentionDismissed = ref<string | undefined>()
 const candidates = ref<FileCandidate[]>([])
@@ -91,10 +99,13 @@ const activeIndex = ref(0)
 /** The limits of `crates/dim-cli/src/attachments.rs`: a paste longer than this is stored as a Session attachment. */
 const INLINE_PASTE = 16 * 1024
 const MAX_PASTE = 10 * 1024 * 1024
-const MAX_IMAGES = 20
-const images = ref<Array<{ id: number; url: string; block: ImageBlock }>>([])
-const pastes = ref<Array<{ id: number; text: string }>>([])
-let attachmentSeq = 0
+const MAX_ATTACHMENTS = 20
+const images = computed({ get: () => draft.value.images, set: (value) => { draft.value.images = value } })
+const pastes = computed({ get: () => draft.value.pastes, set: (value) => { draft.value.pastes = value } })
+const files = computed({ get: () => draft.value.files, set: (value) => { draft.value.files = value } })
+const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"])
+const FILE_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,text/*,application/json,application/javascript,application/xml,.ts,.tsx,.jsx,.vue,.rs,.go,.py,.php,.sql,.md,.yaml,.yml,.toml,.ini,.sh,.css,.scss,.jsonc,.log,.diff,.patch,.svg"
+watch(() => props.draftKey, () => { mention.value = undefined; candidates.value = []; fileDialog.value?.close(); void nextTick(resize) })
 
 const availableCommands = computed(() => ([
   { category: "model", name: "models", available: props.modelSelectable && models.available && !changingModel.value },
@@ -121,8 +132,8 @@ watch(text, () => {
 }, { flush: "sync" })
 watch(matches, () => { activeIndex.value = 0 }, { flush: "sync" })
 
-const showStop = computed(() => props.running && props.stop !== undefined && text.value.trim() === "" && images.value.length === 0 && pastes.value.length === 0)
-const canSend = computed(() => (text.value.trim() !== "" || images.value.length > 0 || pastes.value.length > 0) && !sending.value && !changingModel.value && !changingEffort.value)
+const showStop = computed(() => props.running && props.stop !== undefined && text.value.trim() === "" && images.value.length === 0 && pastes.value.length === 0 && files.value.length === 0)
+const canSend = computed(() => (text.value.trim() !== "" || images.value.length > 0 || pastes.value.length > 0 || files.value.length > 0) && !sending.value && !draft.value.reading && !changingModel.value && !changingEffort.value)
 
 function resize(): void {
   const element = field.value
@@ -143,19 +154,33 @@ function readImage(file: File): Promise<{ url: string; block: ImageBlock }> {
   })
 }
 
-async function addImages(files: File[]): Promise<void> {
-  for (const file of files) {
-    try {
-      const image = await readImage(file)
-      if (images.value.length >= MAX_IMAGES) {
-        error.value = t("composer.imageLimit")
-        return
-      }
-      images.value = [...images.value, { id: ++attachmentSeq, ...image }]
-    } catch {
-      error.value = t("composer.imageReadFailed")
+function attachmentCount(target: ComposerDraft): number { return target.images.length + target.pastes.length + target.files.length }
+
+async function addFiles(selected: File[]): Promise<void> {
+  const target = draft.value
+  const textAllowed = props.storesPastes
+  target.reading++
+  target.error = ""
+  try {
+    for (const file of selected) {
+      if (attachmentCount(target) >= MAX_ATTACHMENTS) { target.error = t("composer.attachmentLimit"); break }
+      if (file.size > MAX_PASTE) { target.error = t("composer.fileTooLarge", { name: file.name }); continue }
+      try {
+        if (IMAGE_TYPES.has(file.type)) {
+          const image = await readImage(file)
+          if (target.images.reduce((size, item) => size + item.block.source.data.length, 0) + image.block.source.data.length > MAX_PASTE) { target.error = t("composer.imagesTooLarge"); continue }
+          if (attachmentCount(target) < MAX_ATTACHMENTS) target.images = [...target.images, { id: ++target.nextId, ...image }]
+        } else {
+          if (!textAllowed || /\.(pdf|docx?|xlsx?|pptx?|zip|gz|7z|rar|exe|dmg|mp[34]|mov|wav|bin)$/i.test(file.name) || (file.type.startsWith("image/") && file.type !== "image/svg+xml")) throw new Error(t("composer.unsupportedFile", { name: file.name }))
+          const bytes = await file.arrayBuffer()
+          const value = new TextDecoder("utf-8", { fatal: true }).decode(bytes)
+          if (value.includes("\0")) throw new Error(t("composer.unsupportedFile", { name: file.name }))
+          if (new TextEncoder().encode(JSON.stringify(value)).length > 12 * 1024 * 1024) { target.error = t("composer.fileTooLarge", { name: file.name }); continue }
+          if (attachmentCount(target) < MAX_ATTACHMENTS) target.files = [...target.files, { id: ++target.nextId, name: file.name, text: value }]
+        }
+      } catch (cause) { target.error = cause instanceof TypeError ? t("composer.unsupportedFile", { name: file.name }) : cause instanceof Error ? cause.message : t("composer.imageReadFailed") }
     }
-  }
+  } finally { target.reading-- }
 }
 
 function addPaste(value: string): void {
@@ -163,7 +188,9 @@ function addPaste(value: string): void {
     error.value = t("composer.pasteTooLarge")
     return
   }
-  pastes.value = [...pastes.value, { id: ++attachmentSeq, text: value }]
+  if (new TextEncoder().encode(JSON.stringify(value)).length > 12 * 1024 * 1024) { error.value = t("composer.messageTooLarge"); return }
+  if (attachmentCount(draft.value) >= MAX_ATTACHMENTS) { error.value = t("composer.attachmentLimit"); return }
+  pastes.value = [...pastes.value, { id: ++draft.value.nextId, text: value }]
 }
 
 function onPaste(event: ClipboardEvent): void {
@@ -171,7 +198,7 @@ function onPaste(event: ClipboardEvent): void {
   const pictures = [...(event.clipboardData?.files ?? [])].filter((file) => file.type.startsWith("image/"))
   if (pictures.length > 0) {
     event.preventDefault()
-    void addImages(pictures)
+    void addFiles(pictures)
     return
   }
   const value = event.clipboardData?.getData("text/plain") ?? ""
@@ -184,10 +211,13 @@ function onPaste(event: ClipboardEvent): void {
 function onDrop(event: DragEvent): void {
   event.preventDefault()
   if (!props.attachments) return
-  const files = [...(event.dataTransfer?.files ?? [])]
-  const pictures = files.filter((file) => file.type.startsWith("image/"))
-  if (pictures.length < files.length) error.value = t("composer.onlyImages")
-  void addImages(pictures)
+  void addFiles([...(event.dataTransfer?.files ?? [])])
+}
+
+function chooseFiles(event: Event): void {
+  const input = event.target as HTMLInputElement
+  void addFiles([...(input.files ?? [])])
+  input.value = ""
 }
 
 function removeImage(id: number): void {
@@ -205,6 +235,7 @@ function updateMention(): void {
 }
 
 watch(() => mention.value?.query, (query) => {
+  const seq = ++searchSeq
   clearTimeout(searchTimer)
   candidateActive.value = 0
   const search = props.searchFiles
@@ -212,14 +243,14 @@ watch(() => mention.value?.query, (query) => {
     candidates.value = []
     return
   }
-  const seq = ++searchSeq
+  const target = draft.value
   searchTimer = setTimeout(() => {
     search(query).then((found) => {
       if (seq === searchSeq) candidates.value = found
     }, (cause: unknown) => {
       if (seq !== searchSeq) return
       candidates.value = []
-      error.value = cause instanceof Error ? cause.message : String(cause)
+      target.error = cause instanceof Error ? cause.message : String(cause)
     })
   }, 80)
 })
@@ -242,8 +273,21 @@ function acceptCandidate(candidate: FileCandidate): void {
   })
 }
 
+function insertFile(candidate: FileCandidate): void {
+  const element = field.value
+  if (!element) return
+  const start = element.selectionStart
+  const end = element.selectionEnd
+  const label = `@${candidate.relativePath}`
+  const prefix = start > 0 && !/\s/.test(text.value[start - 1]!) ? " " : ""
+  text.value = `${text.value.slice(0, start)}${prefix}${label} ${text.value.slice(end)}`
+  fileMentions.value = [...fileMentions.value, { label, path: candidate.absolutePath }]
+  void nextTick(() => { element.focus(); element.setSelectionRange(start + prefix.length + label.length + 1, start + prefix.length + label.length + 1); resize() })
+}
+
 async function submit(): Promise<void> {
   if (!canSend.value || composing.value) return
+  const target = draft.value
   if (commandMode.value) {
     const command = matches.value[activeIndex.value]
     if (command !== undefined) await runCommand(command.name)
@@ -280,21 +324,24 @@ async function submit(): Promise<void> {
       if (!props.createBranch) throw new Error(t("composer.branchUnavailable"))
       await props.createBranch(branchCommand[1]!.trim())
     } else {
-      const sentMentions = fileMentions.value
-      const sentImages = images.value
-      const sentPastes = pastes.value
-      await props.send(linkMentions(message, sentMentions), { images: sentImages.map((image) => image.block), pastes: sentPastes.map((paste) => paste.text) })
-      fileMentions.value = fileMentions.value.filter((mention) => !sentMentions.includes(mention))
-      images.value = images.value.filter((image) => !sentImages.includes(image))
-      pastes.value = pastes.value.filter((paste) => !sentPastes.includes(paste))
+      const sentMentions = target.mentions
+      const sentImages = target.images
+      const sentPastes = target.pastes
+      const sentFiles = target.files
+      if (new TextEncoder().encode(JSON.stringify({ text: linkMentions(message, sentMentions), images: sentImages.map((image) => image.block) })).length > 14 * 1024 * 1024) throw new Error(t("composer.messageTooLarge"))
+      await props.send(linkMentions(message, sentMentions), { images: sentImages.map((image) => image.block), pastes: sentPastes.map((paste) => paste.text), ...(sentFiles.length ? { files: sentFiles.map(({ name, text }) => ({ name, text })) } : {}) })
+      target.mentions = target.mentions.filter((mention) => !sentMentions.includes(mention))
+      target.images = target.images.filter((image) => !sentImages.includes(image))
+      target.pastes = target.pastes.filter((paste) => !sentPastes.includes(paste))
+      target.files = target.files.filter((file) => !sentFiles.includes(file))
     }
-    if (text.value === message) text.value = ""
+    if (target.text === message) target.text = ""
     await nextTick()
     resize()
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : String(cause)
+    target.error = cause instanceof Error ? cause.message : String(cause)
   } finally {
-    sending.value = false
+    target.sending = false
   }
 }
 
@@ -309,12 +356,13 @@ async function stop(): Promise<void> {
 
 async function onModel(model: ModelId): Promise<void> {
   if (changingModel.value || changingEffort.value) return
+  const target = draft.value
   changingModel.value = true
-  error.value = ""
+  target.error = ""
   try {
     await props.selectModel(model)
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : String(cause)
+    target.error = cause instanceof Error ? cause.message : String(cause)
   } finally {
     changingModel.value = false
   }
@@ -322,12 +370,13 @@ async function onModel(model: ModelId): Promise<void> {
 
 async function onEffort(effort: string | undefined): Promise<void> {
   if (!props.selectEffort || changingEffort.value || changingModel.value) return
+  const target = draft.value
   changingEffort.value = true
-  error.value = ""
+  target.error = ""
   try {
     await props.selectEffort(effort)
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : String(cause)
+    target.error = cause instanceof Error ? cause.message : String(cause)
   } finally {
     changingEffort.value = false
   }
@@ -401,7 +450,8 @@ async function quote(message: string): Promise<void> {
   element?.setSelectionRange(text.value.length, text.value.length)
 }
 
-onMounted(() => field.value?.focus())
+onMounted(() => { resize(); field.value?.focus() })
+onBeforeUnmount(() => { ++searchSeq; clearTimeout(searchTimer) })
 defineExpose({ focus: () => field.value?.focus(), quote })
 </script>
 
@@ -409,7 +459,7 @@ defineExpose({ focus: () => field.value?.focus(), quote })
   <section class="composer-panel" :data-variant="variant ?? 'main'" :aria-label="t('chat.composer')">
     <p v-if="error" class="inline-error" role="alert">{{ error }}</p>
     <div class="composer-surface" @click.self="field?.focus()" @dragover.prevent @drop="onDrop">
-      <div v-if="images.length > 0 || pastes.length > 0" class="draft-attachments">
+      <div v-if="images.length > 0 || pastes.length > 0 || files.length > 0" class="draft-attachments">
         <span v-for="image in images" :key="image.id" class="draft-chip">
           <img :src="image.url" :alt="t('composer.imageAttachment')" class="draft-thumb">
           <button type="button" class="ui-icon-button" data-variant="ghost" data-size="xs" :aria-label="t('composer.removeAttachment')" @click="removeImage(image.id)"><X aria-hidden="true" /></button>
@@ -418,7 +468,9 @@ defineExpose({ focus: () => field.value?.focus(), quote })
           <span>{{ t("composer.pastedText", { lines: paste.text.split("\n").length }) }}</span>
           <button type="button" class="ui-icon-button" data-variant="ghost" data-size="xs" :aria-label="t('composer.removeAttachment')" @click="removePaste(paste.id)"><X aria-hidden="true" /></button>
         </span>
+        <span v-for="file in files" :key="file.id" class="draft-chip" :title="file.name"><FileText :size="14" aria-hidden="true" /><span class="draft-file-name">{{ file.name }}</span><button type="button" class="ui-icon-button" data-variant="ghost" data-size="xs" :aria-label="t('composer.removeFile', { name: file.name })" @click="files = files.filter((item) => item.id !== file.id)"><X aria-hidden="true" /></button></span>
       </div>
+      <p v-if="draft.reading" role="status" class="attachment-status">{{ t("composer.readingFiles") }}</p>
       <div v-if="menuOpen" :id="menuId" class="command-menu ui-popover" role="listbox" :aria-label="t('composer.commands')">
         <button
           v-for="(command, index) in matches"
@@ -478,6 +530,9 @@ defineExpose({ focus: () => field.value?.focus(), quote })
       />
       <footer class="composer-toolbar">
         <div class="composer-tool-group">
+          <input v-if="attachments" ref="upload" type="file" class="sr-only" tabindex="-1" :aria-label="t('composer.attachFiles')" :accept="FILE_ACCEPT" multiple @change="chooseFiles" />
+          <button v-if="attachments" type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :disabled="sending || !!draft.reading" :aria-label="t('composer.attachFiles')" v-tooltip="t('composer.attachFiles')" @click="upload?.click()"><Paperclip aria-hidden="true" /></button>
+          <button v-if="searchFiles" type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="t('composer.workspaceFiles')" v-tooltip="t('composer.workspaceFiles')" @click="fileDialog?.open()"><FileSearch aria-hidden="true" /></button>
           <ComposerPermissionMenu v-if="permission && variant !== 'panel'" ref="permissionMenu" :policy="permission.policy" @select="permission.select" />
         </div>
         <div class="composer-run-group">
@@ -503,9 +558,14 @@ defineExpose({ focus: () => field.value?.focus(), quote })
       <div class="composer-status-start"><slot name="status" /></div>
     </div>
   </section>
+  <WorkspaceFileDialog v-if="searchFiles" ref="fileDialog" :search="searchFiles" @select="insertFile" />
 </template>
 
 <style scoped>
+.draft-file-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachment-status { padding: var(--space-2); color: var(--muted-foreground); font-size: var(--text-sm); }
+.composer-toolbar { flex-wrap: wrap; }
+.composer-run-group { margin-left: auto; max-width: 100%; flex-wrap: wrap; }
 .composer-input { display: block; width: 100%; min-height: 60px; max-height: 300px; resize: none; padding: 0; border: 0; background: transparent; color: var(--foreground); font: var(--text-base)/var(--leading-relaxed) var(--font-sans); outline: none; }
 .composer-input::placeholder { color: var(--muted-foreground); }
 .composer-panel[data-variant="panel"] { padding: var(--space-2) var(--space-3) var(--space-3); }

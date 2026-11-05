@@ -480,6 +480,11 @@ export const useChatStore = defineStore("chat", () => {
       const path = await client().call("attachment.put", { sessionId, text: paste }, readAttachmentPath)
       body = `${body}${body === "" ? "" : "\n"}[Pasted text: ${path} (${paste.split("\n").length} lines)]`
     }
+    for (const file of attachments.files ?? []) {
+      const path = await client().call("attachment.put", { sessionId, text: file.text }, readAttachmentPath)
+      const name = file.name.replace(/([\\`*_\[\]<>!])/g, "\\$1").replace(/[\r\n]/g, " ")
+      body = `${body}${body === "" ? "" : "\n"}[File: ${name}; ${path} (${file.text.split("\n").length} lines)]`
+    }
     const params: Record<string, unknown> = { sessionId, branchId, submissionId: crypto.randomUUID(), mode: "queue" }
     if (attachments.images.length === 0) params.text = body
     else params.user = { content: [...(body === "" ? [] : [{ type: "text", text: body }]), ...attachments.images] }

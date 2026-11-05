@@ -31,6 +31,8 @@ export type SessionSummary = {
   running: boolean
   sequence: number
   preview?: string
+  title?: string
+  titleRevision?: number
   /** Unix milliseconds of the last main-branch event. */
   updatedAt: number
   archived?: boolean
@@ -92,8 +94,9 @@ export type UserInput = { content: Array<Record<string, unknown>> }
 /** A base64 image content block, as the server's `ContentBlock::Image` reads it. */
 export type ImageBlock = { type: "image"; source: { type: "base64"; mediaType: string; data: string } }
 
-/** What a composer draft adds to its text: images as content blocks, and pasted texts stored as Session attachments. */
-export type DraftAttachments = { images: ImageBlock[]; pastes: string[] }
+export type DraftFile = { name: string; text: string }
+/** Images as content blocks; pasted text and UTF-8 files stored as Session attachments. */
+export type DraftAttachments = { images: ImageBlock[]; pastes: string[]; files?: DraftFile[] }
 
 /** A file or directory the `@` mention picker offers: its path under the workspace and its absolute path. */
 export type FileCandidate = { relativePath: string; absolutePath: string; dir: boolean }
@@ -229,4 +232,5 @@ export type Notification =
   | { method: "approval.request"; request: ApprovalRequest }
   | { method: "approval.cancelled" | "approval.resolved"; sessionId: string; branchId: string; requestId: string }
   | { method: "memberApprovalEnded"; sessionId: string; branchId: string; approvalId: string }
+  | { method: "sessionTitleChanged"; sessionId: string; title: string | undefined; titleRevision: number }
   | { method: "session.closed"; sessionId: string; reason?: string }

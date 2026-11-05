@@ -143,6 +143,7 @@ export function readSummaries(value: unknown): SessionSummary[] {
     const at = `session.summaries[${index}]`
     const source = obj(item, at)
     const preview = optStr(source, "preview", at)
+    const title = optStr(source, "title", at)
     return {
       sessionId: str(source, "sessionId", at),
       cwd: str(source, "cwd", at),
@@ -151,6 +152,8 @@ export function readSummaries(value: unknown): SessionSummary[] {
       running: bool(source, "running", at),
       sequence: num(source, "sequence", at),
       ...(preview === undefined ? {} : { preview }),
+      ...(title === undefined ? {} : { title }),
+      ...(source.titleRevision === undefined ? {} : { titleRevision: num(source, "titleRevision", at) }),
       updatedAt: num(source, "updatedAt", at),
       ...(source.archived === undefined ? {} : { archived: bool(source, "archived", at) }),
     }
@@ -164,6 +167,11 @@ export function readCreate(value: unknown): CreateResult {
     model: modelId(source.model, "session.create.model"),
     sequence: num(source, "sequence", "session.create"),
   }
+}
+
+export function readRenamedTitle(value: unknown): { title: string | undefined; titleRevision: number } {
+  const source = obj(value, "session.rename")
+  return { title: optStr(source, "title", "session.rename"), titleRevision: num(source, "revision", "session.rename") }
 }
 
 export function readBranchCreate(value: unknown): BranchCreateResult {
@@ -667,6 +675,10 @@ export function readNotification(method: string, value: unknown): Notification |
         requestId: str(params, "requestId", method),
       }
     case "session.notice": {
+      if (params.source === "SessionStore" && params.kind === "title") {
+        const data = obj(params.data, method)
+        return { method: "sessionTitleChanged", sessionId: str(params, "sessionId", method), title: optStr(data, "title", method), titleRevision: num(data, "titleRevision", method) }
+      }
       if (params.source !== "Collaboration" || params.kind !== "memberApprovalEnded") return undefined
       const data = obj(params.data, method)
       return { method: "memberApprovalEnded", sessionId: str(params, "sessionId", method), branchId: str(data, "branchId", method), approvalId: str(data, "approvalId", method) }

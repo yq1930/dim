@@ -34,7 +34,8 @@ watch(() => props.sessionId, (id) => chat.open(id), { immediate: true })
 
 const view = computed(() => chat.views[props.sessionId])
 const summary = computed(() => sessions.byId.get(props.sessionId))
-const title = computed(() => summary.value?.preview ?? t("sidebar.untitled"))
+const title = computed(() => summary.value?.title ?? summary.value?.preview ?? t("sidebar.untitled"))
+watch(() => summary.value?.cwd, (cwd) => { if (cwd) sessions.rememberWorkspace(cwd) }, { immediate: true })
 const approval = computed(() => view.value?.approvals.find((request) => request.branchId === MAIN_BRANCH))
 const questions = computed(() => view.value?.questions.filter((ask) => ask.branchId === MAIN_BRANCH) ?? [])
 const rulesAvailable = computed(() => connection.supports("permission.rules") && connection.supports("permission.set_rules"))
@@ -299,6 +300,7 @@ async function fork(): Promise<void> {
     <ComposerPanel
       v-else
       ref="composer"
+      :draft-key="`session:${sessionId}:main`"
       :running="view.running"
       :stopping="view.stopping"
       :model="view.model"

@@ -31,7 +31,7 @@ const pageTitle = computed(() => {
   if (settingsRoute.value) return settingsText("settings")
   if (route.name === "chat-session" && typeof route.params.sessionId === "string") {
     const session = sessions.byId.get(route.params.sessionId)
-    return session?.preview ?? (session === undefined ? t("route.session") : workspaceName(session.cwd))
+    return session?.title ?? session?.preview ?? (session === undefined ? t("route.session") : workspaceName(session.cwd))
   }
   if (route.name === "not-found") return t("route.notFound")
   return t("route.newSession")

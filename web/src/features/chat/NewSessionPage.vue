@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue"
+import { computed, onBeforeUnmount, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import { useI18n } from "vue-i18n"
 import { Check, ChevronDown, Folder, FolderOpen } from "lucide-vue-next"
 import { canChooseWorkspace, chooseWorkspace } from "../../desktop"
 import BrandMark from "../../components/BrandMark.vue"
 import ComposerPanel from "./ComposerPanel.vue"
-import { MAIN_BRANCH, type ModelId } from "../../rpc/protocol"
+import { MAIN_BRANCH, type DraftAttachments, type ModelId } from "../../rpc/protocol"
 import { useChatStore } from "../../stores/chat"
 import { useModelsStore } from "../../stores/models"
 import { useSessionsStore, workspaceName } from "../../stores/sessions"
@@ -23,6 +23,8 @@ const sessions = useSessionsStore()
 const chat = useChatStore()
 const models = useModelsStore()
 const menu = ref<HTMLDetailsElement>()
+let active = true
+onBeforeUnmount(() => { active = false })
 
 /** The directory the session will run in, seeded from `?cwd=` or the latest workspace. */
 const cwd = ref(typeof route.query.cwd === "string" ? route.query.cwd : "")
@@ -39,6 +41,7 @@ const fallback = ref<ModelId>()
 watch(cwd, async (dir) => {
   fallback.value = undefined
   if (dir === "") return
+  sessions.rememberWorkspace(dir)
   const model = await models.defaultFor(dir)
   if (cwd.value === dir) fallback.value = model
 }, { immediate: true })
@@ -72,13 +75,14 @@ async function browse(): Promise<void> {
   }
 }
 
-async function send(text: string): Promise<void> {
+async function send(text: string, attachments: DraftAttachments): Promise<void> {
   if (cwd.value === "") throw new Error(t("newThread.workspaceRequired"))
+  const directory = cwd.value
   const selected = picked.value ?? (reasoningEffort.value === undefined ? undefined : model.value)
-  const sessionId = await sessions.create(cwd.value, selected, reasoningEffort.value)
+  const sessionId = await sessions.create(directory, selected, reasoningEffort.value)
   chat.open(sessionId)
-  await chat.submit(sessionId, MAIN_BRANCH, text)
-  await router.push({ name: "chat-session", params: { sessionId } })
+  await chat.submit(sessionId, MAIN_BRANCH, text, attachments)
+  if (active && cwd.value === directory) await router.push({ name: "chat-session", params: { sessionId } })
 }
 </script>
 
@@ -88,7 +92,7 @@ async function send(text: string): Promise<void> {
       <BrandMark class="new-session-mark" />
       <h1 data-route-heading tabindex="-1">{{ t("newThread.title") }}</h1>
     </div>
-    <ComposerPanel class="is-new-thread" :running="false" :model="model" :model-selectable="true" :send="send" :attachments="false" :select-model="(next) => { picked = next }" :reasoning-effort="reasoningEffort" :select-effort="(value) => { reasoningEffort = value }">
+    <ComposerPanel class="is-new-thread" :draft-key="`new:${cwd}`" :running="false" :model="model" :model-selectable="true" :send="send" :stores-pastes="true" :select-model="(next) => { picked = next }" :reasoning-effort="reasoningEffort" :select-effort="(value) => { reasoningEffort = value }">
       <template #status>
         <details ref="menu" class="composer-popover workspace-menu">
           <summary class="ui-button" data-variant="ghost" data-size="xs" data-trailing v-tooltip="cwd || undefined">

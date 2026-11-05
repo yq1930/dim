@@ -16,7 +16,7 @@ The model reads that path with `read` like any file. Design:
 
 ## Method
 
-`attachment.put {sessionId, name?, text}` (mutating, `drain`, no progress)
+`attachment.put {sessionId, name?, text | pdfBase64}` (mutating, `drain`, no progress)
 replies `{attachmentId, path, bytes}`, SessionStore's reply passed through with
 `attachmentId = fileId`. `name` defaults to `paste.txt`.
 

@@ -171,6 +171,42 @@ The model-facing texts and their classes
 - The declarations' marks are stated once, in [Model-facing
   texts](#model-facing-texts).
 
+### read results and PDFs
+
+`read` recognizes a PDF from its `%PDF-` head, as it does an image, and returns
+the document's text through the same line window and the same offload as a text
+file: `offset` and `limit` count lines of the extracted text, in which a
+`--- Page <n> of <total> ---` line opens each page. A page the parser cannot read
+keeps its marker, with `(could not be read)` added, so the pages around it still
+come back. Parsing runs on its own thread with its own stack, so a malformed file
+fails its call rather than the process, and a cancelled or timed-out read returns
+without waiting for that thread.
+
+A PDF binds nothing in FileReads, so `write` and `edit` still refuse it. Refusals
+are `pdf_too_large` (over 256 MiB, before reading), `pdf_unreadable` (a file that
+does not parse or asks for a password, or a parse past 60 s) and `pdf_no_text` (no
+page holds text, such as a scan). Everything else about an extension in the binary
+list stays refused.
+
+### edit recovery
+
+`edit` looks for `oldText` as given (exactly, then with Unicode punctuation and
+trailing whitespace normalized). Only when that finds nothing does it try the
+mistakes a model makes copying text, in this order: `read`'s line numbers on every
+line, one level of backslash escaping, then each line's surrounding whitespace. A
+recovered match is held to the same rule as an exact one: more than one match is
+refused with `multiple_matches`, and `replaceAll` does not use the whitespace
+recovery. The line-number and escaping recoveries apply to `newText` too, and the
+whitespace recovery moves `newText` by the indentation shift when every matched
+line shows the same shift and `newText` is not already at that indentation.
+
+A recovered edit names the recovery in its result text and in `recovery`
+(`line_numbers`, `escapes`, `line_whitespace`) of `structuredContent`. An edit whose
+recovered replacement would leave the file unchanged is refused with `no_change`.
+When nothing matches, `oldtext_not_found` shows the lines around the file line that
+shares the most words with `oldText`'s wordiest line, when it shares at least half.
+There is no similarity match: text the model has not seen is never replaced.
+
 ### Declared effects
 
 `write`, `edit` and `exec` declare the effect of each call on its result, through
@@ -244,9 +280,10 @@ does, what it returns or its reach is protocol; a sentence that advises when or
 how to use it is policy. A name that a policy sentence states stays protocol.
 
 - `read` — protocol: "Read a file from the filesystem.", "Text comes back with
-  line numbers" and "A PNG, JPEG, WebP or GIF image comes back as an image block
-  with one line giving its path and pixel size."; policy: "use offset and limit
-  for large files".
+  line numbers", "A PNG, JPEG, WebP or GIF image comes back as an image block
+  with one line giving its path and pixel size." and "A PDF comes back as its
+  extracted text, with a line marking each page; offset and limit count those
+  lines."; policy: "use offset and limit for large files".
 - `write` — protocol throughout: it states what the call writes, that it creates
   the file and that it overwrites the whole content.
 - `edit` — protocol: "Edit an existing file by replacing exact text matches."
@@ -276,6 +313,9 @@ lands with the behaviour and the flow test that assert it. Four descriptions
 carry policy sentences — `read`, `edit`, `glob` and `exec` — and none of them
 has a factory member yet; each gets one in the change that first evaluates a
 candidate for it.
+
+The recovery notes on an `edit` result and the page markers and refusals of a PDF
+`read` are protocol: each states what the call located or returned.
 
 Of their results, the texts that carry a handle or a status are protocol:
 the `exec` result that moved to the background writes `Task ID: <id>`,

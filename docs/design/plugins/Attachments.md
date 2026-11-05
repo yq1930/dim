@@ -102,7 +102,7 @@ The CLI rejects an unsupported or oversized image before sending and keeps the d
 ```text
 Client        Rpc (C1)            Attachments          SessionStore          FileStorage
   |                               (Session)            (process)             (Session's node)
-  |-- attachment.put {sessionId, name?, text} -->|                    |                    |
+  |-- attachment.put {sessionId, name?, text | pdfBase64} -->|        |                    |
   |             | authorize sessionId,           |                    |                    |
   |             | acquire the Session            |                    |                    |
   |             |-- sessionMethods attachment -->|                    |                    |
@@ -174,7 +174,7 @@ Compaction keeps neither images nor file contents verbatim, only the summary (a 
 
 | Interface | Kind | Purpose |
 | --- | --- | --- |
-| `attachment.put` | `sessionMethods` (Session, namespace `attachment`) | Store a text attachment as a Session file, return its path |
+| `attachment.put` | `sessionMethods` (Session, namespace `attachment`) | Store a text attachment or a PDF as a Session file, return its path. Exactly one of `text` and `pdfBase64` is given; bytes that do not open with `%PDF-` fail `attachment_invalid`, and the 10 MiB limit counts the decoded bytes |
 | CLI image checks and paste reference | Client contract (A.1, A.3) | Sniff the format and enforce limits before submitting; quote a stored paste by its path |
 | Image handling at request build | ModelProvider supplement (implemented, S11, A.1) | Send each image block or replace it with a text placeholder per the request's model |
 | `attachment.put` errors | `appError` (A.2, Appendix C) | Rejection reasons |

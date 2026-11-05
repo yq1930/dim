@@ -17,6 +17,7 @@ use sha2::{Digest, Sha256};
 use std::{
     io::{ErrorKind, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
+    time::{Duration, Instant},
 };
 use tokio_util::sync::CancellationToken;
 
@@ -31,6 +32,13 @@ const READ_OFFLOAD_PREVIEW_CHARS: usize = 2_000;
 /// Bytes inspected for binary detection.
 const DETECT_BYTES: usize = 4096;
 const CHUNK_BYTES: usize = 64 * 1024;
+/// A larger PDF is refused before it is read into memory.
+const PDF_MAX_BYTES: u64 = 256 * 1024 * 1024;
+/// How long a read waits for a PDF's text.
+const PDF_PARSE_TIMEOUT: Duration = Duration::from_secs(60);
+/// PDF objects nest as deep as the file says, and a parser recursing through
+/// them must not overflow the stack of the process hosting every Session.
+const PDF_PARSE_STACK_BYTES: usize = 64 * 1024 * 1024;
 
 /// Known binary extensions, refused once the head shows the content is not an
 /// image.
@@ -43,7 +51,7 @@ const BINARY_EXTENSIONS: &[&str] = &[
 pub(super) fn definition() -> Value {
     json!({
         "name": "read",
-        "description": "Read a file from the filesystem. Text comes back with line numbers; use offset and limit for large files. A PNG, JPEG, WebP or GIF image comes back as an image block with one line giving its path and pixel size.",
+        "description": "Read a file from the filesystem. Text comes back with line numbers; use offset and limit for large files. A PNG, JPEG, WebP or GIF image comes back as an image block with one line giving its path and pixel size. A PDF comes back as its extracted text, with a line marking each page; offset and limit count those lines.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -261,6 +269,9 @@ fn read_text(
             )),
             Sniffed::Unsupported(name) => done(unsupported_image(display, name)),
         };
+    }
+    if head.starts_with(PDF_MAGIC) {
+        return done(read_pdf(&mut file, display, metadata.len(), input, cancel)?);
     }
     // The extension is a hint against content that is not an image: an image
     // is recognized from its bytes whatever the file is called.
@@ -515,6 +526,146 @@ fn render_window(window: &[String], input: &Input, total_lines: u64) -> String {
         ));
     }
     content
+}
+
+const PDF_MAGIC: &[u8] = b"%PDF-";
+
+/// A PDF's result: its extracted text as numbered lines, one line marking each
+/// page. It binds nothing: `write` and `edit` cannot produce a PDF from text.
+fn read_pdf(
+    file: &mut std::fs::File,
+    display: &str,
+    size: u64,
+    input: &Input,
+    cancel: &CancellationToken,
+) -> Result<ToolResult, Cancelled> {
+    if size > PDF_MAX_BYTES {
+        return Ok(failed(
+            format!(
+                "PDF is too large for read: {display} is {size} bytes, limit is {PDF_MAX_BYTES} bytes."
+            ),
+            json!({ "code": "pdf_too_large", "bytes": size, "limit": PDF_MAX_BYTES }),
+        ));
+    }
+    if let Err(error) = file.seek(SeekFrom::Start(0)) {
+        return Ok(open_failure(&error, display));
+    }
+    let mut bytes = Vec::with_capacity(size as usize);
+    let mut chunk = vec![0; CHUNK_BYTES];
+    loop {
+        Cancelled::check(cancel)?;
+        match file.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(read) => bytes.extend_from_slice(&chunk[..read]),
+            Err(error) if error.kind() == ErrorKind::Interrupted => {}
+            Err(error) => return Ok(open_failure(&error, display)),
+        }
+    }
+    let pages = match pdf_pages(bytes, cancel)? {
+        Ok(pages) => pages,
+        Err(reason) => {
+            return Ok(failed(
+                format!("Could not read PDF {display}: {reason}."),
+                json!({ "code": "pdf_unreadable" }),
+            ));
+        }
+    };
+    let count = pages.len();
+    if pages.iter().flatten().all(|page| page.trim().is_empty()) {
+        return Ok(failed(
+            format!(
+                "PDF {display} has {count} pages and no text to extract; its pages may be scanned images."
+            ),
+            json!({ "code": "pdf_no_text", "pages": count }),
+        ));
+    }
+    let mut lines = Vec::new();
+    for (index, page) in pages.iter().enumerate() {
+        let number = index + 1;
+        let Some(page) = page else {
+            lines.push(format!(
+                "--- Page {number} of {count} (could not be read) ---"
+            ));
+            continue;
+        };
+        lines.push(format!("--- Page {number} of {count} ---"));
+        let mut blank = true;
+        for line in page.lines().map(str::trim_end) {
+            if !(blank && line.is_empty()) {
+                lines.push(line.to_owned());
+            }
+            blank = line.is_empty();
+        }
+    }
+    let total = lines.len() as u64;
+    if input.offset > total {
+        return Ok(offset_out_of_range(input.offset));
+    }
+    let window: Vec<String> = lines
+        .into_iter()
+        .skip(input.offset as usize - 1)
+        .take(input.limit as usize)
+        .collect();
+    Ok(succeeded(
+        render_window(&window, input, total),
+        json!({ "kind": "pdf", "path": display, "size": size, "pages": count }),
+    ))
+}
+
+/// Each page's text, `None` for a page the parser could not read. The parser
+/// runs on a thread of its own, since malformed input can make it panic or run
+/// long; a read cancelled or timed out leaves that thread to finish on its own.
+fn pdf_pages(
+    bytes: Vec<u8>,
+    cancel: &CancellationToken,
+) -> Result<Result<Vec<Option<String>>, String>, Cancelled> {
+    let unreadable = || "the file could not be parsed".to_owned();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let spawned = std::thread::Builder::new()
+        .name("dim-read-pdf".into())
+        .stack_size(PDF_PARSE_STACK_BYTES)
+        .spawn(move || {
+            let pages = std::panic::catch_unwind(|| parse_pdf(&bytes));
+            let _ = sender.send(pages);
+        });
+    if spawned.is_err() {
+        return Ok(Err(unreadable()));
+    }
+    let deadline = Instant::now() + PDF_PARSE_TIMEOUT;
+    loop {
+        Cancelled::check(cancel)?;
+        match receiver.recv_timeout(Duration::from_millis(50)) {
+            Ok(Ok(pages)) => return Ok(pages),
+            Ok(Err(_)) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                return Ok(Err(unreadable()));
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) if Instant::now() < deadline => {}
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                return Ok(Err("parsing it took too long".to_owned()));
+            }
+        }
+    }
+}
+
+fn parse_pdf(bytes: &[u8]) -> Result<Vec<Option<String>>, String> {
+    let mut document = pdf_extract::Document::load_mem(bytes)
+        .map_err(|_| "the file could not be parsed".to_owned())?;
+    if document.is_encrypted() && document.decrypt("").is_err() {
+        return Err("it is protected by a password".to_owned());
+    }
+    let pages = document.get_pages().len() as u32;
+    Ok((1..=pages)
+        .map(|page| {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let mut text = String::new();
+                let mut output = pdf_extract::PlainTextOutput::new(&mut text);
+                pdf_extract::output_doc_page(&document, &mut output, page).ok()?;
+                Some(text)
+            }))
+            .ok()
+            .flatten()
+        })
+        .collect())
 }
 
 /// An image file's result: the image block and one line naming the path, the

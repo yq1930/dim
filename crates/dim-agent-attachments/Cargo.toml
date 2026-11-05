@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+base64 = "0.23.1"
 dim-agent-capabilities.workspace = true
 dim-agent-runtime.workspace = true
 rutis.workspace = true

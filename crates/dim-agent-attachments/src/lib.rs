@@ -1,7 +1,8 @@
 //! Attachments ([design](../../../docs/design/plugins/Attachments.md)): the
-//! Session method `attachment.put`, which stores a large paste as a Session
-//! file through SessionStore's `sessionFiles` and returns its path. The model
-//! reads the file with `read` like any file; images need no plugin.
+//! Session method `attachment.put`, which stores a large paste or a PDF as a
+//! Session file through SessionStore's `sessionFiles` and returns its path. The
+//! model reads the file with `read` like any file; images need no plugin.
+use base64::{Engine, engine::general_purpose::STANDARD};
 use dim_agent_capabilities::{
     host::{SessionFileError, SessionFileErrorCode, SessionFilesHost},
     methods::{self, Interruption, MethodDecl, RpcError, SessionMethods},
@@ -14,7 +15,7 @@ use std::{path::PathBuf, sync::Arc};
 /// The `sessionMethods` namespace Attachments provides.
 const NAMESPACE: &str = "attachment";
 /// The content limit of one put (A2); SessionStore's own cap is 16 MiB.
-const MAX_TEXT_BYTES: usize = 10 * 1024 * 1024;
+const MAX_BYTES: usize = 10 * 1024 * 1024;
 
 /// Installs Attachments in the profile. A host calls this only where
 /// SessionStore provides `sessionFiles` and the model has `read`.
@@ -33,7 +34,9 @@ struct PutParams {
     #[serde(rename = "sessionId")]
     _session_id: String,
     name: Option<String>,
-    text: String,
+    text: Option<String>,
+    /// A PDF's bytes, in place of `text`.
+    pdf_base64: Option<String>,
 }
 
 /// SessionStore's reply passed through, with `attachmentId = fileId`.
@@ -96,27 +99,47 @@ impl DynPlugin for AttachmentsPlugin {
                 Arc::new(move |_, value, cancel, _| {
                     let (files, session_id) = (files.clone(), session_id.clone());
                     Box::pin(async move {
-                        let PutParams { name, text, .. } = methods::params(value)?;
-                        if text.is_empty() {
-                            return Err(RpcError::app(
-                                -32000,
-                                "attachment_invalid",
-                                "Attachment text is empty",
-                            ));
-                        }
-                        if text.len() > MAX_TEXT_BYTES {
+                        let PutParams {
+                            name,
+                            text,
+                            pdf_base64,
+                            ..
+                        } = methods::params(value)?;
+                        let invalid =
+                            |message| RpcError::app(-32000, "attachment_invalid", message);
+                        let (default_name, bytes) = match (text, pdf_base64) {
+                            (Some(text), None) if text.is_empty() => {
+                                return Err(invalid("Attachment text is empty"));
+                            }
+                            (Some(text), None) => ("paste.txt", text.into_bytes()),
+                            (None, Some(encoded)) => {
+                                let bytes = STANDARD
+                                    .decode(encoded)
+                                    .map_err(|_| invalid("Attachment PDF is not valid base64"))?;
+                                if !bytes.starts_with(b"%PDF-") {
+                                    return Err(invalid("Attachment is not a PDF"));
+                                }
+                                ("attachment.pdf", bytes)
+                            }
+                            _ => {
+                                return Err(RpcError::invalid(
+                                    "attachment.put takes exactly one of text and pdfBase64",
+                                ));
+                            }
+                        };
+                        if bytes.len() > MAX_BYTES {
                             return Err(RpcError::app(
                                 -32000,
                                 "attachment_too_large",
-                                "Attachment text exceeds 10 MiB",
+                                "Attachment exceeds 10 MiB",
                             ));
                         }
                         let stored = files
                             .0
                             .put(
                                 session_id,
-                                name.unwrap_or_else(|| "paste.txt".into()),
-                                text.into_bytes(),
+                                name.unwrap_or_else(|| default_name.into()),
+                                bytes,
                                 cancel,
                             )
                             .await

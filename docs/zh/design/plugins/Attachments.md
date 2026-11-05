@@ -102,7 +102,7 @@ sequenceDiagram
 ```text
 Client        Rpc (C1)            Attachments          SessionStore          FileStorage
   |                               (Session)            (process)             (Session's node)
-  |-- attachment.put {sessionId, name?, text} -->|                    |                    |
+  |-- attachment.put {sessionId, name?, text | pdfBase64} -->|        |                    |
   |             | authorize sessionId,           |                    |                    |
   |             | acquire the Session            |                    |                    |
   |             |-- sessionMethods attachment -->|                    |                    |
@@ -261,7 +261,7 @@ ModelProvider 补充（已在 S11 实现，`model_provider/images.rs`；[总体�
 错误。除 `invalid_params` 外，Attachments 自己的错误码都是 `-32000`：
 
 ```text
-attachment.put {sessionId, name?, text}
+attachment.put {sessionId, name?, text | pdfBase64}
   |
   Rpc (C1): dispatch errors of the contract (unknown_method, -32602, service_reloading)
   v

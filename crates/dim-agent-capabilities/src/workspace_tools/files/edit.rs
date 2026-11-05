@@ -1,4 +1,4 @@
-//! `edit` (TS `edit.ts`): exact replacement with EOL and Unicode fallbacks.
+//! `edit` (TS `edit.ts`): exact replacement with EOL, Unicode and recovery fallbacks.
 
 use super::super::file_reads::{Eol, FileReads, TextFileBinding};
 use super::codec;
@@ -24,6 +24,12 @@ const EDIT_TARGET_MAX_BYTES: u64 = 536_870_888;
 const READ_CHUNK_BYTES: usize = 64 * 1024;
 /// Context lines around each change in the display diff.
 const EDIT_DIFF_CONTEXT: usize = 3;
+/// A longer file gets no closest-text hint on a refused edit.
+const CLOSEST_MAX_FILE_LINES: usize = 100_000;
+/// Lines the closest-text hint shows.
+const CLOSEST_MAX_LINES: usize = 12;
+/// Chars of one line the closest-text hint shows.
+const CLOSEST_MAX_LINE_CHARS: usize = 200;
 
 pub(super) fn definition() -> Value {
     json!({
@@ -224,7 +230,11 @@ fn edit_locked(
         Eol::None => Eol::Lf,
         eol => eol,
     };
-    let (after, count) = match replace(&before, input, eol) {
+    let Replaced {
+        content: after,
+        count,
+        recovery,
+    } = match replace(&before, input, eol) {
         Ok(replaced) => replaced,
         Err(result) => return done(result),
     };
@@ -248,14 +258,21 @@ fn edit_locked(
         return done(result);
     }
     let raw_revision = revision(&written);
+    let mut structured = json!({
+        "path": display,
+        "replacementCount": count,
+        "revision": hex(&raw_revision),
+        "diff": diff,
+    });
+    if let Some(recovery) = recovery {
+        structured["recovery"] = json!(recovery.code());
+    }
     let result = wrote(
-        format!("Edited {display}"),
-        json!({
-            "path": display,
-            "replacementCount": count,
-            "revision": hex(&raw_revision),
-            "diff": diff,
-        }),
+        match recovery {
+            Some(recovery) => format!("Edited {display}. {}", recovery.note()),
+            None => format!("Edited {display}"),
+        },
+        structured,
         display,
     );
     let binding = TextFileBinding {
@@ -291,6 +308,113 @@ fn multiple_matches(matches: usize) -> ToolResult {
     )
 }
 
+/// How `oldText` was located after it did not match as given.
+#[derive(Clone, Copy)]
+enum Recovery {
+    LineNumbers,
+    Escapes,
+    LineWhitespace {
+        start: usize,
+        end: usize,
+        reindented: bool,
+    },
+}
+
+impl Recovery {
+    fn code(self) -> &'static str {
+        match self {
+            Self::LineNumbers => "line_numbers",
+            Self::Escapes => "escapes",
+            Self::LineWhitespace { .. } => "line_whitespace",
+        }
+    }
+
+    fn note(self) -> String {
+        match self {
+            Self::LineNumbers => {
+                "oldText matched after removing the line numbers read adds.".to_owned()
+            }
+            Self::Escapes => {
+                "oldText matched after unescaping it; newText was unescaped the same way."
+                    .to_owned()
+            }
+            Self::LineWhitespace {
+                start,
+                end,
+                reindented,
+            } => format!(
+                "oldText matched lines {start}-{end} ignoring each line's surrounding whitespace{}.",
+                if reindented {
+                    "; newText was re-indented to those lines"
+                } else {
+                    ""
+                }
+            ),
+        }
+    }
+}
+
+struct Replaced {
+    content: String,
+    count: usize,
+    recovery: Option<Recovery>,
+}
+
+/// As given first; then, only when that finds nothing, the mistakes a model
+/// makes copying text: `read`'s line numbers, one level of escaping, and each
+/// line's surrounding whitespace. A recovered match must be as unique as an
+/// exact one, and the result says which recovery located it.
+fn replace(file: &str, input: &Input, eol: Eol) -> Result<Replaced, ToolResult> {
+    let lf_file = to_lf(file);
+    let lf_old = to_lf(&input.old_text);
+    let lf_new = to_lf(&input.new_text);
+    let replace_all = input.replace_all;
+    let replaced = |found: Option<(String, usize)>, recovery| {
+        found.map(|(content, count)| Replaced {
+            content,
+            count,
+            recovery,
+        })
+    };
+    if let Some(found) = replaced(
+        replace_text(file, &lf_file, &lf_old, &lf_new, replace_all, eol)?,
+        None,
+    ) {
+        return Ok(found);
+    }
+    if let Some(old) = without_line_numbers(&lf_old) {
+        let new = without_line_numbers(&lf_new).unwrap_or_else(|| lf_new.clone());
+        let found = replace_text(file, &lf_file, &old, &new, replace_all, eol)?;
+        if let Some(found) = replaced(found, Some(Recovery::LineNumbers)) {
+            return changed(file, found);
+        }
+    }
+    if let Some(old) = unescaped(&lf_old) {
+        let new = unescaped(&lf_new).unwrap_or_else(|| lf_new.clone());
+        let found = replace_text(file, &lf_file, &old, &new, replace_all, eol)?;
+        if let Some(found) = replaced(found, Some(Recovery::Escapes)) {
+            return changed(file, found);
+        }
+    }
+    if !replace_all && let Some(found) = replace_line_block(file, &lf_file, &lf_old, &lf_new, eol)?
+    {
+        return changed(file, found);
+    }
+    Err(not_found(&lf_file, &lf_old))
+}
+
+/// A recovered `oldText` can already read as `newText`: a model re-indenting a
+/// block it copied without its indentation, say.
+fn changed(file: &str, replaced: Replaced) -> Result<Replaced, ToolResult> {
+    if replaced.content == file {
+        return Err(failed(
+            "The target text already reads as newText; no change needed.",
+            json!({ "code": "no_change" }),
+        ));
+    }
+    Ok(replaced)
+}
+
 /// Exact match in LF space first, then the Unicode/trailing-whitespace
 /// fallback. `eol` is never `None` here.
 ///
@@ -299,48 +423,286 @@ fn multiple_matches(matches: usize) -> ToolResult {
 /// replacement, while its `replaceAll` and fuzzy paths do not; that is a JS
 /// API accident, not a tool contract, and it corrupts code that contains
 /// `$$` or `$&` (shell, PHP, regex docs), so Rust keeps every path literal.
-fn replace(file: &str, input: &Input, eol: Eol) -> Result<(String, usize), ToolResult> {
-    let lf_file = to_lf(file);
-    let lf_old = to_lf(&input.old_text);
-    let lf_new = to_lf(&input.new_text);
-    let exact = lf_file.matches(lf_old.as_str()).count();
+fn replace_text(
+    file: &str,
+    lf_file: &str,
+    lf_old: &str,
+    lf_new: &str,
+    replace_all: bool,
+    eol: Eol,
+) -> Result<Option<(String, usize)>, ToolResult> {
+    let exact = lf_file.matches(lf_old).count();
     if exact > 0 {
-        if !input.replace_all && exact > 1 {
+        if !replace_all && exact > 1 {
             return Err(multiple_matches(exact));
         }
-        let limit = if input.replace_all { usize::MAX } else { 1 };
+        let limit = if replace_all { usize::MAX } else { 1 };
         let content = match eol {
-            Eol::Mixed => replace_lf_matches_in_raw(file, &lf_old, &lf_new, input.replace_all),
-            Eol::Crlf => to_crlf(&lf_file.replacen(lf_old.as_str(), &lf_new, limit)),
-            _ => lf_file.replacen(lf_old.as_str(), &lf_new, limit),
+            Eol::Mixed => replace_lf_matches_in_raw(file, lf_old, lf_new, replace_all),
+            Eol::Crlf => to_crlf(&lf_file.replacen(lf_old, lf_new, limit)),
+            _ => lf_file.replacen(lf_old, lf_new, limit),
         };
-        return Ok((content, if input.replace_all { exact } else { 1 }));
+        return Ok(Some((content, if replace_all { exact } else { 1 })));
     }
 
-    let normalized_file = normalize(&lf_file);
-    let normalized_old = normalize(&lf_old);
+    let normalized_file = normalize(lf_file);
+    let normalized_old = normalize(lf_old);
     let matches = if normalized_old.is_empty() {
         0
     } else {
         normalized_file.matches(normalized_old.as_str()).count()
     };
     if matches > 0 {
-        if !input.replace_all && matches > 1 {
+        if !replace_all && matches > 1 {
             return Err(multiple_matches(matches));
         }
         let content = replace_by_normalized_positions(
             file,
             &normalized_file,
             &normalized_old,
-            &lf_new,
-            input.replace_all,
+            lf_new,
+            replace_all,
             eol,
         );
-        return Ok((content, if input.replace_all { matches } else { 1 }));
+        return Ok(Some((content, if replace_all { matches } else { 1 })));
     }
-    Err(failed(
-        "oldText was not found in the target file.",
-        json!({ "code": "oldtext_not_found" }),
+    Ok(None)
+}
+
+/// `text` without a line-number prefix, when every non-blank line carries one:
+/// `read`'s `<n><tab>`, `cat -n`'s padded form, or `<n>: `.
+fn without_line_numbers(lf_text: &str) -> Option<String> {
+    let lines = lf_text
+        .split('\n')
+        .map(|line| {
+            if line.trim().is_empty() {
+                return Some(line);
+            }
+            let digits = line.trim_start_matches(' ');
+            let rest = digits.trim_start_matches(|c: char| c.is_ascii_digit());
+            (rest.len() < digits.len())
+                .then(|| rest.strip_prefix('\t').or_else(|| rest.strip_prefix(": ")))
+                .flatten()
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let stripped = lines.join("\n");
+    (stripped != lf_text).then_some(stripped)
+}
+
+/// `text` with one level of backslash escaping undone, when it has any: a
+/// tool-call argument encoded twice carries `\n` and `\"` as two characters.
+fn unescaped(lf_text: &str) -> Option<String> {
+    let mut result = String::with_capacity(lf_text.len());
+    let mut chars = lf_text.chars().peekable();
+    while let Some(c) = chars.next() {
+        let unescaped = (c == '\\')
+            .then(|| chars.peek().copied())
+            .flatten()
+            .and_then(|next| match next {
+                'n' => Some('\n'),
+                't' => Some('\t'),
+                'r' => Some('\r'),
+                '"' | '\'' | '`' | '\\' | '$' => Some(next),
+                _ => None,
+            });
+        match unescaped {
+            Some(unescaped) => {
+                chars.next();
+                result.push(unescaped);
+            }
+            None => result.push(c),
+        }
+    }
+    (result != lf_text).then(|| to_lf(&result))
+}
+
+fn normalized_line(line: &str) -> String {
+    line.chars().map(normalize_char).collect::<String>()
+}
+
+/// The one block of whole lines that matches `oldText` once each line's
+/// surrounding whitespace is ignored. A block that differs from `oldText` by a
+/// uniform indentation shift takes `newText` with that shift applied.
+fn replace_line_block(
+    file: &str,
+    lf_file: &str,
+    lf_old: &str,
+    lf_new: &str,
+    eol: Eol,
+) -> Result<Option<Replaced>, ToolResult> {
+    let old_lines: Vec<&str> = lf_old
+        .strip_suffix('\n')
+        .unwrap_or(lf_old)
+        .split('\n')
+        .collect();
+    if old_lines.iter().all(|line| line.trim().is_empty()) {
+        return Ok(None);
+    }
+    let wanted: Vec<String> = old_lines
+        .iter()
+        .map(|line| normalized_line(line).trim().to_owned())
+        .collect();
+    let lines: Vec<&str> = lf_file.split('\n').collect();
+    let have: Vec<String> = lines
+        .iter()
+        .map(|line| normalized_line(line).trim().to_owned())
+        .collect();
+    let starts: Vec<usize> = have
+        .windows(wanted.len())
+        .enumerate()
+        .filter(|(_, window)| *window == wanted.as_slice())
+        .map(|(start, _)| start)
+        .collect();
+    let start = match starts.as_slice() {
+        [] => return Ok(None),
+        [start] => *start,
+        _ => return Err(multiple_matches(starts.len())),
+    };
+    let block = &lines[start..start + wanted.len()];
+    let lf_start: usize = lines[..start].iter().map(|line| line.len() + 1).sum();
+    let mut lf_end = lf_start + block.join("\n").len();
+    if lf_old.ends_with('\n') && lf_file[lf_end..].starts_with('\n') {
+        lf_end += 1;
+    }
+    let reindented = reindent(lf_new, &old_lines, block);
+    let new_text = reindented.as_deref().unwrap_or(lf_new);
+    let content = match eol {
+        Eol::Mixed => {
+            let view = LfView::new(file);
+            let (raw_start, raw_end) = (view.boundaries[lf_start], view.boundaries[lf_end]);
+            let local = apply_local_eol(new_text, file, raw_start, raw_end);
+            let mut result = file.to_owned();
+            result.replace_range(raw_start..raw_end, &local);
+            result
+        }
+        _ => {
+            let mut result = lf_file.to_owned();
+            result.replace_range(lf_start..lf_end, new_text);
+            if matches!(eol, Eol::Crlf) {
+                to_crlf(&result)
+            } else {
+                result
+            }
+        }
+    };
+    Ok(Some(Replaced {
+        content,
+        count: 1,
+        recovery: Some(Recovery::LineWhitespace {
+            start: start + 1,
+            end: start + wanted.len(),
+            reindented: reindented.is_some(),
+        }),
+    }))
+}
+
+/// The leading whitespace every non-blank line shares.
+fn common_indent<'a>(lines: &[&'a str]) -> &'a str {
+    let mut lines = lines.iter().filter(|line| !line.trim().is_empty());
+    let Some(first) = lines.next() else {
+        return "";
+    };
+    let mut indent = &first[..first.len() - first.trim_start().len()];
+    for line in lines {
+        let shared = indent
+            .char_indices()
+            .zip(line.chars())
+            .take_while(|((_, a), b)| a == b)
+            .last()
+            .map_or(0, |((index, a), _)| index + a.len_utf8());
+        indent = &indent[..shared];
+    }
+    indent
+}
+
+/// `new_text` moved by the indentation shift between `old` and `block`, when
+/// every line of the block shows that same shift.
+fn reindent(new_text: &str, old: &[&str], block: &[&str]) -> Option<String> {
+    let (old_indent, block_indent) = (common_indent(old), common_indent(block));
+    let new_lines: Vec<&str> = new_text.split('\n').collect();
+    if old_indent == block_indent || common_indent(&new_lines) == block_indent {
+        return None;
+    }
+    let shifted = |line: &str, indent: &str| {
+        normalized_line(line.strip_prefix(indent).unwrap_or(line))
+            .trim_end()
+            .to_owned()
+    };
+    let uniform = old.iter().zip(block).all(|(old, block)| {
+        old.trim().is_empty() || shifted(old, old_indent) == shifted(block, block_indent)
+    });
+    uniform.then(|| {
+        new_lines
+            .iter()
+            .map(|line| match line.strip_prefix(old_indent) {
+                Some(rest) if !line.trim().is_empty() => format!("{block_indent}{rest}"),
+                _ => (*line).to_owned(),
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    })
+}
+
+/// The not-found refusal, naming the lines that come closest so the model can
+/// correct `oldText` from what the file holds now without guessing.
+fn not_found(lf_file: &str, lf_old: &str) -> ToolResult {
+    let mut message = "oldText was not found in the target file.".to_owned();
+    if let Some(closest) = closest_lines(lf_file, lf_old) {
+        message.push(' ');
+        message.push_str(&closest);
+    }
+    failed(message, json!({ "code": "oldtext_not_found" }))
+}
+
+fn words(line: &str) -> impl Iterator<Item = &str> {
+    line.split(|c: char| !c.is_alphanumeric() && c != '_')
+        .filter(|word| !word.is_empty())
+}
+
+/// The lines around the file line sharing the most words with `oldText`'s
+/// wordiest line, when it shares at least half of them.
+fn closest_lines(lf_file: &str, lf_old: &str) -> Option<String> {
+    let lines: Vec<&str> = lf_file.split('\n').collect();
+    if lines.len() > CLOSEST_MAX_FILE_LINES {
+        return None;
+    }
+    let old_lines: Vec<&str> = lf_old.trim_end_matches('\n').split('\n').collect();
+    let (anchor_index, anchor) = old_lines
+        .iter()
+        .enumerate()
+        .max_by_key(|(index, line)| (words(line).count(), std::cmp::Reverse(*index)))?;
+    let anchor_words: std::collections::HashSet<&str> = words(anchor).collect();
+    if anchor_words.is_empty() {
+        return None;
+    }
+    let shared = |line: &str| {
+        words(line)
+            .collect::<std::collections::HashSet<_>>()
+            .intersection(&anchor_words)
+            .count()
+    };
+    let (best, score) = lines
+        .iter()
+        .enumerate()
+        .map(|(index, line)| (index, shared(line)))
+        .max_by_key(|(index, score)| (*score, std::cmp::Reverse(*index)))?;
+    if score * 2 < anchor_words.len() {
+        return None;
+    }
+    let start = best.saturating_sub(anchor_index);
+    let end = (start + old_lines.len().min(CLOSEST_MAX_LINES)).min(lines.len());
+    let shown = lines[start..end]
+        .iter()
+        .enumerate()
+        .map(|(index, line)| {
+            let line: String = line.chars().take(CLOSEST_MAX_LINE_CHARS).collect();
+            format!("{}\t{line}", start + index + 1)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    Some(format!(
+        "The closest text is at line {}; derive oldText from it:\n{shown}",
+        start + 1
     ))
 }
 

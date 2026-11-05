@@ -1198,7 +1198,8 @@ impl ContextPolicy {
     /// Whether the entries a compaction at `cut` removes — less the pinned
     /// inputs the replacement carries instead of dropping them, plus the
     /// previous replacement's strategy part, which the next summary reads and
-    /// replaces — exceed the strategy's planned replacement size
+    /// replaces, accounting for the keyed baseline replayed at each cut —
+    /// exceed the strategy's planned replacement size
     /// (ContextCompaction §5.3, step 2).
     fn shrinks(
         &self,
@@ -1224,9 +1225,27 @@ impl ContextPolicy {
                 .replacement_parts
                 .map_or(len, |parts| parts.strategy as usize)
                 .min(len);
-            count(checkpoint.replacement[..strategy].to_vec()) - empty
+            count(
+                checkpoint.replacement[..strategy]
+                    .iter()
+                    .cloned()
+                    .chain(
+                        checkpoint
+                            .context_baseline
+                            .iter()
+                            .map(|entry| (*entry.message).clone()),
+                    )
+                    .collect(),
+            ) - empty
         });
-        dropped - pinned + previous > self.strategy.replacement_size(model)
+        let replayed = count(
+            view.history[cut.entry - 1]
+                .baseline
+                .iter()
+                .map(|entry| (*entry.message).clone())
+                .collect(),
+        ) - empty;
+        dropped - pinned + previous - replayed > self.strategy.replacement_size(model)
     }
 
     /// Appends the result of a compaction step, then re-reads the committed

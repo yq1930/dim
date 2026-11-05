@@ -689,7 +689,8 @@ How the summary is produced:
    `through`, `trigger` and `strategy.name()`. The automatic threshold trigger stops here,
    before the strategy is called, on a conservative planned-size heuristic: when the entries
    the selected cut replaces — less the pinned inputs the replacement carries instead of
-   dropping them (§5.9), plus the previous replacement's strategy part, which the next
+   dropping them (§5.9), less the increase in the keyed baseline replayed at that cut,
+   plus the previous replacement's strategy part, which the next
    summary reads and replaces — remove no more than `replacement_size` (§4.2), it appends
    `context/compaction` with `skipped` (`nothing_to_compact`) and `modelCallCount` 0, as a
    strategy with no cut does. `replacement_size` is a planned target, not a bound on the

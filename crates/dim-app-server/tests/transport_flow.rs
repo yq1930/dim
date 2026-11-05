@@ -1563,7 +1563,7 @@ async fn attach_replies_the_record_the_listing_shows_for_that_session() {
             .find(|entry| entry["sessionId"] == sid.as_str())
             .expect("the Session is listed")
             .clone();
-        for field in ["preview", "updatedAt", "closed"] {
+        for field in ["preview", "updatedAt", "closed", "archived"] {
             entry.as_object_mut().unwrap().remove(field);
         }
         assert_eq!(

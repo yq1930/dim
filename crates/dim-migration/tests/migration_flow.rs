@@ -754,6 +754,7 @@ async fn offline_import_reopens_with_unchanged_native_consumers_and_preserves_co
              DROP TABLE session_grants;
              DROP TABLE session_worktrees;
              DROP TABLE worktree_directories;
+             DROP TABLE session_archives;
              DROP TABLE agent_store_format;
              CREATE TABLE agent_store_format (version INTEGER NOT NULL PRIMARY KEY CHECK (version = 23));
              INSERT INTO agent_store_format VALUES (23);",

@@ -169,7 +169,7 @@ defineExpose({ open: () => {
 /* Provider initial: a 16px glyph tile on the xs control radius. */
 .provider-badge { display: grid; width: 16px; height: 16px; flex: none; place-items: center; border-radius: var(--control-xs-radius); background: var(--muted); color: var(--foreground); font-size: var(--text-xs); font-weight: var(--weight-medium); line-height: 1; }
 .model-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.model-content { display: flex; flex-direction: column; overflow: hidden; }
+.model-content { display: flex; max-height: 45dvh; flex-direction: column; overflow: hidden; }
 .model-panes { display: flex; height: 240px; min-height: 96px; margin-inline: calc(-1 * var(--space-1)); }
 .provider-pane { display: flex; width: 132px; flex: none; flex-direction: column; gap: 2px; overflow-y: auto; padding: 0 var(--space-1); border-right: 1px solid var(--border); }
 .model-pane { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; overflow-y: auto; padding: 0 var(--space-1); }

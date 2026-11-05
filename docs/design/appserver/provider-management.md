@@ -922,6 +922,19 @@ metadata is copied; the member's request producer supplies its own Session/run/t
 identities. This is Provider-owned data in the existing metadata extension, not a
 new core field, epoch or registry. Managed route/lease checks remain unchanged.
 
+**OpenCode Go transport.** For the builtin `opencode-go` provider, a base ending
+in `/inference/go` or `/inference/go/v1` selects the protocol-specific gateway:
+Chat Completions and Responses use `/openai/v1`, Anthropic uses
+`/anthropic/v1`, and Gemini uses `/google/v1beta`, under that Go root. Other
+configured proxy paths retain the ordinary New API routing. Catalog discovery
+uses the stored base URL. Each model request carries its producing Session's
+`x-opencode-session`; when no case-insensitive `User-Agent` header is configured,
+Provider supplies `DimCode/<version>`. Configured user agents retain precedence.
+These are connection-time rules following the
+[OpenCode harness contract](https://opencode.ai/v2/docs/console/harnesses/)
+and [Go client requirements](https://opencode.ai/v2/docs/console/go/#where-can-i-use-it),
+without rewriting saved credentials, model preferences or endpoint overrides.
+
 Legacy TypeScript import stays explicit, read-only and per-entry:
 `imported`/`already_imported`/`rejected`, and Provider owns the frozen mapping
 below as one pure conversion of a legacy row: the row's fields, the existing

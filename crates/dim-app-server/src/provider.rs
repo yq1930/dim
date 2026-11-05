@@ -2236,8 +2236,7 @@ impl ResolveModelConnection for ProductResolver {
                         });
                     }
                 }
-                let mut connection =
-                    drivers::connection(&record.driver_kind, protocol, &record.base_url, headers);
+                let mut base_url = record.base_url;
                 if request.provider_id == "opencode-go" {
                     let session_id = request
                         .metadata
@@ -2249,13 +2248,21 @@ impl ResolveModelConnection for ProductResolver {
                                 && id.bytes().all(|b| (0x20..=0x7e).contains(&b))
                         })
                         .ok_or_else(|| failure("OpenCode Go requires a printable session ID"))?;
-                    connection
-                        .headers
-                        .retain(|name, _| !name.eq_ignore_ascii_case("x-opencode-session"));
-                    connection
-                        .headers
-                        .insert("x-opencode-session".into(), session_id.into());
+                    headers.retain(|name, _| !name.eq_ignore_ascii_case("x-opencode-session"));
+                    headers.insert("x-opencode-session".into(), session_id.into());
+                    if !headers
+                        .keys()
+                        .any(|name| name.eq_ignore_ascii_case("user-agent"))
+                    {
+                        headers.insert(
+                            "User-Agent".into(),
+                            concat!("DimCode/", env!("CARGO_PKG_VERSION")).into(),
+                        );
+                    }
+                    base_url = drivers::opencode_go_base_url(&base_url, protocol);
                 }
+                let mut connection =
+                    drivers::connection(&record.driver_kind, protocol, &base_url, headers);
                 connection.bearer = bearer;
                 connection.network = record.network;
                 return Ok(ResolvedModelConnection {

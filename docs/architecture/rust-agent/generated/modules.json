@@ -2537,6 +2537,7 @@
       "parent": "dim_app_server",
       "file": "crates/dim-app-server/src/provider.rs",
       "unexpandedMacros": [
+        "concat",
         "format",
         "matches",
         "params",
@@ -23970,6 +23971,7 @@
       "references": [
         "mod drivers",
         "path drivers::connection",
+        "path drivers::opencode_go_base_url",
         "path drivers::remote_model_list",
         "path drivers::routes",
         "path drivers::supported"

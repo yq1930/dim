@@ -73,6 +73,21 @@ fn protocol(driver: &str, model_id: &str) -> Option<ModelProtocol> {
         .and_then(|(_, protocol)| *protocol)
 }
 
+pub(super) fn opencode_go_base_url(base: &str, protocol: ModelProtocol) -> String {
+    let base = base.trim_end_matches('/');
+    let root = base.strip_suffix("/v1").unwrap_or(base);
+    if !root.ends_with("/inference/go") {
+        return base.to_owned();
+    }
+    let namespace = match protocol {
+        ModelProtocol::OpenaiCompatible | ModelProtocol::OpenaiResponses => "openai",
+        ModelProtocol::Anthropic => "anthropic",
+        ModelProtocol::Gemini => "google",
+        _ => return base.to_owned(),
+    };
+    format!("{root}/{namespace}")
+}
+
 pub(super) fn connection(
     driver: &str,
     protocol: ModelProtocol,

@@ -112,6 +112,8 @@ The CLI also accepts redirected stdin for a single turn. Ctrl+C during a turn re
 
 ### Workspace
 
+For an Apple Silicon macOS desktop application, run `node scripts/build-macos-app.mjs` on macOS 14 or later. It builds `dist/macos/Dim.app`, which carries the local backend and opens the Web workspace in a native window. See the [desktop build and data-directory guide](desktop/README.md).
+
 | Code | Responsibility |
 | --- | --- |
 | [Runtime](crates/dim-agent-runtime), [types](crates/dim-agent-types), [capabilities](crates/dim-agent-capabilities) | Agent and session lifecycles, Timelines, event contracts, input, model execution, permissions and branches |

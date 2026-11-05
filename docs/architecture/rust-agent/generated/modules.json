@@ -10914,6 +10914,13 @@
       ]
     },
     {
+      "from": "dim_agent_capabilities::model_provider",
+      "to": "dim_agent_types::model",
+      "references": [
+        "path ModelRequest"
+      ]
+    },
+    {
       "from": "dim_agent_capabilities::model_provider::images",
       "to": "dim_agent_types::content",
       "references": [

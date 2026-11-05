@@ -1,0 +1,25 @@
+[package]
+name = "dim-desktop"
+version = "0.1.0-alpha.18"
+edition = "2024"
+license = "MIT"
+description = "The macOS desktop client for the local Dim Web workspace"
+
+[workspace]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-single-instance = "2"
+tokio = { version = "1", features = ["time", "sync"] }
+uuid = { version = "1", features = ["v4"] }
+
+[profile.release]
+strip = "debuginfo"
+lto = "thin"
+codegen-units = 1

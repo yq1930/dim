@@ -1,0 +1,35 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Dim",
+  "version": "../package.json",
+  "identifier": "com.yetang.dim",
+  "build": {
+    "frontendDist": "../../staging/macos-app/boot"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "capabilities": [],
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app"],
+    "category": "DeveloperTool",
+    "shortDescription": "Dim local agent workspace",
+    "icon": ["../../staging/macos-app/icons/icon.icns", "../../staging/macos-app/icons/icon.png"],
+    "externalBin": ["../../staging/macos-app/dimcode"],
+    "resources": {
+      "../../staging/macos-app/web/": "web/",
+      "../../staging/macos-app/plugins-payload/": "plugins-payload/",
+      "../../staging/macos-app/licenses/": "licenses/",
+      "../../staging/macos-app/build-info.json": "build-info.json"
+    },
+    "macOS": {
+      "minimumSystemVersion": "14.0",
+      "signingIdentity": "-",
+      "hardenedRuntime": true
+    }
+  }
+}

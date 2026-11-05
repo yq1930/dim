@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { once } from 'node:events';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -63,12 +64,53 @@ test('compiled workspace targets overlap in pairs and finish the queue after a f
   assert.equal(result.status, 7, result.stderr);
   for (const record of records) {
     assert(existsSync(path.join(path.dirname(record.manifest_path), 'done')), result.stdout);
-    assert.match(result.stdout, new RegExp(`::group::${record.target.name}`));
+    assert.match(result.stderr, new RegExp(`START ${record.target.name}`));
+    assert.match(result.stderr, new RegExp(`END ${record.target.name}`));
   }
   writeFileSync(artifacts, '');
   const empty = spawnSync(process.execPath, [path.join(import.meta.dirname, 'run-rust-test.mjs'), artifacts, '--workspace'], { encoding: 'utf8' });
   assert.notEqual(empty.status, 0);
   assert.match(empty.stderr, /Expected compiled workspace test targets/);
+});
+
+test('compiled targets stream output and stop descendants on timeout or cancellation', { skip: process.platform === 'win32', timeout: 15_000 }, async (t) => {
+  for (const cancel of [false, true]) {
+    const temporary = mkdtempSync(path.join(os.tmpdir(), 'dim bounded artifacts '));
+    const artifacts = path.join(temporary, 'artifacts.jsonl');
+    const pidFile = path.join(temporary, 'descendant');
+    writeFileSync(artifacts, JSON.stringify({ reason: 'compiler-artifact', profile: { test: true }, target: { name: 'held' }, manifest_path: path.join(temporary, 'Cargo.toml'), executable: process.execPath }));
+    const fixture = `
+      const {spawn} = require('node:child_process');
+      const child = spawn(process.execPath, ['--eval', 'setInterval(()=>{},1000)'], {stdio:'inherit'});
+      require('node:fs').writeFileSync('descendant', String(child.pid));
+      console.log('ready');
+      setInterval(()=>{},1000);
+    `;
+    const child = spawn(process.execPath, [path.join(import.meta.dirname, 'run-rust-test.mjs'), artifacts, 'held', '--eval', fixture], {
+      env: { ...process.env, DIM_TEST_TIMEOUT_MS: cancel ? '10000' : '2000' }, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    t.after(() => {
+      child.kill('SIGKILL');
+      if (existsSync(pidFile)) {
+        try { process.kill(Number(readFileSync(pidFile, 'utf8')), 'SIGKILL'); }
+        catch (error) { if (error.code !== 'ESRCH') throw error; }
+      }
+      rmSync(temporary, { recursive: true, force: true });
+    });
+    let stderr = '';
+    child.stderr.on('data', chunk => stderr += chunk);
+    const exited = once(child, 'close');
+    const [output] = await once(child.stdout, 'data');
+    assert.match(output.toString(), /ready/);
+    assert.equal(child.exitCode, null, 'target output is visible before it finishes');
+    const descendant = Number(readFileSync(pidFile, 'utf8'));
+    if (cancel) child.kill('SIGTERM');
+    const [code] = await exited;
+    assert.equal(code, cancel ? 143 : 124, stderr);
+    if (!cancel) assert.match(stderr, /TIMEOUT held/);
+    const state = spawnSync('ps', ['-p', String(descendant), '-o', 'stat='], { encoding: 'utf8' }).stdout.trim();
+    assert(state === '' || state.startsWith('Z'), `descendant still running: ${state}`);
+  }
 });
 
 test('developer entry runs without Node or plugin packages and preserves terminal invocation', { skip: process.platform === 'win32' }, (t) => {

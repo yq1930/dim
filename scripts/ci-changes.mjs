@@ -5,6 +5,7 @@ export const groups=['rust','windows','xtask','node','eval','execution','web','s
 const everything=Object.fromEntries(groups.map(group=>[group,true]));
 
 const rules=[
+  [/^benchmarks\/baselines\/[^/]+\.json$/,[]],
   [/^docs\/architecture\/rust-agent\/(plugins|generated)\//,['xtask']],
   [/^docs\/design\/appserver\/native-storage-format\.md$/,['rust']],
   // The ADR check runs in the changes job; docs alone need no build group.

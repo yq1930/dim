@@ -110,14 +110,6 @@ jobs:
           fi
           cargo clippy --workspace --all-targets --locked ${features[@]+"${features[@]}"} -- -D warnings
           cargo build --workspace --all-targets --locked ${features[@]+"${features[@]}"} --message-format=json > target/test-artifacts.jsonl
-      - name: Run compiled workspace tests
-        if: needs.changes.outputs.rust == 'true'
-        run: |
-          node scripts/run-rust-test.mjs target/test-artifacts.jsonl --workspace --test-threads=4
-          cargo test --workspace --doc --locked ${{ needs.changes.outputs.eval == 'true' && '--features xtask/eval-tests' || '' }}
-      - name: Verify wall-clock background handoff
-        if: needs.changes.outputs.execution == 'true'
-        run: node scripts/run-rust-test.mjs target/test-artifacts.jsonl local_execution a_long_foreground_command_moves_to_the_background_after_30_seconds --ignored --exact
       - name: Check crate boundaries and plugin pages
         if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.xtask == 'true'
         shell: bash
@@ -127,6 +119,14 @@ jobs:
             cargo build --locked -p xtask
           fi
           target/debug/xtask check
+      - name: Run compiled workspace tests
+        if: needs.changes.outputs.rust == 'true'
+        run: |
+          node scripts/run-rust-test.mjs target/test-artifacts.jsonl --workspace --test-threads=4
+          cargo test --workspace --doc --locked ${{ needs.changes.outputs.eval == 'true' && '--features xtask/eval-tests' || '' }}
+      - name: Verify wall-clock background handoff
+        if: needs.changes.outputs.execution == 'true'
+        run: node scripts/run-rust-test.mjs target/test-artifacts.jsonl local_execution a_long_foreground_command_moves_to_the_background_after_30_seconds --ignored --exact
       - name: Test development and release scripts
         if: needs.changes.outputs.scripts == 'true'
         run: |

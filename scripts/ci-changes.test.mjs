@@ -17,6 +17,7 @@ const git=(cwd,...args)=>{
 test('documentation-only changes need no build group',()=>{
   assert.deepEqual(classify(['docs/adr/006-plugin-contract.md','docs/zh/INDEX.md']),only());
   assert.deepEqual(classify(['README.md','AGENTS.md']),only());
+  assert.deepEqual(classify(['benchmarks/baselines/result.json']),only());
 });
 
 test('documents that code reads keep their checks',()=>{
@@ -50,7 +51,7 @@ test('bridge, evaluation and wall-clock flows follow their owning paths',()=>{
 });
 
 test('workspace, toolchain, workflow and unknown paths run everything',()=>{
-  for (const file of ['Cargo.lock','rust-toolchain.toml','.github/workflows/ci.yml','.node-version','dev','skills/x/SKILL.md'])
+  for (const file of ['Cargo.lock','rust-toolchain.toml','.github/workflows/ci.yml','.node-version','dev','skills/x/SKILL.md','benchmarks/runner/main.py'])
     assert.deepEqual(classify([file]),only(...groups),file);
 });
 

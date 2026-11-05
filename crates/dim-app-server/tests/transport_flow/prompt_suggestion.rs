@@ -120,7 +120,7 @@ impl Scripted {
 }
 
 fn last_text(request: &ModelRequest) -> Option<String> {
-    match &request.messages.last()?.content {
+    match &dim_agent_capabilities::adapters::EchoModel::last_message(request)?.content {
         MessageContent::Text(text) => Some(text.clone()),
         MessageContent::Parts(parts) => parts.iter().find_map(|part| match part {
             MessagePart::Text { text, .. } => Some(text.clone()),
@@ -956,11 +956,11 @@ async fn a_sharer_answers_disabled_when_the_shared_preflight_is_disabled() {
     let fixture =
         serve_compaction_fixture_with(Reply::Text("run the tests".into()), held.clone()).await;
     let (mut client, id) = create(&fixture, true).await;
+    let mut other = attach(&fixture, &id).await;
+    let mut writer = attach(&fixture, &id).await;
     submit(&mut client, &id, "add a test").await;
     let turn = latest_turn(&mut client, &id).await;
     configure(&mut client, json!({"enabled":true})).await;
-    let mut other = attach(&fixture, &id).await;
-    let mut writer = attach(&fixture, &id).await;
 
     held.hold();
     let asked = (id.clone(), turn.clone());

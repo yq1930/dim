@@ -277,15 +277,20 @@ pub fn part_text(parts: &[MessagePart]) -> Option<String> {
     (!text.trim().is_empty()).then_some(text)
 }
 
-/// The text of `request`'s last user message, the message a suggestion must
-/// not echo. The evaluation passes the recorded turn's value here the way the
-/// part does.
+/// The text of `request`'s last user message, excluding runtime state
+/// snapshots, which a suggestion must not echo. The evaluation and the part
+/// use the same recorded turn.
 pub fn last_user_text(request: &ModelRequest) -> Option<String> {
     request.messages.iter().rev().find_map(|message| {
         if message.role != Role::User {
             return None;
         }
         match &message.content {
+            MessageContent::Text(text)
+                if text.starts_with("<dim-state ") && text.ends_with("</dim-state>") =>
+            {
+                None
+            }
             MessageContent::Text(text) => Some(text.clone()),
             MessageContent::Parts(parts) => part_text(parts),
         }

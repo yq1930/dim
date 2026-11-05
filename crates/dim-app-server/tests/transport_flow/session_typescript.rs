@@ -1088,7 +1088,7 @@ impl ModelDriver for CheckedModel {
             .cloned()
             .collect();
         let _ = self.tools.send(tools);
-        let batch = request.messages.last().is_some_and(|message| {
+        let batch = EchoModel::last_message(&request).is_some_and(|message| {
             message.role == Role::User
                 && match &message.content {
                     MessageContent::Text(text) => text == "batch",

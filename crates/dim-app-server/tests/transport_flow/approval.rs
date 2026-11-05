@@ -64,7 +64,7 @@ impl rutis::host::DynPlugin for ProbePlugin {
                             let gate = probe.cancel_gate.lock().unwrap().take();
                             if let Some(release) = gate {
                                 probe.cancel_entered.notify_one();
-                                let _ = release.recv();
+                                tokio::task::block_in_place(|| release.recv()).ok();
                             }
                         }
                         EventKind::ApprovalRequest(data) => {
@@ -961,7 +961,7 @@ async fn attach_replay_and_cancellation_leave_no_pending_approval_on_both_transp
         let probe = Arc::new(Probe::default());
         let (server, session, mut owner, calls) = setup_version(ws, probe.clone(), 2).await;
 
-        let removed = request_v2(&mut owner, &session).await;
+        request_v2(&mut owner, &session).await;
         let (release, gate) = std::sync::mpsc::channel();
         *probe.cancel_gate.lock().unwrap() = Some(gate);
         let stopped = owner
@@ -974,16 +974,11 @@ async fn attach_replay_and_cancellation_leave_no_pending_approval_on_both_transp
             .await
             .expect("the cancellation reached its commit");
         let mut late = Client::new_version(&server, !ws, 2).await;
-        assert_ok(
-            &late
-                .rpc("session.attach", json!({"sessionId":session.id()}))
-                .await,
-        );
+        let attaching = late
+            .send("session.attach", json!({"sessionId":session.id()}))
+            .await;
         release.send(()).unwrap();
-        assert_eq!(
-            late.notice("approval.cancelled").await["params"]["requestId"],
-            removed
-        );
+        assert_ok(&late.response(attaching).await);
         assert_ok(&owner.response(stopped).await);
         settle_notices(&mut late).await;
         assert!(

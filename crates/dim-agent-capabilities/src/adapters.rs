@@ -12,6 +12,23 @@ use tokio_util::sync::CancellationToken;
 pub const MAX_MOCK_OUTPUT_BYTES: usize = 1024 * 1024;
 
 pub struct EchoModel;
+impl EchoModel {
+    /// The latest conversational message for a mock reply. Runtime state
+    /// snapshots inform a model; they do not replace the operator's request.
+    pub fn last_message(request: &ModelRequest) -> Option<&Message> {
+        request
+            .messages
+            .iter()
+            .rev()
+            .map(Arc::as_ref)
+            .find(|message| {
+                !matches!(&message.content, MessageContent::Text(text)
+                if message.role == Role::User
+                    && text.starts_with("<dim-state ")
+                    && text.ends_with("</dim-state>"))
+            })
+    }
+}
 impl ModelDriver for EchoModel {
     fn invoke(
         &self,
@@ -25,11 +42,8 @@ impl ModelDriver for EchoModel {
             let mut chunks = vec![Ok(ModelChunk::MessageStart {
                 message_id: id.clone(),
             })];
-            let last = request.messages.last();
-            let text = last
-                .map(|message| message_text(message))
-                .transpose()?
-                .unwrap_or_default();
+            let last = Self::last_message(&request);
+            let text = last.map(message_text).transpose()?.unwrap_or_default();
             let text = delegated_message_body(&text).unwrap_or(text);
             let reason = if last.is_some_and(|message| message.role == Role::User)
                 && text.starts_with("tool:")

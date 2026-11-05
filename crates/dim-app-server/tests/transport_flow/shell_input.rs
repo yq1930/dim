@@ -861,7 +861,14 @@ async fn a_private_run_replies_exec_bounded_output_and_writes_nothing() {
     assert!(output.starts_with("line1001\n") && output.ends_with("line2999\n"));
     assert_eq!(reply["result"]["truncated"], true);
 
-    assert_eq!(shell.through().await, before);
+    assert!(
+        shell.history(before).await.iter().all(|event| {
+            event["type"] == "input"
+                && (event["name"] == "applied"
+                    || (event["name"] == "message" && event["data"]["user"].is_null()))
+        }),
+        "private execution records no input or execution facts"
+    );
     shell.shutdown().await;
 }
 

@@ -815,6 +815,11 @@ async fn an_unload_writes_nothing_and_the_restore_only_resumes() {
             .as_array()
             .unwrap()
             .iter()
+            .filter(|event| {
+                !(event["type"] == "input"
+                    && (event["name"] == "applied"
+                        || (event["name"] == "message" && event["data"]["user"].is_null())))
+            })
             .map(|event| format!("{}/{}", event["type"], event["name"]).replace('"', ""))
             .collect();
         assert_eq!(added, ["branch/resume"], "{branch}");

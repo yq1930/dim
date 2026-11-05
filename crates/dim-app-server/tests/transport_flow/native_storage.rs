@@ -1183,7 +1183,13 @@ async fn stored_directories_outlive_idle_instances() {
                 .rpc("session.attach", json!({"sessionId":ids[1]}))
                 .await,
         );
-        assert!(first.unload_if_idle().await.unwrap());
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while !first.unload_if_idle().await.unwrap() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the detached Session releases once pending state is published");
         assert!(first.is_unloading());
         let connection = Connection::open(&database).unwrap();
         let head: i64 = connection
@@ -1193,10 +1199,17 @@ async fn stored_directories_outlive_idle_instances() {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(
-            head as u64, before,
-            "idle release must append no settlement events"
-        );
+        assert!(head as u64 >= before);
+        let settled: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM timeline_events WHERE session_id=?1 AND branch_id='main' \
+             AND sequence>?2 AND (kind NOT IN ('input/message','input/applied') \
+             OR (kind='input/message' AND json_extract(body,'$.record.event.data.user') IS NOT NULL))",
+                rusqlite::params![ids[0], before as i64],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(settled, 0, "idle release must append no settlement events");
         assert!(agent.get_session(&ids[0]).is_none());
         assert_ok(
             &client

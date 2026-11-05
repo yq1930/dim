@@ -19,7 +19,7 @@ impl Owner {
     fn on_record(&self, record: &SessionBroadcastEvent) {
         if let SessionBroadcastEvent::Event { branch_id, event } = record
             && branch_id == "main"
-            && matches!(event.kind, EventKind::InputApplied(_))
+            && matches!(&event.kind, EventKind::InputApplied(data) if data.mode.unwrap_or(dim_agent_types::InputMode::Queue) == dim_agent_types::InputMode::Queue)
         {
             notify(
                 &self.ctx,
@@ -132,6 +132,8 @@ async fn an_owner_notice_follows_its_observed_event_to_v3_clients_only() {
                     value["method"] == "session.event"
                         && value["params"]["event"]["type"] == "input"
                         && value["params"]["event"]["name"] == "applied"
+                        && (value["params"]["event"]["data"]["mode"].is_null()
+                            || value["params"]["event"]["data"]["mode"] == "queue")
                 })
                 .expect("input/applied reaches the client");
             let notices: Vec<_> = seen

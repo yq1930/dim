@@ -804,7 +804,15 @@ impl Env {
     async fn await_parts(&self) {
         tokio::time::timeout(Duration::from_secs(15), async {
             loop {
-                if self.probe.has("main") && self.probe.tools.lock().unwrap().is_some() {
+                if self.probe.has("main")
+                    && self
+                        .probe
+                        .tools
+                        .lock()
+                        .unwrap()
+                        .as_ref()
+                        .is_some_and(|tools| tools.contributed("goal_update").is_some())
+                {
                     break;
                 }
                 tokio::time::sleep(Duration::from_millis(10)).await;

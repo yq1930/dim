@@ -111,14 +111,13 @@ async fn a_fork_copies_main_through_a_rest_point_and_starts_nothing() {
             .rpc("session.idle", json!({"sessionId":sid,"branchId":steered}))
             .await,
     );
-    let mut calls = 0;
-    while calls == 0 {
-        calls = keys(&history(&source, &running).await)
-            .into_iter()
-            .filter(|key| *key == "step/tool-call")
-            .count();
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !keys(&history(&source, &running).await).contains(&"step/tool-call") {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the running child starts its tool before the fork");
     let at = source.sequence("main").unwrap();
     let after = branch(&mut client, &sid, at, "hello").await;
     assert_ok(&client.rpc("session.submit", json!({"sessionId":sid,"branchId":steered,"text":"steer after the cut","mode":"steer"})).await);
@@ -166,7 +165,17 @@ async fn a_fork_copies_main_through_a_rest_point_and_starts_nothing() {
     assert_eq!(tail[0].kind.key(), "session/forked");
     assert_eq!(tail[1].kind.key(), "branch/resume");
     assert_eq!(failed_creations(tail), children, "{:?}", keys(tail));
-    assert_eq!(tail.len(), 2 + children.len(), "{:?}", keys(tail));
+    assert_eq!(
+        tail.iter()
+            .filter(|event| {
+                !matches!(&event.kind, EventKind::InputMessage(data) if data.user.is_none())
+                    && !matches!(event.kind, EventKind::InputApplied(_))
+            })
+            .count(),
+        2 + children.len(),
+        "the fork only initializes state: {:?}",
+        keys(tail)
+    );
     assert_eq!(fork.branches().len(), 1, "only main is active in the fork");
 
     let rows = |sql: &str| count(&store, sql, [&fid, &sid]);
@@ -365,7 +374,11 @@ async fn a_fork_is_refused_unless_the_cut_is_a_rest_point() {
         (head + 1, "future"),
         (position("step/tool-call"), "without results"),
         (
-            position("input/message"),
+            events
+                .iter()
+                .find(|event| matches!(&event.kind, EventKind::InputMessage(data) if data.user.is_some()))
+                .unwrap()
+                .sequence,
             "an input is waiting to be consumed",
         ),
         (position("turn/start"), "a turn is open"),

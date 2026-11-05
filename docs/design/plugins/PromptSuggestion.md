@@ -145,7 +145,7 @@ The reply is validated in this order; any failure clears with `invalid`, and the
 | 3 | No leading `/`, `@` or `!`, which a client's composer would interpret |
 | 4 | Not `<none>` and not refusal or sentinel text (`none`, `null`, `undefined`, `no suggestion`, `nothing to suggest`, and the common Chinese equivalents) |
 | 5 | Not an assistant-style opening (`I'll`, `i will`, `let me`, `here's`, `you should`, and the common Chinese equivalents) |
-| 6 | Not a repeat of the last user message, compared after trimming, ASCII lowercasing and whitespace collapsing |
+| 6 | Not a repeat of the last user message, excluding runtime state snapshots (`dim-state`), compared after trimming, ASCII lowercasing and whitespace collapsing |
 
 The reply is offered only when its trimmed text is a single line of at most `maxChars` characters: the reader stops at the first non-whitespace character after a line break, or when the trimmed text exceeds `maxChars`, and a trailing line break alone is trimmed away. The validator is deliberately conservative: a missing suggestion is better than a wrong one, and the evaluation measures precision.
 

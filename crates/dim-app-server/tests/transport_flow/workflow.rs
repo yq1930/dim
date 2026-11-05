@@ -1785,7 +1785,7 @@ async fn node_workflow_report_wakes_wait_and_is_adopted_after_its_start_batch() 
             connection: ModelConnection,
             cancel: CancellationToken,
         ) -> HostFuture<'_, ModelStream> {
-            let batch = request.messages.last().is_some_and(|message| message.role == Role::User && match &message.content {
+            let batch = EchoModel::last_message(&request).is_some_and(|message| message.role == Role::User && match &message.content {
                 MessageContent::Text(text) => text == "workflow batch",
                 MessageContent::Parts(parts) => parts.iter().any(|part| matches!(part, MessagePart::Text {text, ..} if text == "workflow batch")),
             });

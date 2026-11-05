@@ -2606,7 +2606,16 @@ async fn model_progress_reaches_v3_subscribers_without_persisting() {
         other.notice("session.model.progress").await["params"],
         empty
     );
-    assert_eq!(session.sequence("main").unwrap(), head);
+    let appended = dim_agent_runtime::testing::branch_events(&session, "main", head + 1..)
+        .await
+        .unwrap();
+    assert!(
+        appended.iter().all(|event| {
+            matches!(&event.kind, EventKind::InputMessage(data) if data.user.is_none())
+                || matches!(event.kind, EventKind::InputApplied(_))
+        }),
+        "model progress does not persist facts: {appended:?}"
+    );
 
     let mut legacy = Client::new_version(&server, false, 2).await;
     let created = legacy.rpc("session.create", create(json!([]))).await;

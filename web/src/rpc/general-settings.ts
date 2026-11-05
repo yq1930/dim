@@ -282,6 +282,23 @@ export function readModelRecording(value: unknown): ModelRecording {
   return { revision: string(source.revision), enabled: boolean(object(source.document).enabled) }
 }
 
+/** The `web` source as `settings.view` shows it: the API key and the proxy are write-only, so only whether each is set. */
+export type WebSearchSettings = { revision: string; document: Record<string, unknown>; kind?: string; endpoint: string; keySet: boolean; proxySet: boolean }
+export function readWebSearchSettings(value: unknown): WebSearchSettings {
+  const source = object(value)
+  const document = object(source.document)
+  const service = document.searchService === undefined ? {} : object(document.searchService)
+  const set = array(source.writeOnlySet, string)
+  return {
+    revision: string(source.revision),
+    document,
+    ...(service.kind === undefined ? {} : { kind: string(service.kind) }),
+    endpoint: service.endpoint === undefined ? "" : string(service.endpoint),
+    keySet: set.includes("/searchService/apiKey"),
+    proxySet: set.includes("/proxy"),
+  }
+}
+
 export type ExecutionSettings = { revision: string; sandbox: boolean; network: boolean }
 export function readExecutionSettings(value: unknown): ExecutionSettings {
   const source = object(value)

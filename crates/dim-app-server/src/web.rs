@@ -14,7 +14,7 @@ use dim_agent_runtime::{Names, PartRegistry, PartScope};
 use dim_agent_types::{ToolCall, ToolContent, ToolDefinition, ToolResult, ToolSource};
 use network::{
     DOWNLOAD_LIMIT, Diagnostic, NetworkConfig, WebError, domain, get, hostname, parse_url,
-    proxy_url,
+    post_json, proxy_url,
 };
 use rutis::Ctx;
 use rutis::host::{BoxFuture, CtxHost, DynPlugin, Effect, Key, TypeKey};
@@ -31,6 +31,9 @@ use url::Url;
 const CACHE_LIMIT: usize = 50 * 1024 * 1024;
 const CACHE_TTL_MS: u64 = 15 * 60_000;
 const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+/// An adapter with no domain filter of its own is asked for this many times
+/// the results, since Web drops the filtered ones afterwards.
+const FILTERED_OVERFETCH: usize = 3;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -51,6 +54,33 @@ pub struct SearchServiceConfig {
     pub endpoint: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
+}
+
+/// The built-in adapters `searchService.kind` names; each needs its `apiKey`.
+#[derive(Clone, Copy)]
+enum SearchAdapter {
+    Brave,
+    DeepSeek,
+    Tavily,
+}
+
+impl SearchAdapter {
+    fn named(kind: &str) -> Option<Self> {
+        match kind {
+            "brave" => Some(Self::Brave),
+            "deepseek" => Some(Self::DeepSeek),
+            "tavily" => Some(Self::Tavily),
+            _ => None,
+        }
+    }
+
+    fn default_endpoint(self) -> &'static str {
+        match self {
+            Self::Brave => "https://api.search.brave.com/res/v1/web/search",
+            Self::DeepSeek => "https://api.deepseek.com/v1/tools/search",
+            Self::Tavily => "https://api.tavily.com/search",
+        }
+    }
 }
 
 pub fn source_declaration() -> SourceDeclaration {
@@ -689,7 +719,7 @@ impl SessionState {
                         match err {
                             ManagedSearchError::Unavailable => WebError::new(
                                 "search_unavailable",
-                                "No usable search service is configured.",
+                                "No usable search service is configured. The user can choose one in Settings, under Web search.",
                             ),
                             ManagedSearchError::SearchFailed => {
                                 WebError::new("search_failed", "The search service failed.")
@@ -716,13 +746,10 @@ impl SessionState {
             }
             hits
         } else if let Some(s) = service
-            && s.kind == "brave"
+            && let Some(adapter) = SearchAdapter::named(&s.kind)
             && let Some(api_key) = s.api_key.as_deref()
         {
-            let endpoint = s
-                .endpoint
-                .as_deref()
-                .unwrap_or("https://api.search.brave.com/res/v1/web/search");
+            let endpoint = s.endpoint.as_deref().unwrap_or(adapter.default_endpoint());
             let mut url = parse_url(endpoint).map_err(|_| {
                 WebError::new(
                     "search_unavailable",
@@ -743,26 +770,70 @@ impl SessionState {
                     "The configured search service is unusable.",
                 ));
             }
-            url.query_pairs_mut()
-                .append_pair("q", &effective_query)
-                .append_pair("count", &count.to_string());
             let config = NetworkConfig {
                 allow_private_hosts: document.allow_private_hosts.clone(),
                 proxy,
             };
-            let headers = HashMap::from([("X-Subscription-Token".to_owned(), api_key.to_owned())]);
-            let response = get(&url, &config, cancel, diagnostics, &headers).await?;
-            if !(200..300).contains(&response.status) || response.download_limited {
+            let bearer =
+                || HashMap::from([("Authorization".to_owned(), format!("Bearer {api_key}"))]);
+            let response = match adapter {
+                SearchAdapter::Brave => {
+                    url.query_pairs_mut()
+                        .append_pair("q", &effective_query)
+                        .append_pair("count", &count.to_string());
+                    let headers =
+                        HashMap::from([("X-Subscription-Token".to_owned(), api_key.to_owned())]);
+                    get(&url, &config, cancel, diagnostics, &headers).await?
+                }
+                SearchAdapter::DeepSeek => {
+                    let wanted = if allowed.is_some() || blocked.is_some() {
+                        count * FILTERED_OVERFETCH
+                    } else {
+                        count
+                    };
+                    let body = json!({"query": query, "count": wanted, "need_content": false});
+                    post_json(&url, &body, &config, cancel, diagnostics, &bearer()).await?
+                }
+                SearchAdapter::Tavily => {
+                    let mut body = json!({
+                        "query": query,
+                        "max_results": count,
+                        "include_answer": false,
+                    });
+                    if let Some(allowed) = &allowed {
+                        body["include_domains"] = json!(allowed);
+                    }
+                    if let Some(blocked) = &blocked {
+                        body["exclude_domains"] = json!(blocked);
+                    }
+                    post_json(&url, &body, &config, cancel, diagnostics, &bearer()).await?
+                }
+            };
+            if !(200..300).contains(&response.status) {
+                return Err(WebError::new(
+                    "search_failed",
+                    format!("The search service failed (HTTP {}).", response.status),
+                ));
+            }
+            if response.download_limited {
                 return Err(WebError::new("search_failed", "The search service failed."));
             }
             let value: Value = serde_json::from_slice(&response.body).map_err(|_| {
                 WebError::new("search_failed", "The search service returned invalid data.")
             })?;
-            parse_brave(&value, api_key)?
+            match adapter {
+                SearchAdapter::Brave => parse_brave(&value, api_key)?,
+                SearchAdapter::DeepSeek => {
+                    parse_results(&value, api_key, &["summary", "snippet"], "date")?
+                }
+                SearchAdapter::Tavily => {
+                    parse_results(&value, api_key, &["content"], "published_date")?
+                }
+            }
         } else {
             return Err(WebError::new(
                 "search_unavailable",
-                "No usable search service is configured.",
+                "No usable search service is configured. The user can choose one in Settings, under Web search.",
             ));
         };
         let results: Vec<Hit> = raw
@@ -842,6 +913,52 @@ fn parse_brave(value: &Value, key: &str) -> Result<Vec<Hit>, WebError> {
             url: url.to_string(),
             snippet: truncate_chars(&redact(&plain_text(description), Some(key)), 500),
             published_at: None,
+        });
+    }
+    Ok(hits)
+}
+
+/// A `{results: [{url, title, ..}]}` reply, the form the DeepSeek and Tavily
+/// search APIs share. `snippets` names the fields to take the text from, the
+/// first non-empty one winning; `date` the publication date's.
+fn parse_results(
+    value: &Value,
+    key: &str,
+    snippets: &[&str],
+    date: &str,
+) -> Result<Vec<Hit>, WebError> {
+    let bad = || WebError::new("search_failed", "The search service returned invalid data.");
+    let results = value
+        .get("results")
+        .and_then(Value::as_array)
+        .ok_or_else(bad)?;
+    let mut hits = Vec::with_capacity(results.len());
+    for item in results {
+        let item = item.as_object().ok_or_else(bad)?;
+        let text = |name: &str| match item.get(name) {
+            None | Some(Value::Null) => Ok(""),
+            Some(value) => value.as_str().ok_or_else(bad),
+        };
+        let url = parse_url(item.get("url").and_then(Value::as_str).ok_or_else(bad)?)
+            .map_err(|_| bad())?;
+        if redact(url.as_str(), Some(key)) != url.as_str() {
+            return Err(bad());
+        }
+        let mut snippet = "";
+        for name in snippets {
+            snippet = text(name)?;
+            if !snippet.is_empty() {
+                break;
+            }
+        }
+        let published_at = Some(plain_text(text(date)?))
+            .filter(|published| !published.is_empty())
+            .map(|published| truncate_chars(&published, 500));
+        hits.push(Hit {
+            title: truncate_chars(&redact(&plain_text(text("title")?), Some(key)), 500),
+            url: url.to_string(),
+            snippet: truncate_chars(&redact(&plain_text(snippet), Some(key)), 500),
+            published_at,
         });
     }
     Ok(hits)

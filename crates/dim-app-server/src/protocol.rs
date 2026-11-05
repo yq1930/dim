@@ -235,6 +235,8 @@ pub const WEB_MANAGEMENT_METHODS: &[&str] = &[
     "account.grok.logout",
     "settings.read",
     "settings.update",
+    "settings.view",
+    "settings.edit",
     "skills.catalog",
     "skills.set_enabled",
     "skills.refresh",
@@ -277,6 +279,9 @@ pub const WEB_MANAGEMENT_METHODS: &[&str] = &[
 ];
 
 pub const WEB_SETTINGS_SOURCES: &[&str] = &["model-log", "execution"];
+/// Sources the web entry reaches through `settings.view` and `settings.edit`,
+/// which never return a `writeOnly` member.
+pub const WEB_PROJECTED_SETTINGS_SOURCES: &[&str] = &["model-log", "execution", "web"];
 
 pub const LOCAL_EXECUTION_METHODS: [&str; 10] = [
     "session.permission.get",

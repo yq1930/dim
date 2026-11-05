@@ -24,6 +24,7 @@ export const router = createRouter({
         { path: "mcp/:serverId?", name: "settings-mcp", component: () => import("./features/settings/McpSettings.vue") },
         { path: "plugins/:pluginId?", name: "settings-plugins", component: () => import("./features/settings/PluginSettings.vue") },
         { path: "skills/:skillId?", name: "settings-skills", component: () => import("./features/settings/SkillSettings.vue") },
+        { path: "web", name: "settings-web", component: () => import("./features/settings/WebSearchSettings.vue") },
         { path: "permissions/:page?", name: "settings-permissions", component: () => import("./features/settings/PermissionsSettings.vue") },
         { path: "archived", name: "settings-archived", component: () => import("./features/settings/ArchivedSettings.vue") },
         { path: "diagnostics", name: "settings-diagnostics", component: () => import("./features/settings/DiagnosticsSettings.vue") },

@@ -4,7 +4,7 @@
 //! this owner depends on Settings, as PermissionRules does for `permission`.
 use crate::{
     methods::ManagementMethods,
-    settings::{Read, SettingsError, SettingsService, Update, Writer},
+    settings::{Edit, Read, SettingsError, SettingsService, SettingsSnapshot, Update, Writer},
 };
 use dim_agent_capabilities::{
     file_storage::FileStorageError,
@@ -13,6 +13,7 @@ use dim_agent_capabilities::{
 use dim_agent_runtime::Names;
 use rutis::Ctx;
 use rutis::host::{BoxFuture, CtxHost, DynPlugin, Effect, Key, TypeKey};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 /// The client path's wire errors (§4.3).
@@ -29,6 +30,11 @@ fn wire(error: SettingsError) -> RpcError {
         _ => "settings_failed",
     };
     RpcError::app(-32000, kind, error.to_string())
+}
+
+/// The `settings.view` and `settings.edit` reply: secrets left out, named.
+fn projected((snapshot, set): (SettingsSnapshot<Value>, Vec<String>)) -> Value {
+    json!({"revision": snapshot.revision, "document": snapshot.document, "writeOnlySet": set})
 }
 
 /// Process owner of the `settings` management namespace. A client write may
@@ -62,6 +68,8 @@ impl DynPlugin for SettingsMethodsPlugin {
                 vec![
                     MethodDecl::new("settings.read", false, Interruption::Report),
                     MethodDecl::new("settings.update", true, Interruption::Report),
+                    MethodDecl::new("settings.view", false, Interruption::Report),
+                    MethodDecl::new("settings.edit", true, Interruption::Report),
                 ],
                 Arc::new(move |method, value, stopping, _| {
                     let service = service.clone();
@@ -91,6 +99,31 @@ impl DynPlugin for SettingsMethodsPlugin {
                                         .await
                                         .map_err(wire)?,
                                 )
+                            }
+                            "settings.view" => {
+                                let Read { source, scope } = params(value)?;
+                                reply(projected(
+                                    service
+                                        .view_declared(&source, scope, &stopping)
+                                        .await
+                                        .map_err(wire)?,
+                                ))
+                            }
+                            "settings.edit" => {
+                                let edit: Edit = params(value)?;
+                                reply(projected(
+                                    service
+                                        .edit_declared(
+                                            &edit.source,
+                                            edit.scope,
+                                            &edit.expected_revision,
+                                            edit.document,
+                                            &edit.clear,
+                                            &stopping,
+                                        )
+                                        .await
+                                        .map_err(wire)?,
+                                ))
                             }
                             _ => unreachable!("registered settings management method"),
                         }

@@ -137,6 +137,35 @@ pub fn without_write_only(schema: &Value, mut document: Value) -> (Value, Vec<St
     (document, set)
 }
 
+/// The reverse of [`without_write_only`] for a client that never read the
+/// secrets: each `writeOnly` member that `next` leaves out under a parent it
+/// keeps takes its value from `stored`, unless `clear` names its pointer.
+fn keep_write_only(schema: &Value, stored: &Value, next: &mut Value, clear: &[String]) {
+    fn keep(schema: &Value, stored: &Value, next: &mut Value, clear: &[String], at: &str) {
+        let (Some(properties), Value::Object(stored), Value::Object(members)) = (
+            schema.get("properties").and_then(Value::as_object),
+            stored,
+            next,
+        ) else {
+            return;
+        };
+        for (name, property) in properties {
+            let path = format!("{at}/{}", name.replace('~', "~0").replace('/', "~1"));
+            if property.get("writeOnly") == Some(&Value::Bool(true)) {
+                if !members.contains_key(name)
+                    && !clear.contains(&path)
+                    && let Some(value) = stored.get(name)
+                {
+                    members.insert(name.clone(), value.clone());
+                }
+            } else if let (Some(stored), Some(member)) = (stored.get(name), members.get_mut(name)) {
+                keep(property, stored, member, clear, &path);
+            }
+        }
+    }
+    keep(schema, stored, next, clear, "");
+}
+
 /// Whether `schema`, or a member reachable from it through `properties`, has
 /// `writeOnly: true`: an agent may not write a value there (§1.2).
 pub fn holds_write_only(schema: &Value) -> bool {
@@ -216,6 +245,54 @@ impl SettingsService {
         let (declared, path) = self.declared(source, scope)?;
         self.read_source(declared, path, scope, cancel).await
     }
+    /// [`Self::read_declared`] for a client that may not read secrets: the
+    /// document without its `writeOnly` members, and the pointers of those set.
+    pub async fn view_declared(
+        &self,
+        source: &str,
+        scope: SettingsScope,
+        cancel: &CancellationToken,
+    ) -> Result<(SettingsSnapshot<Value>, Vec<String>)> {
+        self.check_open(cancel)?;
+        let (declared, path) = self.declared(source, scope)?;
+        let schema = declared.declaration.schema.clone();
+        let snapshot = self.read_source(declared, path, scope, cancel).await?;
+        let (document, set) = without_write_only(&schema, snapshot.document);
+        Ok((
+            SettingsSnapshot {
+                revision: snapshot.revision,
+                document,
+            },
+            set,
+        ))
+    }
+    /// [`Self::update_declared`] as a client write from a document read through
+    /// [`Self::view_declared`]: the secrets it leaves out keep their stored
+    /// values ([`keep_write_only`]), and the reply is projected the same way.
+    pub async fn edit_declared(
+        self: &Arc<Self>,
+        source: &str,
+        scope: SettingsScope,
+        expected: &str,
+        mut document: Value,
+        clear: &[String],
+        cancel: &CancellationToken,
+    ) -> Result<(SettingsSnapshot<Value>, Vec<String>)> {
+        let current = self.read_declared(source, scope, cancel).await?;
+        let schema = self.declared(source, scope)?.0.declaration.schema.clone();
+        keep_write_only(&schema, &current.document, &mut document, clear);
+        let updated = self
+            .update_declared(source, scope, expected, document, Writer::Client, cancel)
+            .await?;
+        let (document, set) = without_write_only(&schema, updated.document);
+        Ok((
+            SettingsSnapshot {
+                revision: updated.revision,
+                document,
+            },
+            set,
+        ))
+    }
     /// Replaces a declared source if `expected` is its current revision, and
     /// returns the stored document (with defaults).
     pub async fn update_declared(
@@ -264,6 +341,17 @@ pub(crate) struct Update {
     pub(crate) scope: SettingsScope,
     pub(crate) expected_revision: String,
     pub(crate) document: Value,
+}
+/// `settings.edit` requests: an update whose secrets were never read.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct Edit {
+    pub(crate) source: String,
+    pub(crate) scope: SettingsScope,
+    pub(crate) expected_revision: String,
+    pub(crate) document: Value,
+    #[serde(default)]
+    pub(crate) clear: Vec<String>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

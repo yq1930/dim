@@ -309,11 +309,18 @@ impl Connection {
                 let allowed = match call {
                     Call::Shutdown(_) => false,
                     Call::Contributed { method, params } => {
-                        if matches!(method.as_str(), "settings.read" | "settings.update") {
+                        let sources = match method.as_str() {
+                            "settings.read" | "settings.update" => Some(WEB_SETTINGS_SOURCES),
+                            "settings.view" | "settings.edit" => {
+                                Some(WEB_PROJECTED_SETTINGS_SOURCES)
+                            }
+                            _ => None,
+                        };
+                        if let Some(sources) = sources {
                             params
                                 .get("source")
                                 .and_then(Value::as_str)
-                                .is_some_and(|source| WEB_SETTINGS_SOURCES.contains(&source))
+                                .is_some_and(|source| sources.contains(&source))
                         } else {
                             !rpc.management.holds(method)
                                 || WEB_MANAGEMENT_METHODS.contains(&method.as_str())

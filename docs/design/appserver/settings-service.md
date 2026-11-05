@@ -238,6 +238,15 @@ with `managementMethods` (§4.5). They are never served to paired devices (overv
 | --- | --- | --- | --- |
 | `settings.read` | `{source, scope}` | `{revision, document}` | invalid params (bad scope), `settings_unknown_source`, `settings_failed` |
 | `settings.update` | `{source, scope, expectedRevision, document}` | `{revision, document}` | invalid params (bad scope, schema violation), `settings_unknown_source`, `settings_conflict`, `settings_unsynced`, `settings_failed` |
+| `settings.view` | `{source, scope}` | `{revision, document, writeOnlySet}` | as `settings.read` |
+| `settings.edit` | `{source, scope, expectedRevision, document, clear?}` | `{revision, document, writeOnlySet}` | as `settings.update` |
+
+- `settings.view` and `settings.edit` serve a client that may not read secrets, such as the Web
+  workspace's entry. `settings.view` leaves out every `writeOnly` member and lists the JSON
+  Pointers of those that hold a value in `writeOnlySet`, as the agent's path does (§1.2).
+  `settings.edit` is a client write in which a `writeOnly` member the document leaves out, under a
+  parent object it keeps, keeps its stored value; a pointer in `clear` removes it instead. Its
+  reply is projected as `settings.view`'s is.
 
 - Only registered declared sources are served. A Rust source (for example `mcp`) is
   `settings_unknown_source`.

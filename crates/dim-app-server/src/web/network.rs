@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use flate2::{Decompress, FlushDecompress, Status, write::GzDecoder};
-use http_body_util::{BodyExt, Empty};
+use http_body_util::{BodyExt, Full};
 use hyper_util::rt::TokioIo;
 use rustls::pki_types::ServerName;
 use serde::{Deserialize, Serialize};
@@ -732,6 +732,50 @@ pub async fn get(
     diagnostics: &mut Vec<Diagnostic>,
     headers: &HashMap<String, String>,
 ) -> Result<Response, WebError> {
+    send(
+        http::Method::GET,
+        url,
+        Bytes::new(),
+        config,
+        cancel,
+        diagnostics,
+        headers,
+    )
+    .await
+}
+
+/// Sends `body` as JSON under the same address policy and limits as [`get`].
+pub async fn post_json(
+    url: &Url,
+    body: &serde_json::Value,
+    config: &NetworkConfig,
+    cancel: &CancellationToken,
+    diagnostics: &mut Vec<Diagnostic>,
+    headers: &HashMap<String, String>,
+) -> Result<Response, WebError> {
+    let mut headers = headers.clone();
+    headers.insert("Content-Type".to_owned(), "application/json".to_owned());
+    send(
+        http::Method::POST,
+        url,
+        Bytes::from(body.to_string()),
+        config,
+        cancel,
+        diagnostics,
+        &headers,
+    )
+    .await
+}
+
+async fn send(
+    method: http::Method,
+    url: &Url,
+    body: Bytes,
+    config: &NetworkConfig,
+    cancel: &CancellationToken,
+    diagnostics: &mut Vec<Diagnostic>,
+    headers: &HashMap<String, String>,
+) -> Result<Response, WebError> {
     let host = hostname(url);
     let policy = Policy::new(&host, &config.allow_private_hosts, diagnostics)?;
     let port = url
@@ -794,7 +838,7 @@ pub async fn get(
             None => url.host_str().unwrap_or_default().to_owned(),
         };
         let mut builder = http::Request::builder()
-            .method("GET")
+            .method(method)
             .uri(path_and_query)
             .header("Host", host_header)
             .header(
@@ -811,7 +855,7 @@ pub async fn get(
             builder = builder.header(k.as_str(), v.as_str());
         }
         let req = builder
-            .body(Empty::<Bytes>::new())
+            .body(Full::new(body))
             .map_err(|_| WebError::new("connect_failed", "The connection failed."))?;
         let response = tokio::select! {
             _ = cancel.cancelled() => return Err(WebError::new("cancelled", "Call cancelled.")),

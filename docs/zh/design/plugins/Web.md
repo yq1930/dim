@@ -113,7 +113,7 @@ sequenceDiagram
       M-->>W: unavailable
       W-->>X: 错误 search_unavailable
     end
-  else 已配置适配器（如 brave）
+  else 已配置适配器（brave、deepseek、tavily）
     W->>Q: 经 HTTPS 查询
     Q-->>W: 命中结果
     W-->>X: 编号结果列表，域名过滤由 Web 应用
@@ -345,7 +345,7 @@ Fake-IP DNS 答案同样受此策略约束。合成的基准测试地址（`198.
 
 | 字段 | 类型 | 默认值 |
 | --- | --- | --- |
-| `searchService` | `{ kind: "<built-in adapter id>", endpoint?: string, apiKey?: string }` 或缺省；仅用户 | 缺省（已登录时经 `managedProviders` 使用 `dim-oauth`；否则 `web_search` 返回 `search_unavailable`） |
+| `searchService` | `{ kind: "brave" \| "deepseek" \| "tavily" \| "dim-oauth", endpoint?: string, apiKey?: string }` 或缺省；仅用户。除 `dim-oauth` 外的适配器都需要 `apiKey`；`endpoint` 替换其默认地址 | 缺省（已登录时经 `managedProviders` 使用 `dim-oauth`；否则 `web_search` 返回 `search_unavailable`） |
 | `allowPrivateHosts` | string[] | `[]` |
 | `proxy` | string（URL） | 缺省 |
 

@@ -2779,6 +2779,7 @@
       "parent": "dim_app_server",
       "file": "crates/dim-app-server/src/settings_methods.rs",
       "unexpandedMacros": [
+        "json",
         "unreachable",
         "vec"
       ]
@@ -7229,6 +7230,7 @@
         "path RpcError",
         "path RpcError::app",
         "path RpcError::closed",
+        "path RpcError::invalid",
         "path RpcError::reloading",
         "path SessionMethods",
         "path methods",
@@ -20421,6 +20423,7 @@
         "path SessionSummary",
         "path Summaries",
         "path WEB_MANAGEMENT_METHODS",
+        "path WEB_PROJECTED_SETTINGS_SOURCES",
         "path WEB_SETTINGS_SOURCES",
         "path agent_unknown",
         "path crate::protocol::ModelSelection",
@@ -25321,6 +25324,7 @@
         "path declared",
         "path declared::provide",
         "use declared::Declared",
+        "use declared::Edit",
         "use declared::Read",
         "use declared::SourceDeclaration",
         "use declared::Update",
@@ -25394,6 +25398,7 @@
         "path SettingsService",
         "path SettingsSnapshot",
         "path project_authorizations",
+        "path snapshot",
         "path validate_file",
         "path validate_namespace"
       ]
@@ -25511,17 +25516,21 @@
         "path SettingsError::Storage",
         "path SettingsError::UnknownSource",
         "path SettingsService",
+        "path SettingsSnapshot",
         "use crate::settings::SettingsError",
-        "use crate::settings::SettingsService"
+        "use crate::settings::SettingsService",
+        "use crate::settings::SettingsSnapshot"
       ]
     },
     {
       "from": "dim_app_server::settings_methods",
       "to": "dim_app_server::settings::declared",
       "references": [
+        "path Edit",
         "path Read",
         "path Update",
         "path Writer::Client",
+        "use crate::settings::Edit",
         "use crate::settings::Read",
         "use crate::settings::Update",
         "use crate::settings::Writer"
@@ -27037,6 +27046,7 @@
         "path get",
         "path hostname",
         "path parse_url",
+        "path post_json",
         "path proxy_url",
         "use network::DOWNLOAD_LIMIT",
         "use network::Diagnostic",
@@ -27046,6 +27056,7 @@
         "use network::get",
         "use network::hostname",
         "use network::parse_url",
+        "use network::post_json",
         "use network::proxy_url"
       ]
     },

@@ -213,6 +213,13 @@ Settings 在内存中保存已登记的来源（声明已编译），各自保�
 | --- | --- | --- | --- |
 | `settings.read` | `{source, scope}` | `{revision, document}` | 参数无效（作用域错误）、`settings_unknown_source`、`settings_failed` |
 | `settings.update` | `{source, scope, expectedRevision, document}` | `{revision, document}` | 参数无效（作用域错误、违反 schema）、`settings_unknown_source`、`settings_conflict`、`settings_unsynced`、`settings_failed` |
+| `settings.view` | `{source, scope}` | `{revision, document, writeOnlySet}` | 同 `settings.read` |
+| `settings.edit` | `{source, scope, expectedRevision, document, clear?}` | `{revision, document, writeOnlySet}` | 同 `settings.update` |
+
+- `settings.view` 和 `settings.edit` 服务不能读取密钥的客户端，例如 Web 工作台入口。`settings.view` 省略所有
+  `writeOnly` 成员，并在 `writeOnlySet` 中列出有值者的 JSON Pointer，与 agent 路径相同（§1.2）。
+  `settings.edit` 是一次客户端写入：文档在其保留的父对象下省略的 `writeOnly` 成员保持存储值；`clear` 中列出的
+  指针则被删除。其回复按 `settings.view` 的方式投影。
 
 - 只服务已登记的声明来源。Rust 来源（例如 `mcp`）返回 `settings_unknown_source`，仍由其所有者的方法
   修改。

@@ -113,7 +113,7 @@ sequenceDiagram
       M-->>W: unavailable
       W-->>X: error search_unavailable
     end
-  else configured adapter (e.g. brave)
+  else configured adapter (brave, deepseek, tavily)
     W->>Q: query over HTTPS
     Q-->>W: hits
     W-->>X: numbered result list, domain filters applied by Web
@@ -345,7 +345,7 @@ Fake-IP DNS answers remain subject to this policy. Synthetic benchmark addresses
 
 | Field | Type | Default |
 | --- | --- | --- |
-| `searchService` | `{ kind: "<built-in adapter id>", endpoint?: string, apiKey?: string }` or absent; user-only | absent (uses `dim-oauth` via `managedProviders` when signed in; otherwise `web_search` returns `search_unavailable`) |
+| `searchService` | `{ kind: "brave" \| "deepseek" \| "tavily" \| "dim-oauth", endpoint?: string, apiKey?: string }` or absent; user-only. Each adapter but `dim-oauth` requires `apiKey`; `endpoint` replaces its default URL | absent (uses `dim-oauth` via `managedProviders` when signed in; otherwise `web_search` returns `search_unavailable`) |
 | `allowPrivateHosts` | string[] | `[]` |
 | `proxy` | string (URL) | absent |
 

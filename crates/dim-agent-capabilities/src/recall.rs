@@ -2098,11 +2098,7 @@ fn line_heading<'a>(thing: &Thing<'a>) -> String {
 }
 
 fn preset(preset: &PermissionPreset) -> &'static str {
-    match preset {
-        PermissionPreset::ReadOnly => "read-only",
-        PermissionPreset::WorkspaceWrite => "workspace-write",
-        PermissionPreset::FullAccess => "full-access",
-    }
+    preset.name()
 }
 
 fn time(millis: u64) -> DateTime<Utc> {

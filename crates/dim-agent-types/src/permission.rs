@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 pub enum PermissionPreset {
     #[default]
     ReadOnly,
+    /// The workspace-write boundary with every write asked for, workspace
+    /// writes included ([ADR 022](../../../docs/adr/022-the-ask-preset.md)).
+    Ask,
     WorkspaceWrite,
     FullAccess,
 }
@@ -74,20 +77,33 @@ impl PermissionPolicy {
 }
 
 impl PermissionPreset {
-    /// The order `read-only < workspace-write < full-access`.
+    /// The order `read-only < ask < workspace-write < full-access`.
     pub fn rank(self) -> u8 {
         match self {
             PermissionPreset::ReadOnly => 0,
-            PermissionPreset::WorkspaceWrite => 1,
-            PermissionPreset::FullAccess => 2,
+            PermissionPreset::Ask => 1,
+            PermissionPreset::WorkspaceWrite => 2,
+            PermissionPreset::FullAccess => 3,
         }
     }
 
     pub fn file_access(self) -> FileAccess {
         match self {
             PermissionPreset::ReadOnly => FileAccess::ReadOnly,
-            PermissionPreset::WorkspaceWrite => FileAccess::WorkspaceReadWrite,
+            PermissionPreset::Ask | PermissionPreset::WorkspaceWrite => {
+                FileAccess::WorkspaceReadWrite
+            }
             PermissionPreset::FullAccess => FileAccess::Unrestricted,
+        }
+    }
+
+    /// The preset's protocol name.
+    pub fn name(self) -> &'static str {
+        match self {
+            PermissionPreset::ReadOnly => "read-only",
+            PermissionPreset::Ask => "ask",
+            PermissionPreset::WorkspaceWrite => "workspace-write",
+            PermissionPreset::FullAccess => "full-access",
         }
     }
 }

@@ -104,6 +104,7 @@ fn preset_name(preset: PermissionPreset) -> &'static str {
 fn preset_label(preset: PermissionPreset) -> &'static str {
     match preset {
         PermissionPreset::ReadOnly => "Read only",
+        PermissionPreset::Ask => "Ask",
         PermissionPreset::WorkspaceWrite => "Workspace write",
         PermissionPreset::FullAccess => "Full access",
     }
@@ -112,6 +113,7 @@ fn preset_label(preset: PermissionPreset) -> &'static str {
 fn consequence(preset: PermissionPreset) -> &'static str {
     match preset {
         PermissionPreset::ReadOnly => "reads only; writes and commands are refused",
+        PermissionPreset::Ask => "asks before every write and command",
         PermissionPreset::WorkspaceWrite => "writes inside the workspace; asks outside it",
         PermissionPreset::FullAccess => "no path limits; tools run without asking",
     }

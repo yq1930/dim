@@ -30,6 +30,7 @@ original text.
 | [020 — Timeline reads converge on the event query and replay is removed](020-timeline-read-convergence.md) | Proposed | Refines 019 D5; follows 006 D1 |
 
 | [021 — A read follows the object that owns the state](021-reads-follow-the-state-owner.md) | Proposed | Supersedes 020 D6's unloaded-Session clause; refines 019 D1 for the ended-line read |
+| [022 — The ask preset](022-the-ask-preset.md) | Accepted | Amends 018 D1: a fourth preset, ranked between read-only and workspace-write, asks for every write |
 
 Source baseline: [initial foundation parent](https://github.com/arcships/dim/commit/aaaffa5768e031d781abb73e45b1915b05dc2aa0).
 This baseline includes lifecycle fixes not necessarily present on the default branch.

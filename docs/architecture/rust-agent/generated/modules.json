@@ -808,7 +808,6 @@
       "unexpandedMacros": [
         "format",
         "tokio::select",
-        "unreachable",
         "vec"
       ]
     },
@@ -10111,16 +10110,6 @@
     },
     {
       "from": "dim_agent_capabilities::hooks::runner",
-      "to": "dim_agent_types::permission",
-      "references": [
-        "path PermissionPreset::FullAccess",
-        "path PermissionPreset::ReadOnly",
-        "path PermissionPreset::WorkspaceWrite",
-        "use dim_agent_types::PermissionPreset"
-      ]
-    },
-    {
-      "from": "dim_agent_capabilities::hooks::runner",
       "to": "dim_agent_types::tool",
       "references": [
         "path ToolDefinition",
@@ -11305,6 +11294,7 @@
         "path FileAccess::WorkspaceReadWrite",
         "path PermissionChangedData",
         "path PermissionPolicy",
+        "path PermissionPreset::Ask",
         "path PermissionPreset::FullAccess",
         "path PermissionPreset::ReadOnly",
         "path PermissionPreset::WorkspaceWrite",
@@ -12200,10 +12190,7 @@
       "from": "dim_agent_capabilities::recall",
       "to": "dim_agent_types::permission",
       "references": [
-        "path PermissionPreset",
-        "path PermissionPreset::FullAccess",
-        "path PermissionPreset::ReadOnly",
-        "path PermissionPreset::WorkspaceWrite"
+        "path PermissionPreset"
       ]
     },
     {
@@ -30406,6 +30393,7 @@
         "path PermissionChangedData::deserialize",
         "path PermissionPolicy",
         "path PermissionPreset",
+        "path PermissionPreset::Ask",
         "path PermissionPreset::FullAccess",
         "path PermissionPreset::ReadOnly",
         "path PermissionPreset::WorkspaceWrite",
@@ -32503,6 +32491,7 @@
       "references": [
         "path PermissionPolicy",
         "path PermissionPreset",
+        "path PermissionPreset::Ask",
         "path PermissionPreset::FullAccess",
         "path PermissionPreset::ReadOnly",
         "path PermissionPreset::WorkspaceWrite",
@@ -38113,6 +38102,7 @@
       "references": [
         "path dim_agent_types::PermissionPolicy",
         "path dim_agent_types::PermissionPreset",
+        "path dim_agent_types::PermissionPreset::Ask",
         "path dim_agent_types::PermissionPreset::FullAccess",
         "path dim_agent_types::PermissionPreset::ReadOnly",
         "path dim_agent_types::PermissionPreset::WorkspaceWrite"

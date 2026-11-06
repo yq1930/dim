@@ -58,7 +58,7 @@ fn declaration(description: &str) -> ToolDefinition {
                             }
                         },
                         "mode": {"type": "string", "enum": ["create", "reuse"]},
-                        "policy": {"type": "string", "enum": ["read-only", "workspace-write", "full-access"]},
+                        "policy": {"type": "string", "enum": ["read-only", "ask", "workspace-write", "full-access"]},
                         "max_run_minutes": {"type": "integer", "minimum": 1}
                     }
                 }

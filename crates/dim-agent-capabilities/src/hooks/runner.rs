@@ -26,7 +26,7 @@ use dim_agent_runtime::{
 use dim_agent_types::{
     AgentEvent, ApprovalCancelledData, ApprovalDecision, ApprovalRequestData, ApprovalRespondData,
     BranchSource, ContentBlock, EventKind, InputBlock, InputMessageData, InputMode, JsonObject,
-    PermissionPreset, ToolCallResult, ToolContent, ToolDefinition, TurnOutcome, UserInput,
+    ToolCallResult, ToolContent, ToolDefinition, TurnOutcome, UserInput,
 };
 use rutis::Ctx;
 use rutis::host::{BoxFuture, CtxHost, DynPlugin, Effect, Key, TypeKey};
@@ -130,11 +130,7 @@ impl HooksRuntime {
 
     /// The common fields of every payload (A.3).
     fn payload(&self, event: HookEvent, branch: &str) -> JsonObject {
-        let preset = match self.config.permission_policy.preset {
-            PermissionPreset::ReadOnly => "read-only",
-            PermissionPreset::WorkspaceWrite => "workspace-write",
-            PermissionPreset::FullAccess => "full-access",
-        };
+        let preset = self.config.permission_policy.preset.name();
         json!({
             "hook_event_name": event.name(),
             "session_id": self.identity.session_id,

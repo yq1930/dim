@@ -126,7 +126,7 @@ Zed 保持原有启动入口：npm 包的 `dim` 与 `dimcode` 别名指向同一
 | `session/cancel` | 可接 | §6；作用于该连接已登记的 Session，有本连接 prompt 时先撤回尚未采用的 input，再按需 `session.stop {sessionId,branchId:"main"}`；没有本连接 prompt 时，仍可请求该 Session main 的当前 turn 停止。不能因本地没有 prompt 就忽略取消 |
 | `session/close` | 条件可接 | 原生 `session.close {sessionId}`；这是显式关闭整个 Dim Session，影响其他客户端和分支。等待原生结算成功后清理本 runtime、回复 `{}`；不是 detach。当前 daemon 对关闭 id 的再 attach 可能拒绝，不能承诺关闭后可立即 resume |
 | `session/delete` | 条件可接 | 原生 `session.delete {sessionId}`，等待原生持久化删除结果，再删除本 runtime。失败保留诊断，不本地隐藏记录冒充删除 |
-| `session/set_mode` | 条件可接 | 仅提供 `read-only`、`workspace-write`、`full-access`。先 get policy/version，再 update `{sessionId,branchId:"main",expectedVersion,policy:<保留工具列表，仅替换 preset>}`。冲突返回错误并刷新；不盲重试旧 policy，不映射 plan mode |
+| `session/set_mode` | 条件可接 | 仅提供 `read-only`、`ask`、`workspace-write`、`full-access`。先 get policy/version，再 update `{sessionId,branchId:"main",expectedVersion,policy:<保留工具列表，仅替换 preset>}`。冲突返回错误并刷新；不盲重试旧 policy，不映射 plan mode |
 | `session/set_config_option` | 条件可接 | `mode` 复用上一行。`model` 仅在安全 provider catalog 和 `session.model.update` 可用时提供：保留 catalog 中 native model id，使用生成该选项的 providerId 调用 `{sessionId,branchId:"main",providerId,modelId}`。等待原生 `{model,outcome:"adopted"|"unchanged"}` 并接收 `context/configured`，再返回完整 configOptions；`configuration_superseded` 时刷新并报错，不把请求值直接当 currentValue |
 
 mode 和 model 的选项来自当前 Session 的公开状态，不能用用户偏好默认值冒充已采用值。模型切换影响可用选项时重读 catalog；超时或连接丢失后的写入不能报告为未应用。effort、fast/service tier 的写入口虽然存在，公开 `context/configured` 视图现在也读回已采用的 `model_preferences`，但首版不发布这些 config options。不同 Session 的可选方法逐个检查，不能因另一个 Session 安装了插件就假定可用。
@@ -420,7 +420,7 @@ Core README 在 capability catalog 中提到 sessionConfig，但固定版本的 
 
 ### 8.3 首版具体接线与生命周期
 
-**Startup config**：在任何 native 写入之前解析 `{version:1,modelId?,configOptionValues}`。接受 model 和 mode 两个选项；未知选项以参数错误拒绝，错误信息及 data.field 指明配置路径。modelId 若存在即为唯一模型选择，否则取 configOptionValues.model；被覆盖的 model 选项不再参与选择，但整个 DTO 仍须合法。通过安全 catalog 和生成 ACP model option 时保留的映射取得 `{provider,modelId}`，放入同一 `session.create` 请求的 `model`。mode 只接受 `read-only`、`workspace-write`、`full-access`，放入同一请求的 `permissionPolicy:{preset:mode}`，沿用原生显式创建策略；未提供 mode 时不发送 permissionPolicy，保留原生默认。两项可以单独提供，不调用 provider.select/update 或创建后的 permission.update，不改共享默认值。显式模型选择要求 catalog 能解析唯一目标，不能退回默认。load/resume/fork 若携带有效非空选择，在 attach/fork 之前拒绝；空配置无副作用。native 建立成功后才从实际响应生成 config options。
+**Startup config**：在任何 native 写入之前解析 `{version:1,modelId?,configOptionValues}`。接受 model 和 mode 两个选项；未知选项以参数错误拒绝，错误信息及 data.field 指明配置路径。modelId 若存在即为唯一模型选择，否则取 configOptionValues.model；被覆盖的 model 选项不再参与选择，但整个 DTO 仍须合法。通过安全 catalog 和生成 ACP model option 时保留的映射取得 `{provider,modelId}`，放入同一 `session.create` 请求的 `model`。mode 只接受 `read-only`、`ask`、`workspace-write`、`full-access`，放入同一请求的 `permissionPolicy:{preset:mode}`，沿用原生显式创建策略；未提供 mode 时不发送 permissionPolicy，保留原生默认。两项可以单独提供，不调用 provider.select/update 或创建后的 permission.update，不改共享默认值。显式模型选择要求 catalog 能解析唯一目标，不能退回默认。load/resume/fork 若携带有效非空选择，在 attach/fork 之前拒绝；空配置无副作用。native 建立成功后才从实际响应生成 config options。
 
 **Background exec**：直接消费已提交的 `exec/started` / `exec/ended`，来源是现有 [BackgroundExec](../../crates/dim-agent-capabilities/src/workspace_tools/background.rs)，不另造 task 业务服务。开始时生成与发起工具不同的稳定 ACP toolCallId，并以 parentToolCallId 关联；这样原工具因转后台返回 completed 后，不会被重新改成 in_progress。任务状态开始为 in_progress，原生 completed → completed，failed/cancelled → failed 并保留真实原因，不能造 Core 不存在的 task cancelled 状态。结束通知允许发生在 prompt response 之后；不因此延长或重新打开那个 prompt。固定头回放重建投影并去重，live 后续仅处理新的 sequence。EOF/卸载只丢弃显示关联，不停止原生后台任务。
 

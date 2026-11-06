@@ -22,14 +22,17 @@ The policy is the preset and two tool-name lists:
 
 | Field | Values |
 | --- | --- |
-| `preset` | `read-only`, `workspace-write`, `full-access` |
+| `preset` | `read-only`, `ask`, `workspace-write`, `full-access` |
 | `allowedTools` | tool names that run without the preset's question |
 | `disallowedTools` | tool names that always deny; a deny wins over any allow |
 
 `preset` answers both what may run and what is asked first, and it is the policy of record
 ([ADR 018](../../../adr/018-permission-is-the-preset.md)): `read-only` denies writes and
-process/network/unclassified risks, `workspace-write` allows workspace writes and Session tools,
-asking for the rest, and `full-access` runs every call without asking. Tool lists refine that,
+process/network/unclassified risks, `ask` allows reads and Session tools and asks for every
+other call, workspace writes included ([ADR 022](../../../adr/022-the-ask-preset.md)),
+`workspace-write` allows workspace writes and Session tools, asking for the rest, and
+`full-access` runs every call without asking. The presets rank in that order, which caps and
+containment compare. Tool lists refine that,
 one name at a time; they never lift an explicit deny, a file check or process isolation.
 
 The type ignores keys it does not name. Policies written while ADR 017's `fileAccess` and
@@ -122,7 +125,8 @@ rules below. The path check runs before tool allows, so an
 allowed tool does not bypass a path fact; a resolution failure refuses the call.
 
 File access follows the preset:
-`read-only` → Read only, `workspace-write` → Workspace read/write, `full-access` → Unrestricted.
+`read-only` → Read only, `ask` and `workspace-write` → Workspace read/write, `full-access` →
+Unrestricted. Under `ask` a write that the scope admits is still asked, by the preset.
 The fixed facts themselves do not depend on tool approval or sandbox state.
 
 | File access | Read scope | Write scope |

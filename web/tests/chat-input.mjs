@@ -9,7 +9,7 @@ import { createPinia, setActivePinia } from "pinia"
 globalThis.Document = class {}
 globalThis.ShadowRoot = class {}
 
-const components = /\/(ChatPage|LineConversation|ComposerPanel|ComposerPermissionMenu|ConfirmDialog|QuestionPrompt)\.vue$/
+const components = /\/(ChatPage|LineConversation|ComposerPanel|ComposerModeMenu|ConfirmDialog|QuestionPrompt)\.vue$/
 registerHooks({
   resolve(specifier, context, next) {
     if (specifier.startsWith("../../stores/") || (context.parentURL?.endsWith("/stores/chat.ts") && ["./connection", "./sessions", "./ui"].includes(specifier))) {
@@ -141,20 +141,20 @@ test("permission presets preserve tool exceptions and confirm full access", asyn
   const initial = { preset: "workspace-write", allowedTools: ["read"], disallowedTools: ["exec"] }
   const { root, chat, server, option } = await permissionSession(t, initial)
   const confirmation = () => all(root).find((element) => element.type === "dialog" && element.props.open)
-  assert.equal(option("composer.permission.preset.workspace-write").props["aria-pressed"], true)
-  assert.match(text(root), /composer.permission.allowedTools: read/)
-  assert.match(text(root), /composer.permission.disallowedTools: exec/)
-  await click(option("composer.permission.preset.workspace-write")); await flush()
+  assert.equal(option("composer.mode.workspace-write").props["aria-checked"], true)
+  assert.match(text(root), /composer.mode.allowedTools: read/)
+  assert.match(text(root), /composer.mode.disallowedTools: exec/)
+  await click(option("composer.mode.workspace-write")); await flush()
   assert.equal(server.updates.length, 0)
-  await click(option("composer.permission.preset.read-only")); await flush()
+  await click(option("composer.mode.read-only")); await flush()
   assert.deepEqual(server.policy, { ...initial, preset: "read-only" })
   assert.deepEqual(chat.views.session.permission, server.policy)
-  assert.equal(option("composer.permission.preset.read-only").props["aria-pressed"], true)
-  const cancelled = click(option("composer.permission.preset.full-access"))
+  assert.equal(option("composer.mode.read-only").props["aria-checked"], true)
+  const cancelled = click(option("composer.mode.full-access"))
   await flush()
   await click(button(confirmation(), "cancel")); await cancelled; await flush()
   assert.equal(server.updates.length, 1)
-  const widening = click(option("composer.permission.preset.full-access"))
+  const widening = click(option("composer.mode.full-access"))
   await flush()
   await click(button(confirmation(), "confirm")); await widening; await flush()
   assert.deepEqual(server.policy, { ...initial, preset: "full-access" })
@@ -168,7 +168,7 @@ test("permission changes refresh live presets and conflicts without retrying or 
   chat.receive(readNotification("session.event", { sessionId: "session", branchId: "main", event: { id: "remote", sequence: 1, create_at: 1, type: "permission", name: "changed", data: { policy: remote } } }))
   await new Promise((resolve) => setTimeout(resolve, 20)); await flush()
   assert.deepEqual(chat.views.session.permission, remote)
-  assert.equal(option("composer.permission.preset.full-access").props["aria-pressed"], true)
+  assert.equal(option("composer.mode.full-access").props["aria-checked"], true)
   const concurrent = { ...initial, allowedTools: ["read"] }
   server.failure = () => {
     server.policy = concurrent

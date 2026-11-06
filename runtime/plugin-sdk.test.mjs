@@ -68,7 +68,7 @@ const permission: PermissionState = await permissions.permission(at);
 const permissionVersion: number | bigint = permission.version;
 const livePolicy: PermissionPolicy = permission.policy;
 const defaults: PermissionPolicy = await permissions.permissionDefaults({});
-const preset: 'read-only' | 'workspace-write' | 'full-access' = defaults.preset;
+const preset: 'read-only' | 'ask' | 'workspace-write' | 'full-access' = defaults.preset;
 const allowed: string[] = livePolicy.allowedTools;
 const disallowed: string[] = defaults.disallowedTools;
 declare const permissionError: SessionsErrorThrown;

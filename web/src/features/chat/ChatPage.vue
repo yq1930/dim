@@ -53,9 +53,11 @@ const storesPastes = computed(() => view.value?.methods.includes("attachment.put
 const searchFiles = computed(() => view.value?.methods.includes("session.files.search") ? (query: string) => chat.searchFiles(props.sessionId, query) : undefined)
 const fileChanges = computed(() => view.value?.methods.includes("session.files.changes") === true && view.value.methods.includes("session.files.rewind"))
 const changesDialog = ref<InstanceType<typeof TurnChangesDialog>>()
+/** The App Server serves the permission methods on the connection; a Session may also list them. */
 const permissionControl = computed(() => {
   const session = view.value
-  if (session?.status !== "ready" || !session.methods.includes("session.permission.get") || !session.methods.includes("session.permission.update")) return undefined
+  const serves = (method: string) => connection.supports(method) || session?.methods.includes(method) === true
+  if (session?.status !== "ready" || !serves("session.permission.get") || !serves("session.permission.update")) return undefined
   return { policy: session.permission, select: setPermission }
 })
 const approvalKeyboard = computed(() => ui.approvalKeyboard(props.sessionId, MAIN_BRANCH, view.value?.approvals ?? []))

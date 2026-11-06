@@ -139,7 +139,7 @@ Options:\n\
   --model ID [--provider ID]        Temporary model selection (also on resume)\n\
   --effort LEVEL                   Temporary reasoning effort (also on resume)\n\
   --autocompact auto|TOKENS         Temporary compaction window (k/m suffixes)\n\
-  --permission PRESET              read-only, workspace-write or full-access for a\n\
+  --permission PRESET              read-only, ask, workspace-write or full-access for a\n\
                                    new session, or for the resumed main branch\n\
   -h, --help                       Show this help without starting a daemon\n\
   -V, --version                    Show version without starting a daemon\n\n\

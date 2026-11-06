@@ -2,15 +2,14 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import { useI18n } from "vue-i18n"
-import { ArrowUp, FileSearch, FileText, ListChecks, Paperclip, Square, X } from "lucide-vue-next"
+import { ArrowUp, FileSearch, FileText, Paperclip, Square, X } from "lucide-vue-next"
 import type { ContextUsage, DraftAttachments, FileCandidate, ImageBlock, ModelId, PermissionPreset, PermissionPolicy } from "../../rpc/protocol"
 import { formatTokens } from "./usage-format"
 import { linkMentions, mentionTrigger, type FileMention, type MentionTrigger } from "../../mentions"
 import { useModelsStore } from "../../stores/models"
 import { useSessionsStore } from "../../stores/sessions"
+import ComposerModeMenu, { type WorkMode } from "./ComposerModeMenu.vue"
 import ComposerModelMenu from "./ComposerModelMenu.vue"
-import ComposerPermissionMenu from "./ComposerPermissionMenu.vue"
-import ComposerReasoningMenu from "./ComposerReasoningMenu.vue"
 import WorkspaceFileDialog from "./WorkspaceFileDialog.vue"
 import { createComposerDraft, useComposerDrafts, type ComposerDraft } from "./composer-drafts"
 import { quoteInto } from "./quote"
@@ -46,7 +45,7 @@ const props = withDefaults(defineProps<{
   listSkills?: () => Promise<Array<{ name: string; description: string }>>
   /** The latest context window reading, shown beside the model. */
   contextUsage?: ContextUsage
-  /** Plan mode of the line, when it can be switched here. */
+  /** Plan mode of the line, when it can be switched here; the mode menu offers it beside the presets. */
   planMode?: { active: boolean; toggle: () => void | Promise<void> }
   /** True when the Session stores long pastes through `attachment.put`. */
   storesPastes?: boolean
@@ -79,13 +78,20 @@ const drafts = useComposerDrafts()
 const localDraft = createComposerDraft()
 const draft = computed(() => props.draftKey === undefined ? localDraft : drafts.get(props.draftKey))
 const modelMenu = ref<InstanceType<typeof ComposerModelMenu>>()
-const permissionMenu = ref<InstanceType<typeof ComposerPermissionMenu>>()
+const modeMenu = ref<InstanceType<typeof ComposerModeMenu>>()
 const menuId = useId()
 const text = computed({ get: () => draft.value.text, set: (value) => { draft.value.text = value } })
 const sending = computed({ get: () => draft.value.sending, set: (value) => { draft.value.sending = value } })
 const changingModel = ref(false)
 const changingEffort = ref(false)
-const effortChoices = computed(() => models.providers?.find((provider) => provider.providerId === props.model?.providerId)?.models.find((model) => model.id === props.model?.modelId)?.reasoningEfforts ?? [])
+const changingMode = ref(false)
+/** The presets from the most asking to the least, then plan mode and read-only. */
+const workModes = computed<WorkMode[]>(() => [
+  ...(props.permission === undefined ? [] : ["ask", "workspace-write", "full-access"] as const),
+  ...(props.planMode === undefined ? [] : ["plan"] as const),
+  ...(props.permission === undefined ? [] : ["read-only"] as const),
+])
+const workMode = computed<WorkMode | undefined>(() => props.planMode?.active ? "plan" : props.permission?.policy?.preset)
 const error = computed({ get: () => draft.value.error, set: (value) => { draft.value.error = value } })
 const composing = ref(false)
 const focused = ref(false)
@@ -157,7 +163,7 @@ watch(text, () => {
 watch(matches, () => { activeIndex.value = 0 }, { flush: "sync" })
 
 const showStop = computed(() => props.running && props.stop !== undefined && text.value.trim() === "" && images.value.length === 0 && pastes.value.length === 0 && files.value.length === 0)
-const canSend = computed(() => (text.value.trim() !== "" || images.value.length > 0 || pastes.value.length > 0 || files.value.length > 0) && !sending.value && !draft.value.reading && !changingModel.value && !changingEffort.value)
+const canSend = computed(() => (text.value.trim() !== "" || images.value.length > 0 || pastes.value.length > 0 || files.value.length > 0) && !sending.value && !draft.value.reading && !changingModel.value && !changingEffort.value && !changingMode.value)
 
 function resize(): void {
   const element = field.value
@@ -431,6 +437,29 @@ async function togglePlan(): Promise<void> {
   }
 }
 
+/**
+ * Plan mode turns on over the current preset; any other mode first ends plan
+ * mode, which restores the preset it replaced, then sets the chosen preset.
+ */
+async function onMode(mode: WorkMode): Promise<void> {
+  if (changingMode.value) return
+  changingMode.value = true
+  error.value = ""
+  try {
+    if (mode === "plan") {
+      if (props.planMode?.active === false) await props.planMode.toggle()
+      return
+    }
+    const planning = props.planMode?.active === true
+    if (planning) await props.planMode?.toggle()
+    if (props.permission !== undefined && (planning || props.permission.policy?.preset !== mode)) await props.permission.select(mode)
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : String(cause)
+  } finally {
+    changingMode.value = false
+  }
+}
+
 async function runMenuEntry(entry: MenuEntry): Promise<void> {
   if (entry.category !== "skill") return runCommand(entry.name)
   if (composing.value) return
@@ -459,7 +488,7 @@ async function runCommand(name: string): Promise<void> {
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : String(cause)
     }
-  } else if (name === "permissions") permissionMenu.value?.open()
+  } else if (name === "permissions") modeMenu.value?.open()
   else if (name === "compact" || name === "usage" || name === "fork") await props.sessionCommands?.[name]?.()
 }
 
@@ -593,13 +622,11 @@ defineExpose({ focus: () => field.value?.focus(), quote })
           <input v-if="attachments" ref="upload" type="file" class="sr-only" tabindex="-1" :aria-label="t('composer.attachFiles')" :accept="FILE_ACCEPT" multiple @change="chooseFiles" />
           <button v-if="attachments" type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :disabled="sending || !!draft.reading" :aria-label="t('composer.attachFiles')" v-tooltip="t('composer.attachFiles')" @click="upload?.click()"><Paperclip aria-hidden="true" /></button>
           <button v-if="searchFiles" type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="t('composer.workspaceFiles')" v-tooltip="t('composer.workspaceFiles')" @click="fileDialog?.open()"><FileSearch aria-hidden="true" /></button>
-          <ComposerPermissionMenu v-if="permission && variant !== 'panel'" ref="permissionMenu" :policy="permission.policy" @select="permission.select" />
-          <button v-if="planMode && variant !== 'panel'" type="button" class="ui-button composer-plan" data-variant="ghost" data-size="sm" :aria-pressed="planMode.active" :data-active="planMode.active ? '' : undefined" v-tooltip="planMode.active ? t('composer.planOn') : t('composer.planOff')" @click="togglePlan"><ListChecks aria-hidden="true" />{{ t("composer.plan") }}</button>
+          <ComposerModeMenu v-if="workModes.length && variant !== 'panel'" ref="modeMenu" :modes="workModes" :current="workMode" :policy="permission?.policy" :disabled="changingMode" @select="onMode" />
         </div>
         <div class="composer-run-group">
           <span v-if="contextLabel" class="composer-context" :data-near="contextNearLimit ? '' : undefined" v-tooltip="t('composer.contextUsage')">{{ contextLabel }}</span>
-          <ComposerModelMenu v-if="variant !== 'panel'" ref="modelMenu" :model="model" :selectable="modelSelectable" :disabled="changingModel || changingEffort" @select="onModel" />
-          <ComposerReasoningMenu v-if="variant !== 'panel' && selectEffort && effortChoices.length" :choices="effortChoices" :value="reasoningEffort" :disabled="changingModel || changingEffort" @select="onEffort" />
+          <ComposerModelMenu v-if="variant !== 'panel'" ref="modelMenu" :model="model" :selectable="modelSelectable" :disabled="changingModel || changingEffort" :effort="reasoningEffort" :effort-selectable="selectEffort !== undefined" @select="onModel" @effort="onEffort" />
           <button
             class="ui-icon-button"
             :data-variant="showStop ? 'contrast' : 'primary'"
@@ -627,8 +654,6 @@ defineExpose({ focus: () => field.value?.focus(), quote })
 .draft-file-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .attachment-status { padding: var(--space-2); color: var(--muted-foreground); font-size: var(--text-sm); }
 .composer-toolbar { flex-wrap: wrap; }
-.composer-plan { gap: var(--space-1); color: var(--muted-foreground); }
-.composer-plan[data-active] { background: var(--accent); color: var(--accent-foreground); }
 .composer-context { color: var(--muted-foreground); font-size: var(--text-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .composer-context[data-near] { color: var(--danger); }
 .composer-run-group { margin-left: auto; max-width: 100%; flex-wrap: wrap; }

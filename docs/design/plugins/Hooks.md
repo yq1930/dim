@@ -381,7 +381,7 @@ Plugin documents are kept in the Settings source `hooks-plugins`, one `{dir, hoo
 
 | Channel | Content |
 | --- | --- |
-| stdin | One UTF-8 JSON object, then EOF. Common: `hook_event_name`, `session_id`, `cwd`, `permission_mode` (Dim preset: `read-only`, `workspace-write`, `full-access`), `turn_id` when turn-scoped, plus Dim fields `branch_id`, `dim_source` (`user`, `project` or `plugin:<id>`). No `transcript_path` |
+| stdin | One UTF-8 JSON object, then EOF. Common: `hook_event_name`, `session_id`, `cwd`, `permission_mode` (Dim preset: `read-only`, `ask`, `workspace-write`, `full-access`), `turn_id` when turn-scoped, plus Dim fields `branch_id`, `dim_source` (`user`, `project` or `plugin:<id>`). No `transcript_path` |
 | Environment | HostPlatform's base environment plus `DIM_PROJECT_DIR`, `DIM_HOOK_EVENT`, `DIM_SESSION_ID` and `DIMCODE_HOME`; `DIM_PLUGIN_ROOT` for plugin sources only |
 | Exit 0 | stdout empty, one JSON object (A.4), or plain text — anything that is not one JSON object, other JSON values included — which is context for `SessionStart` and `UserPromptSubmit` and otherwise ignored |
 | Exit 2 | Blocking result for the event (A.4); stderr (first 2 KiB) is the reason |

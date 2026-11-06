@@ -887,7 +887,7 @@ Remove 先在提示栏询问，`Remove deny prefix git push? Enter confirm · Es
 | `/connect` | 列出 `provider.management` 报告的提供方；被描述的账号打开签到或退出步骤，其他提供方打开连接表单。 |
 | `/exit` | 在空闲的交互提示符处断开并退出。 |
 | `!command` / `!!command` | 以 record/private 模式调用 Session 现有的 `shell.run`，模型回合进行中也可用。 |
-| `--permission read-only\|workspace-write\|full-access` | 为 `dimcode`、`tui`、`exec` 和 `exec resume` 选择新建或恢复的 Session 的预设（[权限控制](#权限控制)）。 |
+| `--permission read-only\|ask\|workspace-write\|full-access` | 为 `dimcode`、`tui`、`exec` 和 `exec resume` 选择新建或恢复的 Session 的预设（[权限控制](#权限控制)）。 |
 | `/goal [OBJECTIVE \| set OBJECTIVE \| edit OBJECTIVE \| pause \| resume \| clear]` | 在行客户端和两种终端 UI 模式下读取并写入当前显示线的目标（[目标](#目标)）。 |
 | `/permissions` | 打开 Permissions 面板：三个预设以及各自允许什么、链接到 Settings 进程隔离控件的行，以及列出、添加、删除用户命令规则的 Command rules 行（[权限控制](#权限控制)）。 |
 | `/approvals`、`/approval` | `/permissions` 的兼容别名，支持相同的预设参数。 |
@@ -1287,7 +1287,7 @@ deny 规则在任何预设下都生效。allow 规则只把简单命令的询问
 
 ### 启动时选择
 
-`--permission read-only|workspace-write|full-access` 适用于 `dimcode`、`tui`、`exec` 和
+`--permission read-only|ask|workspace-write|full-access` 适用于 `dimcode`、`tui`、`exec` 和
 `exec resume`，放在命令前后都可以。其他取值、重复给出或用在其他命令上，都是守护进程启动前的
 参数错误。
 

@@ -381,7 +381,7 @@ AcpGateway 自己的设计把 Hooks 对 `session.submit` 的 `input_blocked` 拒
 
 | 通道 | 内容 |
 | --- | --- |
-| stdin | 一个 UTF-8 JSON 对象，然后 EOF。公共字段：`hook_event_name`、`session_id`、`cwd`、`permission_mode`（Dim 预设：`read-only`、`workspace-write`、`full-access`）、turn 范围内时的 `turn_id`，以及 Dim 字段 `branch_id`、`dim_source`（`user`、`project` 或 `plugin:<id>`）。没有 `transcript_path` |
+| stdin | 一个 UTF-8 JSON 对象，然后 EOF。公共字段：`hook_event_name`、`session_id`、`cwd`、`permission_mode`（Dim 预设：`read-only`、`ask`、`workspace-write`、`full-access`）、turn 范围内时的 `turn_id`，以及 Dim 字段 `branch_id`、`dim_source`（`user`、`project` 或 `plugin:<id>`）。没有 `transcript_path` |
 | 环境 | HostPlatform 的基础环境，加 `DIM_PROJECT_DIR`、`DIM_HOOK_EVENT`、`DIM_SESSION_ID` 与 `DIMCODE_HOME`；仅插件来源加 `DIM_PLUGIN_ROOT` |
 | 退出 0 | stdout 为空、一个 JSON 对象（A.4），或纯文本——凡不是单个 JSON 对象的值，包括其他 JSON 值——对 `SessionStart` 与 `UserPromptSubmit` 为上下文，其他事件忽略 |
 | 退出 2 | 该事件的阻止结果（A.4）；stderr（前 2 KiB）为原因 |

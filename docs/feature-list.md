@@ -124,7 +124,7 @@ The CLI owns terminal and command interactions; the App Server owns host configu
 - `/goal`: switch Goal mode; set, edit, pause, resume and clear a goal.
 - Goal continuation: continue toward an explicit goal and record completion or blockage.
 - `/permissions`: select the session's permission preset and manage command rules; `/approvals` and `/approval` are aliases. The preset is remembered for new sessions.
-- Permission policies: read-only, workspace-write and full access.
+- Permission policies: read-only, ask (every write and command asks first), workspace-write and full access ([ADR 022](adr/022-the-ask-preset.md)). The Web composer offers them with plan mode as one mode menu: Ask, Accept edits, Auto, Plan and Read only.
 - Sandbox: configure file, network and process access; availability depends on the platform and runtime environment.
 - Command rules: configure allowed commands and the execution Shell.
 - `/compact`: manually compact the current Session context.

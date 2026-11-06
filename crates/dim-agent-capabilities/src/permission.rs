@@ -294,11 +294,7 @@ impl Permission {
                 if self.state.get().version != dispatched.version {
                     return Box::pin(self.decide(call, risk, cancel)).await;
                 }
-                let scope = match access {
-                    FileAccess::ReadOnly => "the read-only preset",
-                    FileAccess::WorkspaceReadWrite => "the workspace-write preset",
-                    FileAccess::Unrestricted => unreachable!("unrestricted skips the facts"),
-                };
+                let scope = format!("the {} preset", policy.preset.name());
                 if facts.system {
                     return Ok(Decision::Deny {
                         reason: format!("Writing to a system path is not allowed by {scope}"),
@@ -652,6 +648,13 @@ fn decide(policy: &PermissionPolicy, name: &str, risk: Option<&str>) -> Decision
             match risk {
                 Risk::Read | Risk::Session => return Decision::Allow,
                 _ => false,
+            },
+        ),
+        PermissionPreset::Ask => (
+            "ask",
+            match risk {
+                Risk::Read | Risk::Session => return Decision::Allow,
+                _ => true,
             },
         ),
         PermissionPreset::WorkspaceWrite => (

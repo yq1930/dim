@@ -133,6 +133,7 @@ const LOAD_MORE: &str = "\u{1}load-more";
 fn permission_label(preset: dim_agent_types::PermissionPreset) -> &'static str {
     match preset {
         dim_agent_types::PermissionPreset::ReadOnly => "Read only",
+        dim_agent_types::PermissionPreset::Ask => "Ask",
         dim_agent_types::PermissionPreset::WorkspaceWrite => "Workspace write",
         dim_agent_types::PermissionPreset::FullAccess => "Full access",
     }
@@ -7811,6 +7812,7 @@ mod tests {
             assert!(frame.contains(line), "{line} is missing: {frame}");
         }
         assert!(!frame.contains("File access"), "{frame}");
+        app.handle_input(key(KeyCode::Down));
         app.handle_input(key(KeyCode::Down));
         app.handle_input(key(KeyCode::Enter));
         assert!(matches!(

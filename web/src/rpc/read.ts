@@ -206,7 +206,7 @@ export function readModelUpdate(value: unknown): ModelUpdateResult {
 
 /** A permission preset as the server names it; anything else is a protocol error. */
 function readPreset(value: unknown, at: string): PermissionPreset {
-  if (value === "read-only" || value === "workspace-write" || value === "full-access") return value
+  if (value === "read-only" || value === "ask" || value === "workspace-write" || value === "full-access") return value
   return fail(at, "a permission preset")
 }
 

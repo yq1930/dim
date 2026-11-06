@@ -6,7 +6,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 
-pub(crate) const MODES: [&str; 3] = ["read-only", "workspace-write", "full-access"];
+pub(crate) const MODES: [&str; 4] = ["read-only", "ask", "workspace-write", "full-access"];
 
 #[derive(Clone, Deserialize)]
 pub(crate) struct Policy {

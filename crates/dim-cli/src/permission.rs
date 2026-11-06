@@ -26,8 +26,9 @@ use dim_agent_types::{
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 
-pub const PRESETS: [PermissionPreset; 3] = [
+pub const PRESETS: [PermissionPreset; 4] = [
     PermissionPreset::ReadOnly,
+    PermissionPreset::Ask,
     PermissionPreset::WorkspaceWrite,
     PermissionPreset::FullAccess,
 ];
@@ -75,16 +76,12 @@ pub fn parse_preset(value: &str) -> Result<PermissionPreset> {
         .into_iter()
         .find(|preset| name(*preset) == value)
         .ok_or_else(|| {
-            "Unknown permission preset; use read-only, workspace-write or full-access".into()
+            "Unknown permission preset; use read-only, ask, workspace-write or full-access".into()
         })
 }
 
 pub fn name(preset: PermissionPreset) -> &'static str {
-    match preset {
-        PermissionPreset::ReadOnly => "read-only",
-        PermissionPreset::WorkspaceWrite => "workspace-write",
-        PermissionPreset::FullAccess => "full-access",
-    }
+    preset.name()
 }
 
 /// The dispatched policy of `main` and the version a change must expect.

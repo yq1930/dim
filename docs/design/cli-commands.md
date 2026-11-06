@@ -1322,7 +1322,7 @@ whole rule as one quoted argument, so global options stay unambiguous.
 | `/connect` | List the Providers `provider.management` reports; a described account opens its sign-in or sign-out step, and any other Provider opens the connection form. |
 | `/exit` | Detach and exit from the idle interactive prompt. |
 | `!command` / `!!command` | Call the Session's existing `shell.run` in record/private mode, including during a model turn. |
-| `--permission read-only\|workspace-write\|full-access` | Select the preset of a new or resumed Session for `dimcode`, `tui`, `exec` and `exec resume` ([permission controls](#permission-controls)). |
+| `--permission read-only\|ask\|workspace-write\|full-access` | Select the preset of a new or resumed Session for `dimcode`, `tui`, `exec` and `exec resume` ([permission controls](#permission-controls)). |
 | `/goal [OBJECTIVE \| set OBJECTIVE \| edit OBJECTIVE \| pause \| resume \| clear]` | Read and write the goal of the shown line, in the line client and both terminal UI modes ([goal](#goal)). |
 | `/permissions` | Open the Permissions panel: the three presets with what each one allows, directions to Settings for process isolation, and the Command rules row that lists, adds and removes the user's command rules ([permission controls](#permission-controls)). |
 | `/approvals`, `/approval` | Compatibility aliases for `/permissions`; preset arguments remain supported. |
@@ -1934,7 +1934,7 @@ Sessions with `workspace-write`; that default is unchanged.
 
 ### Startup selection
 
-`--permission read-only|workspace-write|full-access` applies to `dimcode`, `tui`, `exec` and
+`--permission read-only|ask|workspace-write|full-access` applies to `dimcode`, `tui`, `exec` and
 `exec resume`, before or after the command. Another value, a repeated flag or the flag on any
 other command is an argument error before the daemon starts.
 

@@ -85,7 +85,7 @@ export interface AuxiliaryModel {
   /** Resolving or rejecting cancelled cancels and joins the original model call. */
   complete(call: { model: ModelId; request: AuxiliaryRequest }, cancelled?: () => Promise<void>): Promise<AuxiliaryReply>;
 }
-export type PermissionPreset = 'read-only' | 'workspace-write' | 'full-access';
+export type PermissionPreset = 'read-only' | 'ask' | 'workspace-write' | 'full-access';
 export interface PermissionPolicy {
   preset: PermissionPreset;
   allowedTools: string[];

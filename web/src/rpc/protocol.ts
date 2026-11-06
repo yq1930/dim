@@ -104,7 +104,7 @@ export type DraftAttachments = { images: ImageBlock[]; pastes: string[]; files?:
 export type FileCandidate = { relativePath: string; absolutePath: string; dir: boolean }
 
 /** The session permission presets, named as the server's `PermissionPreset` serializes them. */
-export type PermissionPreset = "read-only" | "workspace-write" | "full-access"
+export type PermissionPreset = "read-only" | "ask" | "workspace-write" | "full-access"
 
 /** The preset and explicit tool exceptions of `main`. */
 export type PermissionPolicy = {

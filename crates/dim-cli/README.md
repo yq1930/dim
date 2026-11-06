@@ -542,7 +542,7 @@ even when its tool is explicitly allowed. Approval does not automatically save a
 The server resolves symlinks and new-file
 parents before checking the [workspace boundary](../../docs/architecture/rust-agent/plugins/Permission.md#workspace-write-targets).
 
-`--permission read-only|workspace-write|full-access` works with `dimcode`, `tui`, `exec` and
+`--permission read-only|ask|workspace-write|full-access` works with `dimcode`, `tui`, `exec` and
 `exec resume`. A new Session receives it in `session.create`; a resumed Session's `main` branch
 is changed with `session.permission.get/update` before attach, keeping its tool lists and
 retrying a version conflict. Without the flag a resumed Session keeps its preset. The header

@@ -1,6 +1,6 @@
 # 018: Permission is the preset; file scope and isolation are sandbox settings
 
-Decision status: Accepted.
+Decision status: Accepted. D1 is amended by [022](022-the-ask-preset.md): a fourth preset, `ask`.
 
 ## Context
 

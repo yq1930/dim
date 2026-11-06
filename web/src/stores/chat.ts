@@ -7,9 +7,9 @@ import { ConnectionLost, RpcError } from "../rpc/client"
 import type { Goal, GoalCall } from "../goal"
 import { canChooseWorkspace as inDesktopShell, notifyDesktop } from "../desktop"
 import { translate, type TranslationKey } from "../i18n"
-import { MAIN_BRANCH, type ApprovalDecision, type ApprovalRequest, type DraftAttachments, type FileCandidate, type ModelId, type Notification, type PendingPlan, type PendingQuestion, type PermissionPreset, type PermissionPolicy, type QueuedInput, type QuestionAnswer, type SessionEvent, type TodoItem, type UserInput, type WithdrawResult } from "../rpc/protocol"
+import { MAIN_BRANCH, type ApprovalDecision, type ApprovalRequest, type DraftAttachments, type FileCandidate, type ModelId, type Notification, type PendingPlan, type PendingQuestion, type PermissionPreset, type PermissionPolicy, type QueuedInput, type QuestionAnswer, type RewindResult, type SessionEvent, type TodoItem, type TurnChanges, type UserInput, type WithdrawResult } from "../rpc/protocol"
 import { readRevision, readRules } from "../rpc/general-settings"
-import { ProtocolError, readAck, readAttachmentPath, readBranchCreate, readCompactResult, readConfigurationOutcome, readContextUsage, readFileCandidates, readForkedSessionId, readHistory, readModelUpdate, readMemberApproval, readPermissionState, readPermissionVersion, readSessionMethods, readWithdrawResult } from "../rpc/read"
+import { ProtocolError, readAck, readAttachmentPath, readBranchCreate, readCompactResult, readConfigurationOutcome, readContextUsage, readFileCandidates, readForkedSessionId, readHistory, readModelUpdate, readMemberApproval, readPermissionState, readPermissionVersion, readRewindResult, readSessionMethods, readTurnChanges, readWithdrawResult } from "../rpc/read"
 import { useConnectionStore } from "./connection"
 import { useSessionsStore } from "./sessions"
 import { useUiStore } from "./ui"
@@ -645,6 +645,16 @@ export const useChatStore = defineStore("chat", () => {
     return client().call("session.files.search", { sessionId, query, limit: 20 }, readFileCandidates)
   }
 
+  /** The files a turn's `write` and `edit` changed, with their status now, and the commands it ran. */
+  async function turnChanges(sessionId: string, branchId: string, turnId: string): Promise<TurnChanges> {
+    return client().call("session.files.changes", { sessionId, branchId, turnId }, readTurnChanges)
+  }
+
+  /** Restores `paths` to their content before the turn; the server refuses unless every one is still as the turn left it. */
+  async function rewindTurn(sessionId: string, branchId: string, turnId: string, paths: string[]): Promise<RewindResult> {
+    return client().call("session.files.rewind", { sessionId, branchId, turnId, paths }, readRewindResult)
+  }
+
   /** Withdraws a queued message; with `steer`, the same content joins the running turn at its next boundary. */
   async function withdrawInput(sessionId: string, inputId: string, steer: UserInput | undefined): Promise<WithdrawResult> {
     return client().call("session.input.withdraw", { sessionId, branchId: MAIN_BRANCH, inputId, ...(steer === undefined ? {} : { steer }) }, readWithdrawResult)
@@ -699,5 +709,5 @@ export const useChatStore = defineStore("chat", () => {
     publish(channel)
   }
 
-  return { views, open, resync, receive, ensureLine, retryLine, submit, stop, createLine, endLine, respond, allowAlways, allowForSession, answerQuestion, setPlanning, reviewPlan, compact, usage, fork, writeGoal, setEffort, setPermission, withdrawInput, searchFiles, memberApproval, setModel }
+  return { views, open, resync, receive, ensureLine, retryLine, submit, stop, createLine, endLine, respond, allowAlways, allowForSession, answerQuestion, setPlanning, reviewPlan, compact, usage, fork, writeGoal, setEffort, setPermission, withdrawInput, searchFiles, turnChanges, rewindTurn, memberApproval, setModel }
 })

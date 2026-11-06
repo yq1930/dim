@@ -30,6 +30,8 @@ import type {
   SessionEvent,
   SessionSummary,
   ToolResult,
+  TurnChanges,
+  RewindResult,
   UserInput,
   WithdrawResult,
 } from "./protocol"
@@ -243,6 +245,49 @@ export function readFileCandidates(value: unknown): FileCandidate[] {
   })
 }
 
+/** `session.files.changes`: a turn's file changes, each with its status now, and its commands. */
+export function readTurnChanges(value: unknown): TurnChanges {
+  const at = "session.files.changes"
+  const source = obj(value, at)
+  return {
+    ended: bool(source, "ended", at),
+    files: arr(source.files, `${at}.files`).map((item, index) => {
+      const entry = `${at}.files[${index}]`
+      const file = obj(item, entry)
+      const change = str(file, "change", entry)
+      if (change !== "modified" && change !== "created") fail(`${entry}.change`, "a change kind")
+      const status = str(file, "status", entry)
+      if (status !== "restorable" && status !== "restored" && status !== "changed" && status !== "unrecorded") fail(`${entry}.status`, "a file status")
+      return { path: str(file, "path", entry), change, calls: num(file, "calls", entry), status }
+    }),
+    commands: arr(source.commands, `${at}.commands`).map((item, index) => {
+      const entry = `${at}.commands[${index}]`
+      const command = obj(item, entry)
+      const exitCode = command.exitCode
+      if (exitCode !== undefined && (typeof exitCode !== "number" || !Number.isSafeInteger(exitCode))) fail(`${entry}.exitCode`, "an integer")
+      const signal = optStr(command, "signal", entry)
+      return { command: str(command, "command", entry), ...(exitCode === undefined ? {} : { exitCode }), ...(signal === undefined ? {} : { signal }) }
+    }),
+  }
+}
+
+/** `session.files.rewind`: what the undo restored and removed, and the file it stopped at. */
+export function readRewindResult(value: unknown): RewindResult {
+  const at = "session.files.rewind"
+  const source = obj(value, at)
+  const paths = (key: string): string[] => arr(source[key], `${at}.${key}`).map((item, index) => {
+    if (typeof item !== "string") fail(`${at}.${key}[${index}]`, "a string")
+    return item
+  })
+  const failed = source.failed === undefined ? undefined : obj(source.failed, `${at}.failed`)
+  return {
+    restored: paths("restored"),
+    removed: paths("removed"),
+    ...(failed === undefined ? {} : { failed: { path: str(failed, "path", `${at}.failed`), message: str(failed, "message", `${at}.failed`) } }),
+    recorded: bool(source, "recorded", at),
+  }
+}
+
 /** `attachment.put`: the stored text's path, which the message names. */
 export function readAttachmentPath(value: unknown): string {
   return str(obj(value, "attachment.put"), "path", "attachment.put")
@@ -389,7 +434,12 @@ function toolResult(value: unknown, at: string): ToolResult {
   const text = typeof source.content === "string" ? source.content : textOf(source.content, `${at}.content`)
   const structured = source.structuredContent === undefined || source.structuredContent === null ? undefined : obj(source.structuredContent, `${at}.structuredContent`)
   const diff = typeof structured?.diff === "string" ? structured.diff : undefined
-  return { text, isError: source.isError === true, ...(diff === undefined ? {} : { diff }) }
+  const effects = source.effects === undefined || source.effects === null ? [] : arr(source.effects, `${at}.effects`)
+  const filesWritten = effects.flatMap((item, index) => {
+    const effect = obj(item, `${at}.effects[${index}]`)
+    return effect.kind === "fileWritten" ? [str(effect, "path", `${at}.effects[${index}]`)] : []
+  })
+  return { text, isError: source.isError === true, ...(diff === undefined ? {} : { diff }), ...(filesWritten.length === 0 ? {} : { filesWritten }) }
 }
 
 function rawBlocks(blocks: unknown, at: string): RawBlock[] {
@@ -485,7 +535,7 @@ function content(type: string, name: string, data: Json, at: string): EventConte
       const status = str(data, "status", at)
       if (status !== "completed" && status !== "failed" && status !== "cancelled") fail(`${at}.status`, "a turn outcome")
       const error = status === "failed" ? str(data, "error", at) : undefined
-      return { kind: "turn-end", outcome: status, ...(error === undefined ? {} : { error }) }
+      return { kind: "turn-end", turnId: str(data, "turn_id", at), outcome: status, ...(error === undefined ? {} : { error }) }
     }
     case "step/model-start":
       return { kind: "model-start", requestId: str(data, "request_id", at) }

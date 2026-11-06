@@ -2240,6 +2240,11 @@
             "status": "Ready"
           },
           {
+            "service": "dim_agent_capabilities::prompt_guide::GuideEntries@session",
+            "scope": null,
+            "status": "Ready"
+          },
+          {
             "service": "dim_agent_capabilities::timeline_tree::TreeCommands@session",
             "scope": null,
             "status": "Ready"
@@ -2266,6 +2271,12 @@
             "service": "dim_agent_capabilities::methods::SessionMethods@session",
             "scope": null,
             "provider": 48,
+            "generation": 1
+          },
+          {
+            "service": "dim_agent_capabilities::prompt_guide::GuideEntries@session",
+            "scope": null,
+            "provider": 41,
             "generation": 1
           },
           {
@@ -2303,6 +2314,12 @@
           {
             "service": "dim_agent_capabilities::methods::SessionMethods@session",
             "provider": 48,
+            "declared": true,
+            "external": true
+          },
+          {
+            "service": "dim_agent_capabilities::prompt_guide::GuideEntries@session",
+            "provider": 41,
             "declared": true,
             "external": true
           },

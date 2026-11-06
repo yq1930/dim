@@ -16,6 +16,7 @@ use crate::{
     host::{HostError, HostFuture, SessionFilesHost, ToolDriver, ToolExecutionContext, ToolHost},
     host_platform::HostPlatform,
     methods::{Interruption, MethodDecl, RpcError, SessionMethods, params, reply},
+    prompt_guide::{GuideEntries, GuideEntry, GuideScope},
     timeline_tree::TreeCommands,
 };
 use background::BackgroundExecPlugin;
@@ -34,9 +35,12 @@ use tokio_util::{sync::CancellationToken, task::TaskTracker};
 /// Host tools this capability provides.
 pub const TOOL_NAMES: [&str; 7] = ["read", "write", "edit", "glob", "grep", "exec", "exec_stop"];
 const OUTPUT_METHOD: &str = "session.exec.output";
-/// The `session.files` namespace: the files an `@` mention offers.
+/// The `session.files` namespace: the files an `@` mention offers, and a
+/// turn's `write` and `edit` changes and their undoing.
 const FILES_NAMESPACE: &str = "session.files";
 const SEARCH_METHOD: &str = "session.files.search";
+const CHANGES_METHOD: &str = "session.files.changes";
+const REWIND_METHOD: &str = "session.files.rewind";
 
 #[derive(Debug, Clone)]
 pub struct WorkspaceToolsConfig {
@@ -142,6 +146,62 @@ impl WorkspaceTools {
         Ok(result)
     }
 
+    async fn turn_changes(&self, value: serde_json::Value) -> Result<serde_json::Value, RpcError> {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        struct Params {
+            session_id: String,
+            branch_id: String,
+            turn_id: String,
+        }
+        let Params {
+            session_id,
+            branch_id,
+            turn_id,
+        } = params(value)?;
+        let branch = self.turn_branch(&session_id, &branch_id, &turn_id)?;
+        reply(self.files.changes(&branch, &turn_id).await?)
+    }
+
+    async fn rewind(
+        &self,
+        value: serde_json::Value,
+        cancel: CancellationToken,
+    ) -> Result<serde_json::Value, RpcError> {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        struct Params {
+            session_id: String,
+            branch_id: String,
+            turn_id: String,
+            paths: Vec<String>,
+        }
+        let Params {
+            session_id,
+            branch_id,
+            turn_id,
+            paths,
+        } = params(value)?;
+        let branch = self.turn_branch(&session_id, &branch_id, &turn_id)?;
+        reply(self.files.rewind(&branch, &turn_id, paths, cancel).await?)
+    }
+
+    /// The branch whose turn a `session.files.changes` or
+    /// `session.files.rewind` call names.
+    fn turn_branch(
+        &self,
+        session_id: &str,
+        branch_id: &str,
+        turn_id: &str,
+    ) -> Result<dim_agent_runtime::Branch, RpcError> {
+        if session_id.is_empty() || branch_id.is_empty() || turn_id.is_empty() {
+            return Err(RpcError::invalid(
+                "sessionId, branchId and turnId must not be empty",
+            ));
+        }
+        Ok(self.tree.get(branch_id)?)
+    }
+
     /// ADR 013 D2: an output path the result hands to the model is registered
     /// before that result leaves this part. The model's path is the file's
     /// path; a registration failure fails the call.
@@ -222,6 +282,46 @@ impl ToolDriver for WorkspaceTools {
     }
 }
 
+/// `session.files.search`: the files of the workspace an `@` mention offers.
+async fn search(
+    mentions: Arc<mentions::MentionIndex>,
+    root: PathBuf,
+    value: serde_json::Value,
+) -> Result<serde_json::Value, RpcError> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Params {
+        session_id: String,
+        query: String,
+        limit: Option<usize>,
+    }
+    let Params {
+        session_id,
+        query,
+        limit,
+    } = params(value)?;
+    if session_id.is_empty() {
+        return Err(RpcError::invalid("sessionId must not be empty"));
+    }
+    let limit = limit
+        .unwrap_or(mentions::DEFAULT_LIMIT)
+        .clamp(1, mentions::MAX_LIMIT);
+    let found = tokio::task::spawn_blocking(move || mentions.search(&root, &query, limit))
+        .await
+        .map_err(|error| RpcError::app(-32000, "session_files_failed", error.to_string()))?;
+    let candidates = found
+        .iter()
+        .map(|candidate| {
+            serde_json::json!({
+                "relativePath": candidate.relative_path,
+                "absolutePath": candidate.absolute_path,
+                "dir": candidate.dir,
+            })
+        })
+        .collect::<Vec<_>>();
+    reply(serde_json::json!({ "candidates": candidates }))
+}
+
 struct WorkspaceToolsPlugin {
     facts: Key<crate::file_access::FileAccessFacts>,
     host: Key<ToolHost>,
@@ -230,6 +330,7 @@ struct WorkspaceToolsPlugin {
     identity: Key<SessionIdentity>,
     tree: Key<TreeCommands>,
     methods: Key<SessionMethods>,
+    guide: Key<GuideEntries>,
     config: WorkspaceToolsConfig,
     coordinator: Arc<FileWriteCoordinator>,
 }
@@ -247,6 +348,7 @@ impl WorkspaceToolsPlugin {
             identity: names.key()?,
             tree: names.key()?,
             methods: names.key()?,
+            guide: names.key()?,
             config,
             coordinator,
         })
@@ -263,6 +365,7 @@ impl DynPlugin for WorkspaceToolsPlugin {
             self.identity.erase(),
             self.tree.erase(),
             self.methods.erase(),
+            self.guide.erase(),
         ]
     }
     fn apply<'a>(&'a self, ctx: &'a Ctx) -> BoxFuture<'a, rutis::Result<Effect>> {
@@ -272,19 +375,34 @@ impl DynPlugin for WorkspaceToolsPlugin {
             let identity = ctx.require_at(&self.identity)?;
             let tree = ctx.require_at(&self.tree)?;
             let methods = ctx.require_at(&self.methods)?;
+            let guide = ctx.require_at(&self.guide)?;
+            guide.register(
+                ctx,
+                GuideScope::Session,
+                GuideEntry {
+                    markers: vec![files::rewind::MARKER.into()],
+                    order: 110,
+                    text: files::rewind::ENTRY.into(),
+                },
+            )?;
             let cwd = PathBuf::from(&config.cwd);
             let output_dir = self.config.output_root.join(&identity.session_id);
+            let owner = ctx.get::<SessionFilesHost>();
+            let mut files = FileTools::with_coordinator(
+                cwd.clone(),
+                platform.home.clone(),
+                output_dir.clone(),
+                self.coordinator.clone(),
+            );
+            if let Some(owner) = &owner {
+                files = files.keeping(owner.clone(), identity.session_id.clone());
+            }
             let tools = Arc::new(WorkspaceTools {
                 ctx: ctx.clone(),
                 facts: self.facts.clone(),
-                files: FileTools::with_coordinator(
-                    cwd.clone(),
-                    platform.home.clone(),
-                    output_dir.clone(),
-                    self.coordinator.clone(),
-                ),
+                files,
                 output_dir,
-                owner: ctx.get::<SessionFilesHost>(),
+                owner,
                 session_id: identity.session_id.clone(),
                 member: config.collaboration_role == CollaborationRole::Member,
                 cwd,
@@ -302,43 +420,25 @@ impl DynPlugin for WorkspaceToolsPlugin {
             })?;
             let mentions = Arc::new(mentions::MentionIndex::default());
             let search_root = tools.cwd.clone();
+            let owner = tools.clone();
             methods.register(
                 ctx,
                 FILES_NAMESPACE,
-                vec![MethodDecl::new(SEARCH_METHOD, false, Interruption::Report)],
-                Arc::new(move |_, value, _, _| {
-                    let (mentions, root) = (mentions.clone(), search_root.clone());
+                vec![
+                    MethodDecl::new(SEARCH_METHOD, false, Interruption::Report),
+                    MethodDecl::new(CHANGES_METHOD, false, Interruption::Report),
+                    MethodDecl::new(REWIND_METHOD, true, Interruption::Drain),
+                ],
+                Arc::new(move |method, value, cancel, _| {
+                    let (mentions, root, tools) =
+                        (mentions.clone(), search_root.clone(), owner.clone());
                     Box::pin(async move {
-                        #[derive(serde::Deserialize)]
-                        #[serde(rename_all = "camelCase", deny_unknown_fields)]
-                        struct Params {
-                            session_id: String,
-                            query: String,
-                            limit: Option<usize>,
+                        match method.as_str() {
+                            SEARCH_METHOD => search(mentions, root, value).await,
+                            CHANGES_METHOD => tools.turn_changes(value).await,
+                            REWIND_METHOD => tools.rewind(value, cancel).await,
+                            _ => Err(RpcError::unknown_method()),
                         }
-                        let Params {
-                            session_id,
-                            query,
-                            limit,
-                        } = params(value)?;
-                        if session_id.is_empty() {
-                            return Err(RpcError::invalid("sessionId must not be empty"));
-                        }
-                        let limit = limit
-                            .unwrap_or(mentions::DEFAULT_LIMIT)
-                            .clamp(1, mentions::MAX_LIMIT);
-                        let found = tokio::task::spawn_blocking(move || {
-                            mentions.search(&root, &query, limit)
-                        })
-                        .await
-                        .map_err(|error| {
-                            RpcError::app(-32000, "session_files_failed", error.to_string())
-                        })?;
-                        reply(serde_json::json!({"candidates": found.iter().map(|candidate| serde_json::json!({
-                            "relativePath": candidate.relative_path,
-                            "absolutePath": candidate.absolute_path,
-                            "dir": candidate.dir,
-                        })).collect::<Vec<_>>()}))
                     })
                 }),
             )?;

@@ -5,11 +5,13 @@ import { GitBranch, LoaderCircle, RotateCcw } from "lucide-vue-next"
 import { MAIN_BRANCH, type DraftAttachments } from "../../rpc/protocol"
 import { useChatStore } from "../../stores/chat"
 import { useConnectionStore } from "../../stores/connection"
+import { useSessionsStore } from "../../stores/sessions"
 import { useUiStore } from "../../stores/ui"
 import ApprovalPrompt from "../chat/ApprovalPrompt.vue"
 import ComposerPanel from "../chat/ComposerPanel.vue"
 import QuestionPrompt from "../chat/QuestionPrompt.vue"
 import TimelineView from "../chat/TimelineView.vue"
+import TurnChangesDialog from "../chat/TurnChangesDialog.vue"
 import { lineName, lineStateLabel, lineStateTone, shortId } from "./line-state"
 
 const props = defineProps<{ sessionId: string; branchId: string }>()
@@ -27,6 +29,9 @@ const approvalKeyboard = computed(() => ui.approvalKeyboard(props.sessionId, pro
 const questions = computed(() => view.value?.questions.filter((ask) => ask.branchId === props.branchId) ?? [])
 const rulesAvailable = computed(() => connection.supports("permission.rules") && connection.supports("permission.set_rules"))
 const searchFiles = computed(() => view.value?.methods.includes("session.files.search") ? (query: string) => chat.searchFiles(props.sessionId, query) : undefined)
+const fileChanges = computed(() => view.value?.methods.includes("session.files.changes") === true && view.value.methods.includes("session.files.rewind"))
+const changesDialog = ref<InstanceType<typeof TurnChangesDialog>>()
+const cwd = computed(() => useSessionsStore().byId.get(props.sessionId)?.cwd)
 const open = computed(() => line.value === undefined
   ? branch.value?.status !== "failed"
   : line.value.state.kind === "working" || line.value.state.kind === "waiting")
@@ -122,13 +127,22 @@ function noModel(): void {
       </button>
     </div>
     <template v-else>
+      <TurnChangesDialog
+        v-if="fileChanges"
+        ref="changesDialog"
+        :cwd="cwd"
+        :load="(turnId) => chat.turnChanges(sessionId, branchId, turnId)"
+        :rewind="(turnId, paths) => chat.rewindTurn(sessionId, branchId, turnId, paths)"
+      />
       <TimelineView
         :rows="rows"
         :running="running"
         :quotable="open && !approval && questions.length === 0"
         :branchable="open && !approval && questions.length === 0"
+        :file-changes="fileChanges"
         :empty="t('lines.empty')"
         variant="panel"
+        @changes="changesDialog?.open($event)"
         @branch="branchHere"
         @open-line="openLine"
         @quote="quote"

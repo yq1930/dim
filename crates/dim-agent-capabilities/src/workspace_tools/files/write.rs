@@ -5,8 +5,9 @@ use super::super::file_reads::{
 };
 use super::codec;
 use super::{
-    Cancelled, FileTools, NotRegular, blocking, cancelled, failed, field, hex, invalid_input,
-    not_regular, open_options, open_regular, resolve_path, revision, wrote,
+    Before, Cancelled, FileTools, NotRegular, blocking, cancelled, failed, field, hex,
+    invalid_input, not_regular, open_options, open_regular, record_published, resolve_path,
+    revision, wrote,
 };
 use crate::host::HostError;
 use dim_agent_types::{JsonObject, ToolEffect, ToolResult};
@@ -60,15 +61,34 @@ pub(super) async fn run(
     };
     let _lock = tools.locks.lock(&path, &cancel).await?;
     let binding = reads.write_binding(&path).await?;
-    let (display, content, target) = (display.clone(), content.clone(), path.clone());
+    let (display, content, target, stop) = (
+        display.clone(),
+        content.clone(),
+        path.clone(),
+        cancel.clone(),
+    );
+    let (_lock, prepared) = blocking(move || {
+        let prepared = prepare(&target, &display, &content, binding, &stop);
+        (_lock, prepared)
+    })
+    .await?;
+    let mut prepared = match prepared.map_err(|Cancelled| cancelled())? {
+        Ok(prepared) => prepared,
+        Err(result) => return Ok(result),
+    };
+    let replaced = prepared.replaced.take();
+    let before = match tools.keep(&prepared.display, replaced, &cancel).await? {
+        Ok(before) => before,
+        Err(result) => return Ok(result),
+    };
+    let target = path.clone();
     #[cfg(test)]
     let hook = tools.before_commit.clone();
     let (_lock, written) = blocking(move || {
-        let written = write_locked(
+        let written = publish(
             &target,
-            &display,
-            &content,
-            binding,
+            prepared,
+            &before,
             &cancel,
             #[cfg(test)]
             hook,
@@ -83,15 +103,25 @@ pub(super) async fn run(
     Ok(result)
 }
 
-fn write_locked(
+/// A `write` whose checks passed, ready to publish.
+struct Prepared {
+    display: String,
+    original: Option<std::fs::File>,
+    /// The bytes the publish replaces; `None` for a new file.
+    replaced: Option<Vec<u8>>,
+    binding: TextFileBinding,
+    text: String,
+    bytes: Vec<u8>,
+}
+
+fn prepare(
     path: &Path,
     display: &str,
     content: &str,
     binding: WriteBinding,
     cancel: &CancellationToken,
-    #[cfg(test)] hook: Option<super::CommitHook>,
-) -> Result<(ToolResult, Option<TextFileBinding>), Cancelled> {
-    let done = |result| Ok((result, None));
+) -> Result<Result<Prepared, ToolResult>, Cancelled> {
+    let done = |result| Ok(Err(result));
     Cancelled::check(cancel)?;
     let exists = match std::fs::metadata(path) {
         Ok(metadata) if metadata.is_dir() => {
@@ -119,7 +149,7 @@ fn write_locked(
     } else {
         None
     };
-    let (binding, text) = if exists {
+    let (binding, text, replaced) = if exists {
         let binding = match binding {
             WriteBinding::None => {
                 return done(failed(
@@ -135,12 +165,13 @@ fn write_locked(
             }
             WriteBinding::Text(binding) => binding,
         };
-        if let Some(conflict) = revision_conflict(path, &binding.raw_revision, display) {
-            return done(conflict);
-        }
+        let replaced = match current_bytes(path, &binding.raw_revision, display) {
+            Ok(bytes) => bytes,
+            Err(conflict) => return done(conflict),
+        };
         Cancelled::check(cancel)?;
         let text = codec::normalize_eol(content, binding.eol);
-        (binding, text)
+        (binding, text, Some(replaced))
     } else {
         let binding = TextFileBinding {
             raw_revision: [0; 32],
@@ -149,12 +180,38 @@ fn write_locked(
             bom: Bom::None,
             eol: codec::detect_eol(content),
         };
-        (binding, content.to_owned())
+        (binding, content.to_owned(), None)
     };
     let bytes = match codec::encode_text(&text, &binding) {
         Ok(bytes) => bytes,
         Err(error) => return done(error.into_result()),
     };
+    Ok(Ok(Prepared {
+        display: display.to_owned(),
+        original,
+        replaced,
+        binding,
+        text,
+        bytes,
+    }))
+}
+
+fn publish(
+    path: &Path,
+    prepared: Prepared,
+    before: &Before,
+    cancel: &CancellationToken,
+    #[cfg(test)] hook: Option<super::CommitHook>,
+) -> Result<(ToolResult, Option<TextFileBinding>), Cancelled> {
+    let Prepared {
+        display,
+        original,
+        binding,
+        text,
+        bytes,
+        ..
+    } = prepared;
+    let done = |result| Ok((result, None));
     Cancelled::check(cancel)?;
     if let Some(parent) = path.parent()
         && let Err(error) = std::fs::create_dir_all(parent)
@@ -165,24 +222,26 @@ fn write_locked(
         ));
     }
     Cancelled::check(cancel)?;
+    let raw_revision = revision(&bytes);
     let written = write_target(
         path,
         &bytes,
-        display,
+        &display,
         original.as_ref(),
         &binding.raw_revision,
         cancel,
         #[cfg(test)]
         hook,
     )?;
-    if let Err(result) = written {
+    if let Err(mut result) = written {
+        record_published(&mut result, before, &raw_revision);
         return done(result);
     }
-    let raw_revision = revision(&bytes);
     let result = wrote(
         format!("Wrote {display}"),
         json!({ "path": display, "bytesWritten": bytes.len(), "revision": hex(&raw_revision) }),
-        display,
+        &display,
+        before,
     );
     let binding = TextFileBinding {
         raw_revision,
@@ -194,6 +253,12 @@ fn write_locked(
 
 /// Fails closed: anything but the recorded bytes is a conflict.
 fn revision_conflict(path: &Path, expected: &[u8; 32], display: &str) -> Option<ToolResult> {
+    current_bytes(path, expected, display).err()
+}
+
+/// The file's bytes when they are the recorded ones; anything else is a
+/// conflict.
+fn current_bytes(path: &Path, expected: &[u8; 32], display: &str) -> Result<Vec<u8>, ToolResult> {
     let modified = || {
         failed(
             "File was modified after it was last read. Use the read tool again before writing.",
@@ -203,16 +268,16 @@ fn revision_conflict(path: &Path, expected: &[u8; 32], display: &str) -> Option<
     let mut bytes = Vec::new();
     let read = match open_regular(path) {
         Ok(Ok(mut file)) => file.read_to_end(&mut bytes),
-        Ok(Err(NotRegular)) => return Some(not_regular(display)),
+        Ok(Err(NotRegular)) => return Err(not_regular(display)),
         Err(error) => Err(error),
     };
     match read {
-        Ok(_) if revision(&bytes) == *expected => None,
-        Err(error) if error.kind() == ErrorKind::PermissionDenied => Some(failed(
+        Ok(_) if revision(&bytes) == *expected => Ok(bytes),
+        Err(error) if error.kind() == ErrorKind::PermissionDenied => Err(failed(
             format!("Permission denied: {display}"),
             json!({ "code": "permission_denied" }),
         )),
-        _ => Some(modified()),
+        _ => Err(modified()),
     }
 }
 

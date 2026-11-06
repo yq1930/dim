@@ -12,6 +12,7 @@ import PlanReview from "./PlanReview.vue"
 import QuestionPrompt from "./QuestionPrompt.vue"
 import TimelineView from "./TimelineView.vue"
 import TodoPanel from "./TodoPanel.vue"
+import TurnChangesDialog from "./TurnChangesDialog.vue"
 import { MAIN_BRANCH, type ContextUsage, type DraftAttachments, type ModelId, type PermissionPreset } from "../../rpc/protocol"
 import { readSkills } from "../../rpc/general-settings"
 import { goalCall, goalObjective, parseGoalRequest, type Goal, type GoalStatus } from "../../goal"
@@ -50,6 +51,8 @@ const planControl = computed(() => {
 const rulesAvailable = computed(() => connection.supports("permission.rules") && connection.supports("permission.set_rules"))
 const storesPastes = computed(() => view.value?.methods.includes("attachment.put") === true)
 const searchFiles = computed(() => view.value?.methods.includes("session.files.search") ? (query: string) => chat.searchFiles(props.sessionId, query) : undefined)
+const fileChanges = computed(() => view.value?.methods.includes("session.files.changes") === true && view.value.methods.includes("session.files.rewind"))
+const changesDialog = ref<InstanceType<typeof TurnChangesDialog>>()
 const permissionControl = computed(() => {
   const session = view.value
   if (session?.status !== "ready" || !session.methods.includes("session.permission.get") || !session.methods.includes("session.permission.update")) return undefined
@@ -288,6 +291,13 @@ async function fork(): Promise<void> {
 
   <section v-else class="chat-page">
     <ConfirmDialog ref="forkConfirm" />
+    <TurnChangesDialog
+      v-if="fileChanges"
+      ref="changesDialog"
+      :cwd="summary?.cwd"
+      :load="(turnId) => chat.turnChanges(sessionId, MAIN_BRANCH, turnId)"
+      :rewind="(turnId, paths) => chat.rewindTurn(sessionId, MAIN_BRANCH, turnId, paths)"
+    />
     <div class="chat-page-top">
       <header class="session-header">
         <button v-if="ui.shellMode === 'compact'" class="ui-icon-button session-nav" data-variant="ghost" data-size="md" type="button" :aria-label="t('sidebar.openMenu')" @click="ui.drawerOpen = true"><Menu aria-hidden="true" /></button>
@@ -319,6 +329,8 @@ async function fork(): Promise<void> {
       :running="view.running"
       :quotable="!approval && questions.length === 0 && reviews.length === 0"
       :branchable="branchable && !approval && questions.length === 0 && reviews.length === 0"
+      :file-changes="fileChanges"
+      @changes="changesDialog?.open($event)"
       @branch="branch"
       @open-line="openLine"
       @quote="composer?.quote($event)"

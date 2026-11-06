@@ -149,6 +149,7 @@ flowchart LR
   p4 -->|"dim_agent_capabilities::file_storage::FileStorage"| p5
   p5 -->|"dim_agent_capabilities::host_platform::HostPlatform"| p54
   p48 -->|"dim_agent_capabilities::methods::SessionMethods@session"| p54
+  p41 -->|"dim_agent_capabilities::prompt_guide::GuideEntries@session"| p54
   p51 -->|"dim_agent_capabilities::timeline_tree::TreeCommands@session"| p54
   p33 -->|"dim_agent_runtime::config::SessionConfig@session"| p54
   p33 -->|"dim_agent_runtime::config::SessionIdentity@session"| p54

@@ -13,7 +13,8 @@ command's bounded tail preview. It also registers the namespace `session.files`
 with `sessionMethods`: `session.files.search` returns the files of the Session's
 workspace an `@` mention offers, ranked as the TUI picker ranks them
 (`workspace_tools/mentions.rs`); a query that names a path outside the workspace
-finds nothing. The WorkspaceTools plugin registers this part
+finds nothing. `session.files.changes` and `session.files.rewind` list and undo a
+turn's `write` and `edit` changes ([File rewind](#file-rewind)). The WorkspaceTools plugin registers this part
 and the branch parts FileReads and BackgroundExec, and holds the file-write
 coordinator: one per-path FIFO admission domain shared by write and edit across
 every Session it serves, which it hands to each Session's part. The plugin keeps
@@ -29,6 +30,7 @@ the domain new ones enter.
 | `S:SessionConfig` | cwd and collaboration role. |
 | `S:SessionIdentity` | Session-specific output directory. |
 | `S:SessionMethods` | Register the `session.exec.output` namespace, until this part unloads. |
+| `S:GuideEntries` | Register the `dim-file-rewind` entry for the Session, until this part unloads. |
 
 Exec looks up the optional `S:FileAccessFacts` service when preparing a process,
 to recognize its resolved cwd and obtain confirmed additional workspace roots
@@ -207,6 +209,37 @@ When nothing matches, `oldtext_not_found` shows the lines around the file line t
 shares the most words with `oldText`'s wordiest line, when it shares at least half.
 There is no similarity match: text the model has not seen is never replaced.
 
+### File rewind
+
+Owner: [files/rewind.rs](../../../../crates/dim-agent-capabilities/src/workspace_tools/files/rewind.rs);
+the contract is the [file rewind design](../../../design/file-rewind.md).
+
+Under the path's coordinator admission, `write` and `edit` run in two blocking
+steps with one async step between them: the first checks the target and stages
+nothing, the second publishes. Between them the call stores the bytes it is about
+to replace through `SessionFilesHost::put`, a Session file named `before`, and
+the result records them in `structuredContent.before`: `{kind: "absent"}` for a
+file the call creates, `{kind: "kept", path, revision}` for kept bytes, and no
+field when nothing was kept, because the host has no `SessionFilesHost` or the
+bytes exceed a Session file's limit. Any other storage failure fails the call
+with `checkpoint_failed` and leaves the file unchanged. A result whose replacement
+was published although it reports the parent-sync failure records `before` and
+`revision` as a successful result does.
+
+`session.files.changes {sessionId, branchId, turnId}` reads the turn's
+`turn/start`, `turn/end`, `step/tool-call` and `step/tool-result` facts through
+`Branch::query` and replies `{ended, files, commands}`: each file `write` or
+`edit` changed, with its `change` (`modified` or `created`), `calls` and
+`status` (`restorable`, `restored`, `changed` or `unrecorded`) read from the file
+now, and each `commandRun` the turn declared. `session.files.rewind {sessionId,
+branchId, turnId, paths}` refuses a running turn (`turn_running`), takes the
+admission of every path in path order, refuses unless every one is restorable
+(`rewind_conflict`, nothing changed), then puts kept bytes back with
+`write_target` or removes a created file, and stops at the first file that fails.
+It records what it did as one Append input on the branch and replies
+`{restored, removed, failed?, recorded}`. A turn the branch never started is
+`invalid_params` for both.
+
 ### Declared effects
 
 `write`, `edit` and `exec` declare the effect of each call on its result, through
@@ -248,6 +281,12 @@ is written to.
 
 ### Rule check
 
+`session.files.changes` reads the branch's committed facts and the files; it
+writes nothing. `session.files.rewind` changes only workspace files the turn's
+own `write` and `edit` changed, under the same admission they take, and writes
+one ordinary Append input through the branch facade; InputQueue and Loop handle
+it as any input. Neither starts background work or reads another plugin's state.
+
 The read-only [`session.exec.output`](../../../design/background-task-output.md)
 method resolves the requested branch through TreeCommands and reads that branch's
 BackgroundExec capture. It accepts only `{sessionId, branchId, taskId}` and returns
@@ -268,7 +307,8 @@ events, acquire Session holds or start background work.
 
 ### Requirements raised to mechanism owners
 
-None (§4 rule 8). S7 uses the existing host and storage contracts.
+None (§4 rule 8). S7 uses the existing host and storage contracts; file rewind
+uses `sessionFiles.put`, the event query and the branch input entry as they are.
 
 ### Model-facing texts
 
@@ -335,9 +375,28 @@ empty." and "Command is not a task of this branch. Use the Task ID returned by
 exec on this branch; use agent for Collaboration members. No command was
 stopped."
 
+`write` and `edit` refuse a call whose replaced content could not be kept with
+"Could not keep a copy of <path> before changing it: <reason>. The file was not
+changed.", protocol: it states the guarantee that the file is unchanged.
+
+A rewind's record is the marker `dim-file-rewind`: one line per file, `restored
+<path>` or `removed <path>`, paths escaped as runtime tags escape content. The
+element, the two words and the line form are protocol. Its guide entry, registered
+for the Session, is protocol throughout:
+
+```
+<dim-file-rewind>: the operator undid file changes that write and edit made in an earlier turn. Each line names one file: restored means it again holds its content from before that turn, and removed means that turn created it and it was deleted. Files not listed, and changes made by commands, are as they were. Your earlier reads of the listed files no longer match them. This is information, not a request.
+```
+
+- "the operator undid file changes that write and edit made in an earlier turn" — what the tag is.
+- "Each line names one file: restored means …, and removed means …" — the line form and the two words.
+- "Files not listed, and changes made by commands, are as they were." — the reach of the undo.
+- "Your earlier reads of the listed files no longer match them." — the runtime's guarantee that `write` and `edit` now require a new read.
+- "This is information, not a request." — the trust class.
+
 The other tools' refusal codes (`invalid_input`, `not_regular_file`,
 `is_directory`, `file_modified_since_read`, `text_binding_required`,
-`permission_denied`, `write_error`, `exec_invalid_request`,
+`permission_denied`, `write_error`, `checkpoint_failed`, `exec_invalid_request`,
 `exec_task_unknown`, `exec_terminate_failed`, `exec_wait_failed`,
 `exec_output_offload_failed`) reach clients and persistence in
 `structuredContent`; `ToolResult.content` carries the sentence the model reads,
@@ -373,7 +432,7 @@ empty live preview and unavailable historical captures.
 | 项 | 值 |
 | --- | --- |
 | 作用域 | Session |
-| 注入 | `P:HostPlatform`、`S:SessionConfig`、`S:SessionIdentity`、`S:SessionMethods`、`S:TreeCommands` |
+| 注入 | `P:HostPlatform`、`S:GuideEntries`、`S:SessionConfig`、`S:SessionIdentity`、`S:SessionMethods`、`S:TreeCommands` |
 | 提供 | `S:ToolHost` |
 | 被注入于 | `ToolRegistry` |
 <!-- /generated -->

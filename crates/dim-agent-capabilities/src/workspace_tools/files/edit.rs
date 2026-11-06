@@ -4,8 +4,9 @@ use super::super::file_reads::{Eol, FileReads, TextFileBinding};
 use super::codec;
 use super::write::write_target;
 use super::{
-    Cancelled, FileTools, NotRegular, blocking, cancelled, failed, field, hex, invalid_input,
-    js_len, not_regular, open_regular, resolve_path, revision, wrote,
+    Before, Cancelled, FileTools, NotRegular, blocking, cancelled, failed, field, hex,
+    invalid_input, js_len, not_regular, open_regular, record_published, resolve_path, revision,
+    wrote,
 };
 use crate::host::HostError;
 use dim_agent_types::{JsonObject, ToolResult};
@@ -116,14 +117,32 @@ pub(super) async fn run(
     };
     let _lock = tools.locks.lock(&path, &cancel).await?;
     let binding = reads.get(&path);
+    let (target, stop) = (path.clone(), cancel.clone());
+    let (_lock, prepared) = blocking(move || {
+        let prepared = prepare(&target, &input, binding, &stop);
+        (_lock, prepared)
+    })
+    .await?;
+    let mut prepared = match prepared.map_err(|Cancelled| cancelled())? {
+        Ok(prepared) => prepared,
+        Err(result) => return Ok(result),
+    };
+    let replaced = std::mem::take(&mut prepared.replaced);
+    let before = match tools
+        .keep(&prepared.display, Some(replaced), &cancel)
+        .await?
+    {
+        Ok(before) => before,
+        Err(result) => return Ok(result),
+    };
     let target = path.clone();
     #[cfg(test)]
     let hook = tools.before_commit.clone();
     let (_lock, written) = blocking(move || {
-        let written = edit_locked(
+        let written = publish(
             &target,
-            &input,
-            binding,
+            prepared,
+            &before,
             &cancel,
             #[cfg(test)]
             hook,
@@ -138,14 +157,27 @@ pub(super) async fn run(
     Ok(result)
 }
 
-fn edit_locked(
+/// An `edit` whose replacement is computed, ready to publish.
+struct Prepared {
+    display: String,
+    original: std::fs::File,
+    /// The bytes the publish replaces.
+    replaced: Vec<u8>,
+    binding: TextFileBinding,
+    after: String,
+    written: Vec<u8>,
+    count: usize,
+    recovery: Option<Recovery>,
+    diff: String,
+}
+
+fn prepare(
     path: &Path,
     input: &Input,
     binding: Option<TextFileBinding>,
     cancel: &CancellationToken,
-    #[cfg(test)] hook: Option<super::CommitHook>,
-) -> Result<(ToolResult, Option<TextFileBinding>), Cancelled> {
-    let done = |result| Ok((result, None));
+) -> Result<Result<Prepared, ToolResult>, Cancelled> {
+    let done = |result| Ok(Err(result));
     let display = &input.path;
     Cancelled::check(cancel)?;
     let size = match std::fs::metadata(path) {
@@ -244,20 +276,52 @@ fn edit_locked(
         Ok(bytes) => bytes,
         Err(error) => return done(error.into_result()),
     };
+    Ok(Ok(Prepared {
+        display: display.clone(),
+        original: limited.into_inner(),
+        replaced: bytes,
+        binding,
+        after,
+        written,
+        count,
+        recovery,
+        diff,
+    }))
+}
+
+fn publish(
+    path: &Path,
+    prepared: Prepared,
+    before: &Before,
+    cancel: &CancellationToken,
+    #[cfg(test)] hook: Option<super::CommitHook>,
+) -> Result<(ToolResult, Option<TextFileBinding>), Cancelled> {
+    let Prepared {
+        display,
+        original,
+        binding,
+        after,
+        written,
+        count,
+        recovery,
+        diff,
+        ..
+    } = prepared;
     Cancelled::check(cancel)?;
-    if let Err(result) = write_target(
+    let raw_revision = revision(&written);
+    if let Err(mut result) = write_target(
         path,
         &written,
-        display,
-        Some(limited.get_ref()),
+        &display,
+        Some(&original),
         &binding.raw_revision,
         cancel,
         #[cfg(test)]
         hook,
     )? {
-        return done(result);
+        record_published(&mut result, before, &raw_revision);
+        return Ok((result, None));
     }
-    let raw_revision = revision(&written);
     let mut structured = json!({
         "path": display,
         "replacementCount": count,
@@ -273,7 +337,8 @@ fn edit_locked(
             None => format!("Edited {display}"),
         },
         structured,
-        display,
+        &display,
+        before,
     );
     let binding = TextFileBinding {
         raw_revision,

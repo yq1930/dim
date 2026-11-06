@@ -83,6 +83,8 @@ export type ToolResult = {
   isError: boolean
   /** The edit tool's display diff (`structuredContent.diff`). */
   diff?: string
+  /** The files the call declared writing (`fileWritten` effects). */
+  filesWritten?: string[]
 }
 
 /** The Timeline facts the projection folds; every other kind is `other`. */
@@ -133,7 +135,7 @@ export type EventContent =
   | { kind: "branch-create-failed"; branchId: string; status: "failed" | "cancelled"; error: string }
   | { kind: "branch-end"; source: BranchSource; ancestor?: string }
   | { kind: "branch-ended"; branchId: string; source: BranchSource; ancestor?: string }
-  | { kind: "turn-end"; outcome: "completed" | "failed" | "cancelled"; error?: string }
+  | { kind: "turn-end"; turnId: string; outcome: "completed" | "failed" | "cancelled"; error?: string }
   | { kind: "model-start"; requestId: string }
   | { kind: "thinking"; requestId: string; delta: string }
   | { kind: "text"; requestId: string; delta: string }
@@ -210,6 +212,29 @@ export type TodoItem = { content: string; status: "pending" | "in_progress" | "c
 
 /** One answer per question; `custom` is the typed text. */
 export type QuestionAnswer = { questionId: string; selected: string[]; custom?: string }
+
+/** A file a turn's `write` and `edit` changed, and whether undoing the turn can restore it now. */
+export type FileChange = {
+  path: string
+  change: "modified" | "created"
+  calls: number
+  status: "restorable" | "restored" | "changed" | "unrecorded"
+}
+
+/** `session.files.changes`: a turn's file changes and the commands it ran, whose changes are not undone. */
+export type TurnChanges = {
+  ended: boolean
+  files: FileChange[]
+  commands: Array<{ command: string; exitCode?: number; signal?: string }>
+}
+
+/** `session.files.rewind`: the files restored and removed, the file it stopped at, and whether the Session recorded it. */
+export type RewindResult = {
+  restored: string[]
+  removed: string[]
+  failed?: { path: string; message: string }
+  recorded: boolean
+}
 
 /** `session.context.compact`: the run finished, or the Session skipped it with a reason. */
 export type CompactResult = { status: "completed" } | { status: "skipped"; reason: string }

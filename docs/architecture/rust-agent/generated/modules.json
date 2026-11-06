@@ -1310,6 +1310,17 @@
       ]
     },
     {
+      "id": "dim_agent_capabilities::workspace_tools::files::rewind",
+      "crate": "dim_agent_capabilities",
+      "parent": "dim_agent_capabilities::workspace_tools::files",
+      "file": "crates/dim-agent-capabilities/src/workspace_tools/files/rewind.rs",
+      "unexpandedMacros": [
+        "format",
+        "matches",
+        "vec"
+      ]
+    },
+    {
       "id": "dim_agent_capabilities::workspace_tools::files::search",
       "crate": "dim_agent_capabilities",
       "parent": "dim_agent_capabilities::workspace_tools::files",
@@ -14079,9 +14090,11 @@
       "from": "dim_agent_capabilities::workspace_tools",
       "to": "dim_agent_capabilities::methods",
       "references": [
+        "path RpcError",
         "path RpcError::app",
         "path RpcError::invalid",
         "path RpcError::reloading",
+        "path RpcError::unknown_method",
         "path SessionMethods",
         "path params",
         "path reply",
@@ -14091,6 +14104,18 @@
         "use crate::methods::SessionMethods",
         "use crate::methods::params",
         "use crate::methods::reply"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools",
+      "to": "dim_agent_capabilities::prompt_guide",
+      "references": [
+        "path GuideEntries",
+        "path GuideEntry",
+        "path GuideScope::Session",
+        "use crate::prompt_guide::GuideEntries",
+        "use crate::prompt_guide::GuideEntry",
+        "use crate::prompt_guide::GuideScope"
       ]
     },
     {
@@ -14145,9 +14170,17 @@
         "path FileTools::handles",
         "path FileTools::with_coordinator",
         "path FileWriteCoordinator",
+        "path files",
         "path files::resolve_path",
         "use files::FileTools",
         "use files::FileWriteCoordinator"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools",
+      "to": "dim_agent_capabilities::workspace_tools::files::rewind",
+      "references": [
+        "path files::rewind::ENTRY"
       ]
     },
     {
@@ -14158,6 +14191,7 @@
         "path mentions",
         "path mentions::DEFAULT_LIMIT",
         "path mentions::MAX_LIMIT",
+        "path mentions::MentionIndex",
         "path mentions::MentionIndex::default"
       ]
     },
@@ -14167,6 +14201,13 @@
       "references": [
         "path AgentBuilder",
         "use dim_agent_runtime::AgentBuilder"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools",
+      "to": "dim_agent_runtime::branch",
+      "references": [
+        "path dim_agent_runtime::Branch"
       ]
     },
     {
@@ -14545,7 +14586,11 @@
         "path HostError",
         "path HostError::Cancelled",
         "path HostError::failed",
-        "use crate::host::HostError"
+        "path SessionFileErrorCode::TooLarge",
+        "path SessionFilesHost",
+        "use crate::host::HostError",
+        "use crate::host::SessionFileErrorCode",
+        "use crate::host::SessionFilesHost"
       ]
     },
     {
@@ -14586,6 +14631,13 @@
         "mod read",
         "path read::definition",
         "path read::run"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files",
+      "to": "dim_agent_capabilities::workspace_tools::files::rewind",
+      "references": [
+        "mod rewind"
       ]
     },
     {
@@ -14705,6 +14757,7 @@
       "from": "dim_agent_capabilities::workspace_tools::files::edit",
       "to": "dim_agent_capabilities::workspace_tools::files",
       "references": [
+        "path Before",
         "path Cancelled",
         "path Cancelled::check",
         "path FileTools",
@@ -14716,10 +14769,12 @@
         "path js_len",
         "path not_regular",
         "path open_regular",
+        "path record_published",
         "path resolve_path",
         "path revision",
         "path super::CommitHook",
         "path wrote",
+        "use super::Before",
         "use super::Cancelled",
         "use super::FileTools",
         "use super::NotRegular",
@@ -14732,6 +14787,7 @@
         "use super::js_len",
         "use super::not_regular",
         "use super::open_regular",
+        "use super::record_published",
         "use super::resolve_path",
         "use super::revision",
         "use super::wrote"
@@ -14959,6 +15015,114 @@
       ]
     },
     {
+      "from": "dim_agent_capabilities::workspace_tools::files::rewind",
+      "to": "dim_agent_capabilities::context_block",
+      "references": [
+        "use crate::context_block::element",
+        "use crate::context_block::raw",
+        "use crate::context_block::text"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::rewind",
+      "to": "dim_agent_capabilities::methods",
+      "references": [
+        "path RpcError",
+        "path RpcError::app",
+        "path RpcError::interrupted",
+        "path RpcError::invalid",
+        "use crate::methods::RpcError"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::rewind",
+      "to": "dim_agent_capabilities::workspace_tools::files",
+      "references": [
+        "path FileTools",
+        "path blocking",
+        "path open_regular",
+        "path revision",
+        "use super::Cancelled",
+        "use super::FileTools",
+        "use super::NotRegular",
+        "use super::blocking",
+        "use super::open_regular",
+        "use super::revision"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::rewind",
+      "to": "dim_agent_capabilities::workspace_tools::files::write",
+      "references": [
+        "path write_target",
+        "use super::write::write_target"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::rewind",
+      "to": "dim_agent_runtime::branch",
+      "references": [
+        "path Branch",
+        "use dim_agent_runtime::Branch"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::rewind",
+      "to": "dim_agent_runtime::timeline_query",
+      "references": [
+        "path TimelineQuery",
+        "path TimelineQueryDirection::Ascending",
+        "path TimelineQueryOrderBy::Sequence",
+        "path TimelineQueryPredicate",
+        "path TimelineQueryScope::Branch",
+        "use dim_agent_runtime::TimelineQuery",
+        "use dim_agent_runtime::TimelineQueryDirection",
+        "use dim_agent_runtime::TimelineQueryOrderBy",
+        "use dim_agent_runtime::TimelineQueryPredicate",
+        "use dim_agent_runtime::TimelineQueryScope"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::rewind",
+      "to": "dim_agent_types",
+      "references": [
+        "path JsonObject",
+        "use dim_agent_types::JsonObject"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::rewind",
+      "to": "dim_agent_types::content",
+      "references": [
+        "path ToolContent::Blocks",
+        "path ToolContent::Text",
+        "use dim_agent_types::ToolContent"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::rewind",
+      "to": "dim_agent_types::events",
+      "references": [
+        "path EventKind::ToolCall",
+        "path EventKind::ToolResult",
+        "path InputMessageData",
+        "path InputMessageData::default",
+        "path InputMode::Append",
+        "use dim_agent_types::EventKind",
+        "use dim_agent_types::InputMessageData",
+        "use dim_agent_types::InputMode"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::rewind",
+      "to": "dim_agent_types::tool",
+      "references": [
+        "path ToolEffect::CommandRun",
+        "path ToolEffect::FileWritten",
+        "use dim_agent_types::ToolEffect"
+      ]
+    },
+    {
       "from": "dim_agent_capabilities::workspace_tools::files::search",
       "to": "dim_agent_capabilities::host",
       "references": [
@@ -15047,6 +15211,7 @@
       "from": "dim_agent_capabilities::workspace_tools::files::write",
       "to": "dim_agent_capabilities::workspace_tools::files",
       "references": [
+        "path Before",
         "path Cancelled",
         "path Cancelled::check",
         "path FileTools",
@@ -15058,10 +15223,12 @@
         "path not_regular",
         "path open_options",
         "path open_regular",
+        "path record_published",
         "path resolve_path",
         "path revision",
         "path super::CommitHook",
         "path wrote",
+        "use super::Before",
         "use super::Cancelled",
         "use super::FileTools",
         "use super::NotRegular",
@@ -15074,6 +15241,7 @@
         "use super::not_regular",
         "use super::open_options",
         "use super::open_regular",
+        "use super::record_published",
         "use super::resolve_path",
         "use super::revision",
         "use super::wrote"

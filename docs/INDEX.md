@@ -56,6 +56,7 @@ This index is navigation. Delivery status lives in issues, not here.
 - [Subagent model policy](design/subagent-model-policy.md) (#263)
 - [Subagent tool approval and permission inheritance](design/subagent-tool-approval.md): requesting-branch policy, leader decision tools, user review, cancellation and recovery (#19, #29, #257)
 - [Worktree access](design/worktree-access.md)（中文）：按需识别同仓库工作树、Session 根目录缓存、当前权限继承及持久使用关联 (#911)
+- [File checkpoints and rewind](design/file-rewind.md)（中文）：write/edit 改动前保存原内容、按轮次列出改动、不覆盖后续修改的还原与还原记录
 - [CLI background command output](design/background-task-output.md) (#324)
 - [Commands and members in the background-task list](design/background-task-list.md) (#324)
 - [Workflows in the CLI task view](design/workflow-task-view.md) (#264)

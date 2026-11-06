@@ -27,6 +27,8 @@ export type TimelineRow =
   | { kind: "source-ended"; key: string; branch: string }
   | { kind: "error"; key: string; text: string }
   | { kind: "stopped"; key: string }
+  | { kind: "turn-files"; key: string; turnId: string; count: number }
+  | { kind: "files-rewound"; key: string; count: number }
 
 /** A request's reasoning or answer while it is still arriving. */
 type Stream = {
@@ -52,6 +54,8 @@ export class Projection {
   private thoughts = new Map<string, Stream>()
   private requestStarts = new Map<string, number>()
   private tools = new Map<string, number>()
+  /** The files `write` and `edit` changed in the turn under way. */
+  private turnWrites = new Set<string>()
   private lines = new Map<string, number>()
   /** `ask_user` calls whose batch has no `step/tool-result` yet, oldest first. */
   private asks: Array<{ requestId: string; callId: string; questions: AskQuestion[] }> = []
@@ -111,7 +115,7 @@ export class Projection {
         this.held.delete(content.inputId)
         break
       case "source-input": {
-        const notice = branchNotice(content.text, content.mode)
+        const notice = branchNotice(content.text, content.mode) ?? rewindNotice(content.text)
         if (notice !== undefined) this.push({ ...notice, key: `notice-${event.sequence}` })
         break
       }
@@ -191,6 +195,8 @@ export class Projection {
         this.requestStarts.clear()
         if (content.outcome === "failed") this.push({ kind: "error", key: `error-${event.sequence}`, text: content.error ?? "" })
         if (content.outcome === "cancelled") this.push({ kind: "stopped", key: `stopped-${event.sequence}` })
+        if (this.turnWrites.size > 0) this.push({ kind: "turn-files", key: `turn-files-${event.sequence}`, turnId: content.turnId, count: this.turnWrites.size })
+        this.turnWrites.clear()
         break
       case "context-configured":
         this.model = content.model
@@ -264,6 +270,10 @@ export class Projection {
     const index = this.tools.get(callId)
     if (index === undefined) return
     this.tools.delete(callId)
+    const row = this.rows[index]!
+    if (row.kind === "tool" && (row.name === "write" || row.name === "edit")) {
+      for (const path of result.filesWritten ?? []) this.turnWrites.add(path)
+    }
     this.update(index, { pending: false, result })
   }
 }
@@ -272,6 +282,13 @@ type BranchNotice =
   | { kind: "source-message"; from: string; steer: boolean; final: boolean; body: string }
   | { kind: "source-idle"; branch: string; status: string }
   | { kind: "source-ended"; branch: string }
+
+/** The record of an undone turn: one line per restored or removed file. */
+function rewindNotice(text: string): { kind: "files-rewound"; count: number } | undefined {
+  if (!text.startsWith("<dim-file-rewind>")) return undefined
+  const lines = elementBody(text, "</dim-file-rewind>").split("\n").filter((line) => line.trim() !== "")
+  return { kind: "files-rewound", count: lines.length }
+}
 
 function branchNotice(text: string, mode: string | undefined): BranchNotice | undefined {
   if (text.startsWith("<dim-branch-message")) {

@@ -9,11 +9,12 @@
 mod codec;
 mod edit;
 mod read;
+pub mod rewind;
 mod search;
 mod write;
 
 use super::file_reads::FileReads;
-use crate::host::HostError;
+use crate::host::{HostError, SessionFileErrorCode, SessionFilesHost};
 use dim_agent_types::{JsonObject, ToolCall, ToolDefinition, ToolEffect, ToolResult};
 use serde_json::{Value, json};
 use sha2::Digest;
@@ -27,6 +28,9 @@ use tokio_util::sync::CancellationToken;
 
 const TOOL_NAMES: [&str; 5] = ["read", "write", "edit", "glob", "grep"];
 const CANCELLED: &str = "Tool execution cancelled.";
+/// The name of every Session file that keeps replaced content; each lives in
+/// its own file directory.
+const KEPT_NAME: &str = "before";
 
 /// Session-level executor of the file tools. Bindings belong to the calling
 /// branch and are passed per call. Product Sessions share a process-owned
@@ -37,6 +41,9 @@ pub struct FileTools {
     /// Session output directory; large `read` results are written here.
     output_dir: PathBuf,
     locks: Arc<FileWriteCoordinator>,
+    /// Where `write` and `edit` keep the content they replace; absent in
+    /// hosts without Session storage.
+    keep: Option<Keep>,
     #[cfg(test)]
     /// Runs after a complete sibling is synced and before commit verification;
     /// no sleeps, production hooks or global test locks.
@@ -45,6 +52,36 @@ pub struct FileTools {
 
 #[cfg(test)]
 type CommitHook = Arc<dyn Fn(&Path) + Send + Sync>;
+
+/// The Session storage replaced content is kept in.
+struct Keep {
+    files: Arc<SessionFilesHost>,
+    session_id: String,
+}
+
+/// What a `write` or `edit` replaced, recorded on its result as `before`
+/// (file rewind §4.1).
+enum Before {
+    /// The file did not exist.
+    Absent,
+    /// The replaced bytes are the Session file at `path`.
+    Kept { path: String, revision: [u8; 32] },
+    /// The replaced bytes were not kept.
+    NotKept,
+}
+
+impl Before {
+    fn record(&self, fields: &mut JsonObject) {
+        let before = match self {
+            Self::Absent => json!({ "kind": "absent" }),
+            Self::Kept { path, revision } => {
+                json!({ "kind": "kept", "path": path, "revision": hex(revision) })
+            }
+            Self::NotKept => return,
+        };
+        fields.insert("before".into(), before);
+    }
+}
 
 impl FileTools {
     pub fn new(cwd: PathBuf, home: PathBuf, output_dir: PathBuf) -> Self {
@@ -62,8 +99,61 @@ impl FileTools {
             home,
             output_dir,
             locks,
+            keep: None,
             #[cfg(test)]
             before_commit: None,
+        }
+    }
+
+    /// Keeps the content `write` and `edit` replace as Session files owned
+    /// by `session_id`, so a turn's changes can be undone.
+    pub fn keeping(mut self, files: Arc<SessionFilesHost>, session_id: String) -> Self {
+        self.keep = Some(Keep { files, session_id });
+        self
+    }
+
+    /// Keeps `replaced`, the bytes a mutation of `display` is about to
+    /// replace (`None`: the file does not exist), before it publishes. A
+    /// failure to store them fails the call with the file unchanged; content
+    /// larger than a Session file may be is not kept.
+    async fn keep(
+        &self,
+        display: &str,
+        replaced: Option<Vec<u8>>,
+        cancel: &CancellationToken,
+    ) -> Result<Result<Before, ToolResult>, HostError> {
+        let Some(bytes) = replaced else {
+            return Ok(Ok(Before::Absent));
+        };
+        let Some(keep) = &self.keep else {
+            return Ok(Ok(Before::NotKept));
+        };
+        let revision = revision(&bytes);
+        let stored = keep
+            .files
+            .0
+            .put(
+                keep.session_id.clone(),
+                KEPT_NAME.into(),
+                bytes,
+                cancel.clone(),
+            )
+            .await;
+        match stored {
+            Ok(stored) => Ok(Ok(stored.path.to_str().map_or(Before::NotKept, |path| {
+                Before::Kept {
+                    path: path.to_owned(),
+                    revision,
+                }
+            }))),
+            Err(error) if error.code == SessionFileErrorCode::TooLarge => Ok(Ok(Before::NotKept)),
+            Err(_) if cancel.is_cancelled() => Err(cancelled()),
+            Err(error) => Ok(Err(failed(
+                format!(
+                    "Could not keep a copy of {display} before changing it: {error}. The file was not changed."
+                ),
+                json!({ "code": "checkpoint_failed" }),
+            ))),
         }
     }
 
@@ -171,14 +261,29 @@ fn succeeded(content: impl Into<String>, structured: Value) -> ToolResult {
 }
 
 /// A successful `write` or `edit` result: the published file is the call's
-/// `fileWritten` effect (session boundary A.6).
-fn wrote(content: impl Into<String>, structured: Value, path: &str) -> ToolResult {
+/// `fileWritten` effect (session boundary A.6), recorded with what it
+/// replaced.
+fn wrote(content: impl Into<String>, structured: Value, path: &str, before: &Before) -> ToolResult {
+    let mut fields = object(structured);
+    before.record(&mut fields);
     ToolResult {
-        structured_content: Some(object(structured)),
+        structured_content: Some(fields),
         effects: Some(vec![ToolEffect::FileWritten {
             path: path.to_owned(),
         }]),
         ..ToolResult::text(content)
+    }
+}
+
+/// A failed result whose replacement was published anyway, its parent sync
+/// failing afterwards, records the change as a successful result does.
+fn record_published(result: &mut ToolResult, before: &Before, written: &[u8; 32]) {
+    if result.effects.is_none() {
+        return;
+    }
+    if let Some(fields) = result.structured_content.as_mut() {
+        fields.insert("revision".into(), json!(hex(written)));
+        before.record(fields);
     }
 }
 

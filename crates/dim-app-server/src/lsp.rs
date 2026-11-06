@@ -119,6 +119,7 @@ fn built_in() -> [(&'static str, ServerConfig); 4] {
                 Some(json!({
                     "cargo": { "buildScripts": { "enable": false } },
                     "procMacro": { "enable": false },
+                    "checkOnSave": false,
                     "files": { "watcher": "server" },
                 })),
             ),

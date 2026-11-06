@@ -98,7 +98,7 @@ A configured server lists the extensions it serves in `extensionToLanguage`, whi
 
 A built-in command is looked up on the App Server's `PATH` when its server starts; a command that is not found makes the call fail with `LSP_UNAVAILABLE`. Two built-in servers start with `initializationOptions`, which a configured entry of the same id replaces:
 
-- `rust-analyzer` turns off build scripts and proc-macro expansion, which run workspace code a `read_filesystem` call must not run, and turns on its own file watcher, since Lsp sends no file-change notifications.
+- `rust-analyzer` turns off build scripts, proc-macro expansion and its check on save (`checkOnSave`, a `cargo check` it also runs once the workspace has loaded), which build and run workspace code a `read_filesystem` call must not run, and turns on its own file watcher, since Lsp sends no file-change notifications.
 - `typescript-language-server` sets `tsserver.useSyntaxServer` to `never`. Otherwise a syntax server that knows only open files answers until the project has loaded, and since a query opens only its own file, a first `goToDefinition` would stop at the import and `findReferences` would miss other files.
 
 ### 3.3 Server lifetime
@@ -201,7 +201,7 @@ Every call reads the user-scoped `lsp` source; a read failure or a document that
 - The queried file must resolve inside the Session workspace. Result locations may point outside it, for example into a standard library, and are only reported.
 - Servers are trusted local programs that run with the App Server's authority and environment, as MCP stdio servers do; Lsp adds no sandbox, and the `Process isolation` switches, which govern model commands, do not apply to them.
 - Lsp refuses `workspace/applyEdit` and sends no `workspace/executeCommand`.
-- The built-in rust-analyzer runs no build scripts or proc macros. Other server behavior is the server's own, for example `cargo metadata` resolving dependencies.
+- The built-in rust-analyzer runs no build scripts, proc macros or `cargo check`. Other server behavior is the server's own, for example rust-analyzer's `cargo metadata` resolving dependencies.
 
 ## 8. Rule check
 

@@ -98,7 +98,7 @@ sequenceDiagram
 
 内置命令在其服务器启动时到 App Server 的 `PATH` 上查找；找不到命令时调用以 `LSP_UNAVAILABLE` 失败。有两个内置服务器启动时带有 `initializationOptions`，同 id 的已配置条目会替换它们：
 
-- `rust-analyzer` 关闭构建脚本和过程宏展开，因为它们会运行工作区代码，而 `read_filesystem` 调用不得运行这些代码；同时打开它自己的文件监视，因为 Lsp 不发送文件变更通知。
+- `rust-analyzer` 关闭构建脚本、过程宏展开和保存时检查（`checkOnSave`，工作区加载完成后它也会跑一次 `cargo check`），因为它们会编译并运行工作区代码，而 `read_filesystem` 调用不得运行这些代码；同时打开它自己的文件监视，因为 Lsp 不发送文件变更通知。
 - `typescript-language-server` 把 `tsserver.useSyntaxServer` 设为 `never`。否则在项目加载完成前，由只认识已打开文件的语法服务器作答；而一次查询只打开它自己的文件，于是第一次 `goToDefinition` 会停在 import 处，`findReferences` 会漏掉其他文件。
 
 ### 3.3 服务器生命周期
@@ -201,7 +201,7 @@ Lsp 不写标记，也不贡献 guide 条目。
 - 被查询的文件必须解析到 Session 工作区内。结果位置可以指向工作区外（例如标准库），只作报告。
 - 服务器是受信任的本地程序，以 App Server 的权限和环境运行，与 MCP stdio 服务器相同；Lsp 不增加沙箱，管控模型命令的 `Process isolation` 开关不作用于它们。
 - Lsp 拒绝 `workspace/applyEdit`，也不发送 `workspace/executeCommand`。
-- 内置 rust-analyzer 不运行构建脚本和过程宏。服务器的其他行为由服务器自己决定，例如 `cargo metadata` 会解析依赖。
+- 内置 rust-analyzer 不运行构建脚本、过程宏或 `cargo check`。服务器的其他行为由服务器自己决定，例如 rust-analyzer 的 `cargo metadata` 会解析依赖。
 
 ## 8. 规则检查
 

@@ -1,444 +1,66 @@
+//! Dim for macOS: a Tauri window over the local Web workspace that the
+//! bundled `dimcode` serves.
+
+mod commands;
+mod environment;
+mod menu;
+mod service;
+mod window;
+
 use std::{
-    io::Write,
-    path::{Path, PathBuf},
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::Duration,
+    path::PathBuf,
+    sync::{Arc, Mutex, atomic::AtomicI64},
 };
-use tauri::{AppHandle, Manager, RunEvent, Url, WebviewUrl, WebviewWindowBuilder, WindowEvent};
-use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
-use tauri_plugin_notification::NotificationExt;
-use tauri_plugin_opener::OpenerExt;
-use tauri_plugin_shell::{
-    ShellExt,
-    process::{Command, CommandChild, CommandEvent},
-};
+use tauri::{Manager, RunEvent, WindowEvent};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-fn webview_store_id(home: &Path) -> Result<[u8; 16]> {
-    let file = home.join("webview-id");
-    match std::fs::read_to_string(&file) {
-        Ok(value) => Ok(uuid::Uuid::parse_str(value.trim())?.into_bytes()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            let id = uuid::Uuid::new_v4();
-            let mut file = std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(file)?;
-            writeln!(file, "{id}")?;
-            Ok(id.into_bytes())
-        }
-        Err(error) => Err(error.into()),
-    }
-}
-
-/// The proxy macOS's network settings name, as environment variables for the
-/// local service: an app opened from Finder inherits no `HTTPS_PROXY`, and the
-/// service's HTTP clients read the environment rather than the system settings.
-/// An environment that already names a proxy keeps it.
-fn system_proxy_env() -> Vec<(&'static str, String)> {
-    const NAMES: [&str; 6] = [
-        "HTTPS_PROXY",
-        "https_proxy",
-        "HTTP_PROXY",
-        "http_proxy",
-        "ALL_PROXY",
-        "all_proxy",
-    ];
-    if NAMES.iter().any(|name| std::env::var_os(name).is_some()) {
-        return Vec::new();
-    }
-    match std::process::Command::new("/usr/sbin/scutil")
-        .arg("--proxy")
-        .output()
-    {
-        Ok(output) if output.status.success() => {
-            proxy_env_of(&String::from_utf8_lossy(&output.stdout))
-        }
-        _ => Vec::new(),
-    }
-}
-
-/// `scutil --proxy` is one `Key : Value` per line, with `ExceptionsList` as a
-/// nested block of `index : entry` lines.
-fn proxy_env_of(settings: &str) -> Vec<(&'static str, String)> {
-    let (mut values, mut exceptions, mut in_exceptions) = (Vec::new(), Vec::new(), false);
-    for line in settings.lines().map(str::trim) {
-        if line.starts_with("ExceptionsList") {
-            in_exceptions = true;
-        } else if line == "}" {
-            in_exceptions = false;
-        } else if let Some((key, value)) = line.split_once(" : ") {
-            if in_exceptions {
-                exceptions.push(value.strip_prefix('*').unwrap_or(value).to_owned());
-            } else {
-                values.push((key, value));
-            }
-        }
-    }
-    let value = |key: String| {
-        values
-            .iter()
-            .find(|(name, _)| *name == key)
-            .map(|(_, value)| *value)
-    };
-    let proxy = |scheme: &str| {
-        (value(format!("{scheme}Enable")) == Some("1"))
-            .then(|| {
-                let host = value(format!("{scheme}Proxy"))?;
-                let port = value(format!("{scheme}Port"))?;
-                Some(format!("http://{host}:{port}"))
-            })
-            .flatten()
-    };
-    let (http, https) = (proxy("HTTP"), proxy("HTTPS"));
-    if http.is_none() && https.is_none() {
-        return Vec::new();
-    }
-    let mut env = Vec::new();
-    if let Some(http) = http {
-        env.extend([("HTTP_PROXY", http.clone()), ("http_proxy", http)]);
-    }
-    if let Some(https) = https {
-        env.extend([("HTTPS_PROXY", https.clone()), ("https_proxy", https)]);
-    }
-    let mut bypass = vec![
-        "localhost".to_owned(),
-        "127.0.0.1".to_owned(),
-        "::1".to_owned(),
-    ];
-    bypass.append(&mut exceptions);
-    let bypass = bypass.join(",");
-    env.extend([("NO_PROXY", bypass.clone()), ("no_proxy", bypass)]);
-    env
-}
-
-struct Desktop {
-    home: PathBuf,
-    resources: PathBuf,
-    model_config: Option<PathBuf>,
-    holder: Mutex<Option<CommandChild>>,
-    workspace: Mutex<Option<Url>>,
-    startup: tokio::sync::watch::Sender<bool>,
-    quitting: AtomicBool,
-}
-
-impl Desktop {
-    fn command(&self, app: &AppHandle) -> Result<Command> {
-        let user_home = app.path().home_dir()?;
-        let mut paths: Vec<_> =
-            std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()).collect();
-        for path in [
-            user_home.join(".local/bin"),
-            user_home.join(".cargo/bin"),
-            PathBuf::from("/opt/homebrew/bin"),
-            PathBuf::from("/usr/local/bin"),
-            PathBuf::from("/usr/bin"),
-            PathBuf::from("/bin"),
-            PathBuf::from("/usr/sbin"),
-            PathBuf::from("/sbin"),
-        ] {
-            if !paths.contains(&path) {
-                paths.push(path);
-            }
-        }
-        let mut command = app
-            .shell()
-            .sidecar("dimcode")?
-            .current_dir(user_home)
-            .args([std::ffi::OsStr::new("--home"), self.home.as_os_str()])
-            .env("PATH", std::env::join_paths(paths)?)
-            .env("NO_COLOR", "1")
-            .env("DIMCODE_WEB_ASSETS", self.resources.join("web"))
-            .env(
-                "DIMCODE_DEFAULT_PLUGINS",
-                self.resources.join("plugins-payload/default-plugins.json"),
-            );
-        for (name, value) in system_proxy_env() {
-            command = command.env(name, value);
-        }
-        if let Some(path) = &self.model_config {
-            command = command.args([std::ffi::OsStr::new("--model-config"), path.as_os_str()]);
-        }
-        Ok(command)
-    }
-
-    fn finish_startup(&self) {
-        self.startup.send_replace(true);
-    }
-}
-
-fn show_main(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
-    }
-}
-
-/// Commands answer only the main window on the local service's origin.
-fn in_local_workspace(app: &AppHandle, window: &tauri::WebviewWindow) -> Result<bool> {
-    let url = window.url()?;
-    Ok(window.label() == "main"
-        && app
-            .state::<Arc<Desktop>>()
-            .workspace
-            .lock()
-            .unwrap()
-            .as_ref()
-            .is_some_and(|workspace| workspace.origin() == url.origin()))
-}
-
-#[tauri::command]
-fn notify_attention(
-    app: AppHandle,
-    window: tauri::WebviewWindow,
-    title: String,
-    body: String,
-) -> std::result::Result<(), String> {
-    if !in_local_workspace(&app, &window).map_err(|error| error.to_string())? {
-        return Err("Notifications are only available in the local workspace".into());
-    }
-    if window.is_focused().unwrap_or(false) {
-        return Ok(());
-    }
-    let _ = window.request_user_attention(Some(tauri::UserAttentionType::Informational));
-    app.notification()
-        .builder()
-        .title(title)
-        .body(body)
-        .show()
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-async fn choose_workspace(
-    app: AppHandle,
-    window: tauri::WebviewWindow,
-    initial_directory: Option<String>,
-) -> std::result::Result<Option<String>, String> {
-    if !in_local_workspace(&app, &window).map_err(|error| error.to_string())? {
-        return Err("The folder picker is only available in the local workspace".into());
-    }
-    let mut dialog = app.dialog().file().set_parent(&window);
-    if let Some(path) = initial_directory.filter(|path| Path::new(path).is_absolute()) {
-        dialog = dialog.set_directory(path);
-    }
-    let (sender, receiver) = tokio::sync::oneshot::channel();
-    dialog.pick_folder(move |folder| {
-        let _ = sender.send(folder);
-    });
-    receiver
-        .await
-        .map_err(|error| error.to_string())?
-        .map(|folder| {
-            let path = folder.into_path().map_err(|error| error.to_string())?;
-            path.into_os_string()
-                .into_string()
-                .map_err(|_| "The folder path is not valid UTF-8".into())
-        })
-        .transpose()
-}
-
-fn open_external(app: &AppHandle, url: &Url) {
-    if matches!(url.scheme(), "http" | "https") {
-        let _ = app.opener().open_url(url.as_str(), None::<&str>);
-    }
-}
-
-fn fail(app: &AppHandle, message: impl Into<String>) {
-    let state = app.state::<Arc<Desktop>>();
-    state.finish_startup();
-    if state.quitting.load(Ordering::Acquire) {
-        return;
-    }
-    let handle = app.clone();
-    app.dialog()
-        .message(message)
-        .title("Dim 无法连接本地服务")
-        .kind(MessageDialogKind::Error)
-        .show(move |_| handle.exit(1));
-}
-
-async fn hold_workspace(app: AppHandle, state: Arc<Desktop>) -> Result<()> {
-    for file in ["web/index.html", "plugins-payload/default-plugins.json"] {
-        if !state.resources.join(file).is_file() {
-            return Err(format!("应用缺少资源 {file}，请重新构建 Dim.app。").into());
-        }
-    }
-    let (mut events, child) = state.command(&app)?.args(["web", "--no-open"]).spawn()?;
-    *state.holder.lock().unwrap() = Some(child);
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
-    let mut stderr = Vec::new();
-    let mut connected = false;
-    loop {
-        let event = if connected {
-            events.recv().await
-        } else {
-            tokio::time::timeout_at(deadline, events.recv())
-                .await
-                .map_err(|_| "本地服务启动超时，请检查应用数据目录中的 rust/daemon.log。")?
-        };
-        match event {
-            Some(CommandEvent::Stdout(bytes)) if !connected => {
-                let line = String::from_utf8_lossy(&bytes);
-                let Some(url) = line.split_whitespace().find_map(|part| {
-                    let url = Url::parse(part).ok()?;
-                    (url.scheme() == "http"
-                        && url.host_str() == Some("127.0.0.1")
-                        && url.port().is_some()
-                        && url.username().is_empty()
-                        && url.password().is_none()
-                        && url.path() == "/"
-                        && url.query().is_none()
-                        && url
-                            .fragment()
-                            .is_some_and(|value| value.starts_with("bootstrap=")))
-                    .then_some(url)
-                }) else {
-                    continue;
-                };
-                *state.workspace.lock().unwrap() = Some(url.clone());
-                app.add_capability(
-                    tauri::ipc::CapabilityBuilder::new("workspace-picker")
-                        .window("main")
-                        .local(false)
-                        .remote(format!("{}/*", url.origin().ascii_serialization()))
-                        .permission("allow-choose-workspace")
-                        .permission("allow-notify-attention"),
-                )?;
-                connected = true;
-                state.finish_startup();
-                if !state.quitting.load(Ordering::Acquire) {
-                    app.get_webview_window("main")
-                        .ok_or("桌面窗口已经关闭。")?
-                        .navigate(url)?;
-                }
-            }
-            Some(CommandEvent::Stderr(bytes)) => {
-                stderr.extend(bytes);
-                stderr.push(b'\n');
-                if stderr.len() > 8192 {
-                    stderr.drain(..stderr.len() - 8192);
-                }
-            }
-            Some(CommandEvent::Error(error)) => return Err(error.into()),
-            Some(CommandEvent::Terminated(_)) | None => {
-                if state.quitting.load(Ordering::Acquire) {
-                    return Ok(());
-                }
-                return Err(format!(
-                    "本地服务已停止。\n{}\n日志：{}",
-                    String::from_utf8_lossy(&stderr).trim(),
-                    state.home.join("rust/daemon.log").display()
-                )
-                .into());
-            }
-            _ => {}
-        }
-    }
-}
-
-async fn stop_workspace(app: &AppHandle, state: &Desktop) -> Result<()> {
-    let mut startup = state.startup.subscribe();
-    let _ = tokio::time::timeout(Duration::from_secs(30), startup.wait_for(|ready| *ready)).await;
-    let result: Result<()> = async {
-        let (mut events, child) = state.command(app)?.args(["daemon", "stop"]).spawn()?;
-        let stopped = tokio::time::timeout(Duration::from_secs(35), async {
-            while let Some(event) = events.recv().await {
-                match event {
-                    CommandEvent::Terminated(status) => return status.code == Some(0),
-                    CommandEvent::Error(_) => return false,
-                    _ => {}
-                }
-            }
-            false
-        })
-        .await;
-        let _ = child.kill();
-        if !matches!(stopped, Ok(true)) {
-            return Err("本地服务未确认关闭，请检查应用数据目录中的 rust/daemon.log。".into());
-        }
-        Ok(())
-    }
-    .await;
-    if let Some(holder) = state.holder.lock().unwrap().take() {
-        let _ = holder.kill();
-    }
-    result
+/// What the parts of Desktop share.
+pub struct Desktop {
+    service: Arc<service::Service>,
+    window_state: Mutex<window::WindowState>,
+    /// Attention requests since the window was last in front, shown on the
+    /// Dock badge.
+    unread: AtomicI64,
 }
 
 fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
-            show_main(app)
+            window::show(app)
         }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![choose_workspace, notify_attention])
+        .invoke_handler(tauri::generate_handler![
+            commands::choose_workspace,
+            commands::notify_attention
+        ])
+        .on_menu_event(menu::handle)
         .setup(|app| {
-            let home = std::env::var_os("DIM_DESKTOP_HOME")
-                .map(PathBuf::from)
-                .unwrap_or(app.path().app_data_dir()?);
+            let home = match std::env::var_os("DIM_DESKTOP_HOME") {
+                Some(home) => PathBuf::from(home),
+                None => app.path().app_data_dir()?,
+            };
             if !home.is_absolute() {
                 return Err("DIM_DESKTOP_HOME must be an absolute path".into());
             }
             std::fs::create_dir_all(&home)?;
-            let webview_id = webview_store_id(&home).map_err(|error| error.to_string())?;
-            let state = Arc::new(Desktop {
-                home,
-                resources: app.path().resource_dir()?,
-                model_config: std::env::var_os("DIMCODE_MODEL_CONFIG").map(PathBuf::from),
-                holder: Mutex::new(None),
-                workspace: Mutex::new(None),
-                startup: tokio::sync::watch::channel(false).0,
-                quitting: AtomicBool::new(false),
+            let store = window::webview_store_id(&home).map_err(|error| error.to_string())?;
+            let desktop = Arc::new(Desktop {
+                window_state: Mutex::new(window::WindowState::load(&home)),
+                service: Arc::new(service::Service::new(
+                    home,
+                    app.path().resource_dir()?,
+                    std::env::var_os("DIMCODE_MODEL_CONFIG").map(PathBuf::from),
+                )),
+                unread: AtomicI64::new(0),
             });
-            app.manage(state.clone());
-            let navigation = app.handle().clone();
-            let popups = app.handle().clone();
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                .title("Dim")
-                .inner_size(1320.0, 880.0)
-                .min_inner_size(840.0, 600.0)
-                .center()
-                .data_store_identifier(webview_id)
-                .disable_drag_drop_handler()
-                .on_navigation(move |url| {
-                    if url.scheme() == "tauri" && url.host_str() == Some("localhost") {
-                        return true;
-                    }
-                    let state = navigation.state::<Arc<Desktop>>();
-                    if state
-                        .workspace
-                        .lock()
-                        .unwrap()
-                        .as_ref()
-                        .is_some_and(|workspace| workspace.origin() == url.origin())
-                    {
-                        return true;
-                    }
-                    open_external(&navigation, url);
-                    false
-                })
-                .on_new_window(move |url, _| {
-                    open_external(&popups, &url);
-                    tauri::webview::NewWindowResponse::Deny
-                })
-                .build()?;
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                let result = hold_workspace(handle.clone(), state.clone()).await;
-                state.finish_startup();
-                if let Err(error) = result {
-                    fail(&handle, error.to_string());
-                }
-            });
+            app.manage(desktop.clone());
+            app.set_menu(menu::build(app.handle())?)?;
+            window::build(app.handle(), &desktop, store).map_err(|error| error.to_string())?;
+            desktop.service.start(app.handle());
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -449,17 +71,20 @@ fn main() {
             label,
             event: WindowEvent::CloseRequested { api, .. },
             ..
-        } if label == "main" => {
+        } if label == window::MAIN => {
             api.prevent_close();
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.hide();
-            }
+            window::hide(app);
         }
-        RunEvent::Reopen { .. } => show_main(app),
+        RunEvent::WindowEvent {
+            label,
+            event: WindowEvent::Focused(true),
+            ..
+        } if label == window::MAIN => commands::clear_attention(app),
+        RunEvent::Reopen { .. } => window::show(app),
         RunEvent::Exit => {
-            let state = app.state::<Arc<Desktop>>().inner().clone();
-            state.quitting.store(true, Ordering::Release);
-            if let Err(error) = tauri::async_runtime::block_on(stop_workspace(app, &state)) {
+            window::remember(app);
+            let service = app.state::<Arc<Desktop>>().service.clone();
+            if let Err(error) = tauri::async_runtime::block_on(service.quit(app)) {
                 eprintln!("Dim shutdown: {error}");
             }
         }

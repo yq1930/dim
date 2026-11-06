@@ -1408,6 +1408,9 @@ async fn plugin_content_reaches_sessions_through_its_owners() {
     let home = home();
     let mut config = config(&home);
     config.unix_path = Some(home.join("ipc/server.sock"));
+    // A user Skill of the same name would shadow the plugin's, so the user
+    // Skill root stays inside this home rather than the developer's.
+    config.platform_home = Some(home.join("user"));
     let server = serve(product_builder(), config.clone()).await.unwrap();
     let mut client = Client::new_version(&server, false, 3).await;
     select_fixture_model(&mut client).await;

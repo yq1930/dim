@@ -352,6 +352,7 @@
       "file": "crates/dim-agent-capabilities/src/adapters.rs",
       "unexpandedMacros": [
         "format",
+        "matches",
         "tokio::select",
         "vec"
       ]
@@ -2145,6 +2146,33 @@
         "assert",
         "assert_eq",
         "format",
+        "vec"
+      ]
+    },
+    {
+      "id": "dim_app_server::lsp",
+      "crate": "dim_app_server",
+      "parent": "dim_app_server",
+      "file": "crates/dim-app-server/src/lsp.rs",
+      "unexpandedMacros": [
+        "format",
+        "json",
+        "tokio::pin",
+        "tokio::select",
+        "vec"
+      ]
+    },
+    {
+      "id": "dim_app_server::lsp::server",
+      "crate": "dim_app_server",
+      "parent": "dim_app_server::lsp",
+      "file": "crates/dim-app-server/src/lsp/server.rs",
+      "unexpandedMacros": [
+        "format",
+        "json",
+        "matches",
+        "tokio::select",
+        "unreachable",
         "vec"
       ]
     },
@@ -18025,6 +18053,14 @@
     },
     {
       "from": "dim_app_server",
+      "to": "dim_app_server::lsp",
+      "references": [
+        "mod lsp",
+        "path lsp::LspPlugin::new"
+      ]
+    },
+    {
+      "from": "dim_app_server",
       "to": "dim_app_server::managed_oauth",
       "references": [
         "mod managed_oauth"
@@ -21554,6 +21590,137 @@
       "references": [
         "path SettingsService",
         "use crate::settings::SettingsPlugin"
+      ]
+    },
+    {
+      "from": "dim_app_server::lsp",
+      "to": "dim_agent_capabilities::host",
+      "references": [
+        "path HostFuture",
+        "path ToolExecutionContext",
+        "use dim_agent_capabilities::host::HostFuture",
+        "use dim_agent_capabilities::host::ToolExecutionContext"
+      ]
+    },
+    {
+      "from": "dim_app_server::lsp",
+      "to": "dim_agent_capabilities::settings",
+      "references": [
+        "path SettingsScope::User",
+        "use crate::settings::SettingsScope"
+      ]
+    },
+    {
+      "from": "dim_app_server::lsp",
+      "to": "dim_agent_capabilities::tool_registry",
+      "references": [
+        "path ToolContribution",
+        "path ToolHandler",
+        "path ToolRegistry",
+        "use dim_agent_capabilities::tool_registry::ToolContribution",
+        "use dim_agent_capabilities::tool_registry::ToolHandler",
+        "use dim_agent_capabilities::tool_registry::ToolRegistry"
+      ]
+    },
+    {
+      "from": "dim_app_server::lsp",
+      "to": "dim_agent_runtime::config",
+      "references": [
+        "path SessionConfig",
+        "use dim_agent_runtime::SessionConfig"
+      ]
+    },
+    {
+      "from": "dim_app_server::lsp",
+      "to": "dim_agent_runtime::names",
+      "references": [
+        "path Names",
+        "use dim_agent_runtime::Names"
+      ]
+    },
+    {
+      "from": "dim_app_server::lsp",
+      "to": "dim_agent_runtime::parts",
+      "references": [
+        "path PartRegistry",
+        "path PartRegistry::register",
+        "path PartScope::Session",
+        "use dim_agent_runtime::PartRegistry",
+        "use dim_agent_runtime::PartScope"
+      ]
+    },
+    {
+      "from": "dim_app_server::lsp",
+      "to": "dim_agent_types::content",
+      "references": [
+        "path ToolContent::Text",
+        "use dim_agent_types::ToolContent"
+      ]
+    },
+    {
+      "from": "dim_app_server::lsp",
+      "to": "dim_agent_types::tool",
+      "references": [
+        "path ToolCall",
+        "path ToolDefinition",
+        "path ToolResult",
+        "path ToolSource::Extension",
+        "use dim_agent_types::ToolCall",
+        "use dim_agent_types::ToolDefinition",
+        "use dim_agent_types::ToolResult",
+        "use dim_agent_types::ToolSource"
+      ]
+    },
+    {
+      "from": "dim_app_server::lsp",
+      "to": "dim_app_server::lsp::server",
+      "references": [
+        "mod server",
+        "path Answer",
+        "path Answer::Hover",
+        "path Answer::Locations",
+        "path Launch",
+        "path Location",
+        "path Query",
+        "path Server",
+        "path Server::start",
+        "path server",
+        "use server::Answer",
+        "use server::Launch",
+        "use server::Location",
+        "use server::Query",
+        "use server::Server"
+      ]
+    },
+    {
+      "from": "dim_app_server::lsp",
+      "to": "dim_app_server::settings",
+      "references": [
+        "path SettingsService",
+        "use crate::settings::SettingsService"
+      ]
+    },
+    {
+      "from": "dim_app_server::lsp",
+      "to": "dim_app_server::settings::declared",
+      "references": [
+        "path SourceDeclaration",
+        "use crate::settings::SourceDeclaration"
+      ]
+    },
+    {
+      "from": "dim_app_server::lsp::server",
+      "to": "dim_app_server::lsp",
+      "references": [
+        "path LspError",
+        "path LspError::failed",
+        "path LspError::unavailable",
+        "path LspError::unsupported",
+        "path Operation",
+        "path Operation::FindReferences",
+        "path Operation::Hover",
+        "use super::LspError",
+        "use super::Operation"
       ]
     },
     {

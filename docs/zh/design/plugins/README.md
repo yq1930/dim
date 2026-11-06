@@ -19,6 +19,7 @@
 | [Goal](Goal.md) | — | `goal_update` 工具、`session.goal.*` | 由 `goal:objective` 与 `goal:status` 块折叠出的目标状态、续跑 | P2 |
 | [Pursuit](Pursuit.md)（Goal 的评审裁判模式） | — | `session.goal.set` 的 `judge` | 由评审分支决定的完成请求；结论输入与 Goal 的结局 | M2；#422 |
 | [Web](Web.md) | — | `web_search`、`web_fetch` 工具 | — | P2；可选包 |
+| [Lsp](Lsp.md) | Settings 来源 `lsp`（App Server row） | `lsp` 工具、本 Session 的语言服务器进程 | — | — |
 | [ContextCompaction](ContextCompaction.md)（Loop 与 ContextPreparation 的补充） | — | `ContextModelHost`、摘要 `CompactionStrategyHost`、`session.context.*` | Loop 中的 `context/compact` 指令与压缩步骤；ContextPreparation 中的 K 轮切点与用量查询 | P2 |
 | [Prompt](Prompt.md) | — | `guideEntries`：输入指南的框架、生效的条目及其组合 | `Prompt`：它发布的配置所采用的 System 携带按生效条目组合出的指南；宿主准备的请求承载同一份组合，由 Loop 放置 | #548 |
 | [PromptSources](PromptSources.md) | — | 具名来源、它们在出厂配置里的策略文字，以及状态与规则两条条目 | — | #548 |
@@ -41,6 +42,6 @@
 
 | 作用域 | 部分 |
 | --- | --- |
-| 进程部件 | daemon 内的 Provider（管理补充提案）、Scheduler、Workflow、ExternalAgent、Modality、PluginManager、RuntimeManager、RemoteGateway、Skills（安装）、PromptSuggestion（Settings 来源）；接入方宿主进程内的 AcpGateway |
-| Session 部件 | Questions、Planning、ShellInput、Attachments、SessionTitle、PromptSuggestion、Goal、Web、Recall、Hooks、Scheduler、Workflow、PromptSources、Prompt（条目表） |
+| 进程部件 | daemon 内的 Provider（管理补充提案）、Scheduler、Workflow、ExternalAgent、Modality、PluginManager、RuntimeManager、RemoteGateway、Skills（安装）、PromptSuggestion（Settings 来源）、Lsp（Settings 来源）；接入方宿主进程内的 AcpGateway |
+| Session 部件 | Questions、Planning、ShellInput、Attachments、SessionTitle、PromptSuggestion、Goal、Web、Lsp、Recall、Hooks、Scheduler、Workflow、PromptSources、Prompt（条目表） |
 | 分支部件 | Goal（含 Pursuit）、Hooks、Prompt |

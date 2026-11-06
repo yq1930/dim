@@ -6233,6 +6233,7 @@ fn configured_api_key_model_uses_production_tools_and_restores_the_same_session(
                     "exit_plan_mode",
                     "glob",
                     "grep",
+                    "lsp",
                     "member_approval_allow",
                     "member_approval_reject",
                     "plugin",

@@ -11,6 +11,7 @@ mod exec_shell_settings;
 mod execution_settings;
 pub mod grok_oauth;
 pub mod hooks_settings;
+mod lsp;
 mod managed_oauth;
 pub mod managed_provider;
 pub mod mcp;
@@ -771,6 +772,9 @@ pub async fn serve(mut builder: AgentBuilder, mut config: ServerConfig) -> Resul
             builder.catalog(),
             move |names| Ok(Box::new(mcp::McpPlugin::new(names, home_root)?)),
         )?);
+        rows.push(register_part(&mut builtins, builder.catalog(), |names| {
+            Ok(Box::new(lsp::LspPlugin::new(names)?))
+        })?);
         rows.push(register_part(&mut builtins, builder.catalog(), |names| {
             Ok(Box::new(execution_settings::ExecutionSettingsPlugin::new(
                 names,

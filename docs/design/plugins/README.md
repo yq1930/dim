@@ -19,6 +19,7 @@ A plugin is split by the owner of its state into parts, each placed in its owner
 | [Goal](Goal.md) | — | `goal_update` tool, `session.goal.*` | goal state folded from `goal:objective` and `goal:status` blocks, continuation | P2 |
 | [Pursuit](Pursuit.md) (evaluator judge mode of Goal) | — | `judge` on `session.goal.set` | completion requests decided by evaluator branches; conclusion inputs and Goal's outcomes | M2; #422 |
 | [Web](Web.md) | — | `web_search`, `web_fetch` tools | — | P2; optional package |
+| [Lsp](Lsp.md) | the `lsp` Settings source (App Server row) | `lsp` tool, the Session's language-server processes | — | — |
 | [ContextCompaction](ContextCompaction.md) (supplements to Loop and ContextPreparation) | — | `ContextModelHost`, summary `CompactionStrategyHost`, `session.context.*` | `context/compact` command and compaction step in Loop; K-turn cut and usage query in ContextPreparation | P2 |
 | [Prompt](Prompt.md) | — | `guideEntries`: the input guide's frame, the entries in force and their composition | `Prompt`: the System its publisher adopts carries the composition over the entries in force, and a host-prepared request carries the same composition, placed by Loop | #548 |
 | [PromptSources](PromptSources.md) | — | the named sources, their policy texts at the factory configuration, and the state and rule entries | — | #548 |
@@ -42,6 +43,6 @@ A plugin is split by the owner of its state into parts, each placed in its owner
 
 | Scope | Parts |
 | --- | --- |
-| Process parts | Provider (management supplement), Scheduler, Workflow, ExternalAgent, Modality, PluginManager, RuntimeManager, RemoteGateway, Skills (installation), PromptSuggestion (the Settings source) in the daemon; AcpGateway in its client host process |
-| Session parts | Questions, Planning, ShellInput, Attachments, SessionTitle, PromptSuggestion, Goal, Web, Recall, Hooks, Scheduler, Workflow, PromptSources, Prompt (the entries table) |
+| Process parts | Provider (management supplement), Scheduler, Workflow, ExternalAgent, Modality, PluginManager, RuntimeManager, RemoteGateway, Skills (installation), PromptSuggestion (the Settings source), Lsp (the Settings source) in the daemon; AcpGateway in its client host process |
+| Session parts | Questions, Planning, ShellInput, Attachments, SessionTitle, PromptSuggestion, Goal, Web, Lsp, Recall, Hooks, Scheduler, Workflow, PromptSources, Prompt (the entries table) |
 | Branch parts | Goal (with Pursuit), Hooks, Prompt |

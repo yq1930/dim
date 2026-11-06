@@ -84,7 +84,7 @@ The CLI owns terminal and command interactions; the App Server owns host configu
 - File change feedback: show write/edit results and diff summaries.
 - Tool approvals: allow or deny operations during a run, with one-time authorization and remembered permission decisions.
 - User questions: answer Agent questions with single choice, multiple choice, multiple questions and custom answers.
-- Todo status: show the Agent's task breakdown, current item and completion state. Not planned ([overview](design/overview.md#1-scope-and-premises) §1).
+- Todo status: show the Agent's task breakdown, current item and completion state; the Agent keeps it with `todo_write` ([Planning](design/plugins/Planning.md)).
 - Background tasks: view background processes, subagents and workflows in the Session; open output or conversation details and stop individual or all tasks.
 
 ## System management
@@ -145,7 +145,7 @@ The CLI owns terminal and command interactions; the App Server owns host configu
 - `/skills`: view, invoke, install, remove, enable and disable Skills.
 - `/reload-skills`: reload Skills.
 - Skill sources: user directories, project directories, plugins and configured Skill directories.
-- `plan` Skill: investigate a task and generate a Markdown implementation plan; it is not a separate runtime mode. Not planned ([overview](design/overview.md#1-scope-and-premises) §1).
+- Plan mode: the Agent investigates read-only and submits a Markdown plan with `exit_plan_mode`; the user approves it or asks for changes, and approval restores the earlier permission preset ([Planning](design/plugins/Planning.md)). It replaces the `plan` Skill.
 - `AGENTS.md`: load project and global working conventions. The default `init` Skill writes or refreshes the project's file from what the repository contains.
 - `/mcp`: manage MCP services and tools.
 - MCP connections: support local processes, HTTP and SSE, including testing, enablement, disablement and OAuth authorization.

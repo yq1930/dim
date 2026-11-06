@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import { useI18n } from "vue-i18n"
-import { ArrowUp, FileSearch, FileText, Paperclip, Square, X } from "lucide-vue-next"
+import { ArrowUp, FileSearch, FileText, ListChecks, Paperclip, Square, X } from "lucide-vue-next"
 import type { ContextUsage, DraftAttachments, FileCandidate, ImageBlock, ModelId, PermissionPreset, PermissionPolicy } from "../../rpc/protocol"
 import { formatTokens } from "./usage-format"
 import { linkMentions, mentionTrigger, type FileMention, type MentionTrigger } from "../../mentions"
@@ -46,6 +46,8 @@ const props = withDefaults(defineProps<{
   listSkills?: () => Promise<Array<{ name: string; description: string }>>
   /** The latest context window reading, shown beside the model. */
   contextUsage?: ContextUsage
+  /** Plan mode of the line, when it can be switched here. */
+  planMode?: { active: boolean; toggle: () => void | Promise<void> }
   /** True when the Session stores long pastes through `attachment.put`. */
   storesPastes?: boolean
   /** Finds the files an `@` mention offers for a query; absent where the Session serves no file search. */
@@ -122,6 +124,7 @@ const availableCommands = computed(() => ([
   { category: "model", name: "effort", available: props.sessionCommands?.effort !== undefined },
   { category: "model", name: "permissions", available: props.permission !== undefined && props.variant !== "panel" },
   { category: "session", name: "lines", available: props.openLines !== undefined },
+  { category: "session", name: "plan", available: props.planMode !== undefined },
   { category: "session", name: "new", available: true },
 ] as const).filter((command) => command.available))
 const commandPrefix = computed(() => /^\/[\w-]*$/.test(text.value) ? text.value.slice(1).toLowerCase() : undefined)
@@ -420,6 +423,14 @@ async function onEffort(effort: string | undefined): Promise<void> {
   }
 }
 
+async function togglePlan(): Promise<void> {
+  try {
+    await props.planMode?.toggle()
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : String(cause)
+  }
+}
+
 async function runMenuEntry(entry: MenuEntry): Promise<void> {
   if (entry.category !== "skill") return runCommand(entry.name)
   if (composing.value) return
@@ -439,6 +450,7 @@ async function runCommand(name: string): Promise<void> {
   resize()
   if (argument) field.value?.focus()
   else if (name === "models") modelMenu.value?.open()
+  else if (name === "plan") await togglePlan()
   else if (name === "lines") props.openLines?.()
   else if (name === "new") {
     try {
@@ -582,6 +594,7 @@ defineExpose({ focus: () => field.value?.focus(), quote })
           <button v-if="attachments" type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :disabled="sending || !!draft.reading" :aria-label="t('composer.attachFiles')" v-tooltip="t('composer.attachFiles')" @click="upload?.click()"><Paperclip aria-hidden="true" /></button>
           <button v-if="searchFiles" type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="t('composer.workspaceFiles')" v-tooltip="t('composer.workspaceFiles')" @click="fileDialog?.open()"><FileSearch aria-hidden="true" /></button>
           <ComposerPermissionMenu v-if="permission && variant !== 'panel'" ref="permissionMenu" :policy="permission.policy" @select="permission.select" />
+          <button v-if="planMode && variant !== 'panel'" type="button" class="ui-button composer-plan" data-variant="ghost" data-size="sm" :aria-pressed="planMode.active" :data-active="planMode.active ? '' : undefined" v-tooltip="planMode.active ? t('composer.planOn') : t('composer.planOff')" @click="togglePlan"><ListChecks aria-hidden="true" />{{ t("composer.plan") }}</button>
         </div>
         <div class="composer-run-group">
           <span v-if="contextLabel" class="composer-context" :data-near="contextNearLimit ? '' : undefined" v-tooltip="t('composer.contextUsage')">{{ contextLabel }}</span>
@@ -614,6 +627,8 @@ defineExpose({ focus: () => field.value?.focus(), quote })
 .draft-file-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .attachment-status { padding: var(--space-2); color: var(--muted-foreground); font-size: var(--text-sm); }
 .composer-toolbar { flex-wrap: wrap; }
+.composer-plan { gap: var(--space-1); color: var(--muted-foreground); }
+.composer-plan[data-active] { background: var(--accent); color: var(--accent-foreground); }
 .composer-context { color: var(--muted-foreground); font-size: var(--text-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .composer-context[data-near] { color: var(--danger); }
 .composer-run-group { margin-left: auto; max-width: 100%; flex-wrap: wrap; }

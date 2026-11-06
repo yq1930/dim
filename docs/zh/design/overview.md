@@ -14,7 +14,7 @@
 | --- | --- |
 | 终端形态 | 只设计 scrollback。功能清单中标为“仅全屏 TUI”的条目不在范围内 |
 | 多模态 | 覆盖全部类别（图像、视频、语音、音乐、音频、3D 资产、动作、实时、OCR）。“仅特定 Desktop 构建”是可用性约束（[Modality](plugins/Modality.md)） |
-| 不计划 | Todo 状态与 `plan` Skill |
+| Planning | Todo 状态与取代 `plan` Skill 的计划模式：[Planning](plugins/Planning.md) |
 | 动态事件 | 以 [#2](https://github.com/arcships/dim/issues/2) 为前提：Timeline 只检查信封和核心保留领域，以不透明数据承载核心未定义的事件类型；没有类型注册表，能力的事件声明只是描述契约 |
 | 模型上下文 | 依据 [ADR 001](../../adr/001-harness-foundation.md)：模型只看到被采纳的输入和工具结果，插件事件不投影。#2 采用同一边界（[§9](#9-待对齐问题)） |
 | 配置 | [ADR 002](../adr/002-plugin-scope.md) D4（由 [ADR 007](../adr/007-plugin-configuration.md) 纠正）：结构性插件配置（是否安装、一个名字用哪个插件、是否关闭、包路径）位于 PluginManager 的 `plugins.json`，由 PluginManager 对 loader 行执行（[PluginManager](plugins/PluginManager.md)，#3），可能重载该行。业务配置位于所有者的具名 Settings 来源，使用时读取，永不重载；Settings 已通过 S8a 支持 Rust 所有者，并通过 S8b 具名服务支持已声明的 TypeScript 所有者（[§6.4](#64-约定)，[路线图](../../design/roadmap.md) S8a/S8b）。项目文件保持自己的权威（ADR 001）；目录中的项目文件，例如 Workflow 的 `.dimcode/workflows/*.yaml`，不是 Settings 来源（Hooks 的 `.dimcode/hooks.json` 就是其中之一：`HooksSettings` 经 FileStorage 读取它，Hooks 的 Settings 来源 `hooks` 只保存用户文档；MCP 位于项目根下的 `.mcp.json` 才是其 Settings 来源的项目文件），由其所有者经 FileStorage 读取；这类配置运行的命令不需要批准（§6.4 批准范围）。项目目录为 `.dimcode/` |
@@ -437,7 +437,7 @@ ADR 002 中记录的 HostPlatform exec shell 变更（作为业务配置在每�
 | 交互 | 流式输出、运行状态、文件变更反馈 | 现有事件，由 CLI 渲染 |
 | 交互 | 工具审批 | 现有：Approval、Permission |
 | 交互 | 用户提问 | 新增：Questions |
-| 交互 | Todo 状态 | 不计划 |
+| 交互 | Todo 状态 | 新增：Planning（`todo_write`） |
 | 交互 | 查看与停止后台任务 | 各所有者（BackgroundExec、Collaboration、Workflow、ShellInput），由 CLI 汇总 |
 | 系统 | `/exit`、`/theme`、`/keys`、升级 | CLI |
 | 系统 | `/settings` | 每项属于各自插件；由 CLI 汇总 |
@@ -454,7 +454,7 @@ ADR 002 中记录的 HostPlatform exec shell 变更（作为业务配置在每�
 | Agent 行为 | `/scheduled`、定时任务 | 新增：Scheduler |
 | 扩展 | `/plugins`、`/reload-plugins`、市场 | 新增：PluginManager |
 | 扩展 | `/skills`、`/reload-skills`、Skill 来源 | 现有：SkillsCatalog、Skills；由 PluginManager 安装 |
-| 扩展 | `plan` Skill | 不计划 |
+| 扩展 | `plan` Skill | 新增：Planning（计划模式与 `exit_plan_mode`） |
 | 扩展 | `AGENTS.md` | 现有：PromptSources |
 | 扩展 | `/mcp`、MCP 连接 | 现有：Mcp、Settings；扩展：HTTP/SSE OAuth（[MCP OAuth](appserver/mcp-oauth.md)） |
 | 扩展 | `/workflow`、`/workflow:save` | 新增：Workflow |

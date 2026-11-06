@@ -38,6 +38,8 @@ export function resolveToolDisplay(toolName: string, input: Record<string, unkno
   if (["read", "read_file", "write", "write_file", "edit", "edit_file", "apply_patch"].includes(name)) {
     return { renderer: "file", labelKey: NAME_LABELS[name] ?? "tool.edit" }
   }
+  if (name === "todo_write") return { renderer: "generic", labelKey: "tool.todo" }
+  if (name === "exit_plan_mode") return { renderer: "generic", labelKey: "tool.plan" }
   if (raw.includes("web_search") || name === "websearch") return { renderer: "web", labelKey: "tool.webSearch" }
   if (raw.includes("web_fetch") || name === "webfetch") return { renderer: "web", labelKey: "tool.webFetch" }
   return { renderer: "generic", labelKey: "prompt.useTool" }

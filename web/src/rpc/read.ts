@@ -13,6 +13,7 @@ import type {
   PermissionPolicy,
   PermissionPreset,
   PermissionState,
+  PlanCall,
   MemberApprovalDetail,
   BranchCreateResult,
   BranchSource,
@@ -493,7 +494,12 @@ function content(type: string, name: string, data: Json, at: string): EventConte
     case "step/text":
       return { kind: "text", requestId: str(data, "request_id", at), delta: str(data, "delta", at) }
     case "step/tool-call":
-      return { kind: "tool-call", requestId: str(data, "request_id", at), asks: readAsks(arr(data.calls, `${at}.calls`), `${at}.calls`) }
+      return {
+        kind: "tool-call",
+        requestId: str(data, "request_id", at),
+        asks: readAsks(arr(data.calls, `${at}.calls`), `${at}.calls`),
+        plans: readPlans(arr(data.calls, `${at}.calls`), `${at}.calls`),
+      }
     case "step/tool-use": {
       const call = obj(data.call, `${at}.call`)
       return {
@@ -585,6 +591,17 @@ function readAsks(calls: unknown[], at: string): AskCall[] {
     if (questions !== undefined) asks.push({ callId: str(call, "id", `${at}[${index}]`), questions })
   }
   return asks
+}
+
+function readPlans(calls: unknown[], at: string): PlanCall[] {
+  const plans: PlanCall[] = []
+  for (const [index, item] of calls.entries()) {
+    const call = obj(item, `${at}[${index}]`)
+    if (str(call, "name", `${at}[${index}]`) !== "exit_plan_mode") continue
+    const plan = obj(call.input, `${at}[${index}].input`).plan
+    if (typeof plan === "string" && plan.trim() !== "") plans.push({ callId: str(call, "id", `${at}[${index}]`), plan })
+  }
+  return plans
 }
 
 function readEvent(value: unknown, at: string): SessionEvent {

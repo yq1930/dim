@@ -22,6 +22,7 @@ mod outbound;
 pub mod permission_rules;
 #[cfg(windows)]
 mod pipe_client;
+pub mod planning;
 pub mod plugin_files;
 pub mod plugin_manager;
 pub mod prompt_suggestion_settings;

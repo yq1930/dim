@@ -512,6 +512,7 @@ pub fn run_with(
             dim_agent_capabilities::prompt_suggestion::install(&mut builder);
             collaboration::install(&mut builder);
             dim_agent_questions::install(&mut builder);
+            crate::planning::install(&mut builder);
             if let Some(root) = config
                 .product_home
                 .as_ref()

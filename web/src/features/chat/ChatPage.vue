@@ -8,8 +8,10 @@ import ConfirmDialog from "../../components/ConfirmDialog.vue"
 import ApprovalPrompt from "./ApprovalPrompt.vue"
 import ComposerPanel from "./ComposerPanel.vue"
 import QueuedInputs from "./QueuedInputs.vue"
+import PlanReview from "./PlanReview.vue"
 import QuestionPrompt from "./QuestionPrompt.vue"
 import TimelineView from "./TimelineView.vue"
+import TodoPanel from "./TodoPanel.vue"
 import { MAIN_BRANCH, type ContextUsage, type DraftAttachments, type ModelId, type PermissionPreset } from "../../rpc/protocol"
 import { readSkills } from "../../rpc/general-settings"
 import { goalCall, goalObjective, parseGoalRequest, type Goal, type GoalStatus } from "../../goal"
@@ -39,6 +41,12 @@ const title = computed(() => summary.value?.title ?? summary.value?.preview ?? t
 watch(() => summary.value?.cwd, (cwd) => { if (cwd) sessions.rememberWorkspace(cwd) }, { immediate: true })
 const approval = computed(() => view.value?.approvals.find((request) => request.branchId === MAIN_BRANCH))
 const questions = computed(() => view.value?.questions.filter((ask) => ask.branchId === MAIN_BRANCH) ?? [])
+const reviews = computed(() => view.value?.reviews.filter((review) => review.branchId === MAIN_BRANCH) ?? [])
+const planControl = computed(() => {
+  const session = view.value
+  if (session?.status !== "ready" || !session.methods.includes("session.plan.set")) return undefined
+  return { active: session.planning, toggle: () => setPlanning(!session.planning) }
+})
 const rulesAvailable = computed(() => connection.supports("permission.rules") && connection.supports("permission.set_rules"))
 const storesPastes = computed(() => view.value?.methods.includes("attachment.put") === true)
 const searchFiles = computed(() => view.value?.methods.includes("session.files.search") ? (query: string) => chat.searchFiles(props.sessionId, query) : undefined)
@@ -93,6 +101,14 @@ watch(() => [props.sessionId, view.value?.status, view.value?.running] as const,
 
 function send(text: string, attachments: DraftAttachments): Promise<void> {
   return chat.submit(props.sessionId, MAIN_BRANCH, text, attachments)
+}
+
+async function setPlanning(active: boolean): Promise<void> {
+  try {
+    await chat.setPlanning(props.sessionId, active)
+  } catch (cause) {
+    failure(cause)
+  }
 }
 
 function stop(): Promise<void> {
@@ -301,8 +317,8 @@ async function fork(): Promise<void> {
     <TimelineView
       :rows="view.rows"
       :running="view.running"
-      :quotable="!approval && questions.length === 0"
-      :branchable="branchable && !approval && questions.length === 0"
+      :quotable="!approval && questions.length === 0 && reviews.length === 0"
+      :branchable="branchable && !approval && questions.length === 0 && reviews.length === 0"
       @branch="branch"
       @open-line="openLine"
       @quote="composer?.quote($event)"
@@ -310,11 +326,17 @@ async function fork(): Promise<void> {
     <div v-if="view.running && view.queued.length" class="composer-panel">
       <QueuedInputs :session-id="sessionId" :items="view.queued" />
     </div>
+    <div v-if="view.todos.length" class="composer-panel">
+      <TodoPanel :todos="view.todos" />
+    </div>
     <div v-if="approval" class="composer-panel">
       <ApprovalPrompt :key="JSON.stringify([approval.branchId, approval.requestId])" :session-id="sessionId" :request="approval" :keyboard="approvalKeyboard" :rules-available="rulesAvailable" />
     </div>
     <div v-else-if="questions.length" class="composer-panel question-prompts">
       <QuestionPrompt v-for="question in questions" :key="JSON.stringify([question.branchId, question.requestId, question.callId])" :session-id="sessionId" :question="question" />
+    </div>
+    <div v-else-if="reviews.length" class="composer-panel question-prompts">
+      <PlanReview v-for="review in reviews" :key="JSON.stringify([review.branchId, review.requestId, review.callId])" :session-id="sessionId" :review="review" />
     </div>
     <ComposerPanel
       v-else
@@ -337,6 +359,7 @@ async function fork(): Promise<void> {
       :session-commands="sessionCommands"
       :list-skills="listSkills"
       :context-usage="contextUsage"
+      :plan-mode="planControl"
     />
   </section>
 </template>

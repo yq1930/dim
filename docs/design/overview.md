@@ -14,7 +14,7 @@ The main body covers premises, the scope diagram and assignment, integration, th
 | --- | --- |
 | Terminal form | Only scrollback is designed. Items marked "full-screen TUI only" in the feature list are out of scope |
 | Multimodality | All categories are targeted (image, video, speech, music, audio, 3D assets, motion, realtime, OCR). "Specific Desktop builds only" is an availability constraint ([Modality](plugins/Modality.md)) |
-| Not planned | The Todo status and the `plan` Skill |
+| Planning | The Todo status and plan mode, which replaces the `plan` Skill: [Planning](plugins/Planning.md) |
 | Dynamic events | Assumes [#2](https://github.com/arcships/dim/issues/2): Timeline checks only the envelope and reserved core domains, and carries event types the core does not define as opaque data; there is no type registry, and a capability's event declaration is a descriptive contract |
 | Model context | Per [ADR 001](../adr/001-harness-foundation.md): the model sees only adopted input and tool results, and plugin events are not projected. #2 follows the same boundary ([§9](#9-open-questions)) |
 | Configuration | [ADR 002](../adr/002-plugin-scope.md) D4, corrected by [ADR 007](../adr/007-plugin-configuration.md): structural plugin configuration (installed, which plugin a name uses, turned off, package paths) lives in PluginManager's `plugins.json`, is carried out on loader rows by PluginManager ([PluginManager](plugins/PluginManager.md), #3) and may reload the row. Business configuration lives in the owner's named Settings sources, is read at use time and never reloads; Settings serves Rust owners through S8a and declared TypeScript owners through the implemented S8b named service ([§6.4](#64-conventions), [roadmap](roadmap.md) S8a/S8b). Project files keep their own authority (ADR 001); project files in a directory, such as Workflow's `.dimcode/workflows/*.yaml`, are not Settings sources (Hooks' `.dimcode/hooks.json` is one: `HooksSettings` reads it through FileStorage, and only Hooks' user document is its Settings source `hooks`; MCP's root-level `.mcp.json` is the project file of its Settings source) and are read by their owners through FileStorage; commands that such configuration runs need no approval (§6.4 Approval scope). The project directory is `.dimcode/` |
@@ -438,7 +438,7 @@ The HostPlatform exec-shell change recorded in ADR 002 (business configuration r
 | Interaction | Streaming output, run status, file change feedback | Existing events, rendered by the CLI |
 | Interaction | Tool approval | Existing: Approval, Permission |
 | Interaction | User questions | New: Questions |
-| Interaction | Todo status | Not planned |
+| Interaction | Todo status | New: Planning (`todo_write`) |
 | Interaction | Viewing and stopping background tasks | Each owner (BackgroundExec, Collaboration, Workflow, ShellInput), aggregated by the CLI |
 | System | `/exit`, `/theme`, `/keys`, upgrade | CLI |
 | System | `/settings` | Each item belongs to its plugin; the CLI aggregates |
@@ -455,7 +455,7 @@ The HostPlatform exec-shell change recorded in ADR 002 (business configuration r
 | Agent behaviour | `/scheduled`, scheduled tasks | New: Scheduler |
 | Extensions | `/plugins`, `/reload-plugins`, marketplace | New: PluginManager |
 | Extensions | `/skills`, `/reload-skills`, Skill sources | Existing: SkillsCatalog, Skills; installation by PluginManager |
-| Extensions | `plan` Skill | Not planned |
+| Extensions | `plan` Skill | New: Planning (plan mode and `exit_plan_mode`) |
 | Extensions | `AGENTS.md` | Existing: PromptSources |
 | Extensions | `/mcp`, MCP connections | Existing: Mcp, Settings; Extension: HTTP/SSE OAuth ([MCP OAuth](appserver/mcp-oauth.md)) |
 | Extensions | `/workflow`, `/workflow:save` | New: Workflow |

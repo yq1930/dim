@@ -25,6 +25,7 @@ const sessions = useSessionsStore()
 const chat = useChatStore()
 const models = useModelsStore()
 const connection = useConnectionStore()
+const planning = ref(false)
 const menu = ref<HTMLDetailsElement>()
 let active = true
 onBeforeUnmount(() => { active = false })
@@ -89,6 +90,7 @@ async function send(text: string, attachments: DraftAttachments): Promise<void> 
   const selected = picked.value ?? (reasoningEffort.value === undefined ? undefined : model.value)
   const sessionId = await sessions.create(directory, selected, reasoningEffort.value)
   chat.open(sessionId)
+  if (planning.value) await chat.setPlanning(sessionId, true)
   await chat.submit(sessionId, MAIN_BRANCH, text, attachments)
   if (active && cwd.value === directory) await router.push({ name: "chat-session", params: { sessionId } })
 }
@@ -100,7 +102,7 @@ async function send(text: string, attachments: DraftAttachments): Promise<void> 
       <BrandMark class="new-session-mark" />
       <h1 data-route-heading tabindex="-1">{{ t("newThread.title") }}</h1>
     </div>
-    <ComposerPanel class="is-new-thread" :draft-key="`new:${cwd}`" :running="false" :model="model" :model-selectable="true" :send="send" :stores-pastes="true" :select-model="(next) => { picked = next }" :reasoning-effort="reasoningEffort" :select-effort="(value) => { reasoningEffort = value }" :list-skills="listSkills">
+    <ComposerPanel class="is-new-thread" :draft-key="`new:${cwd}`" :running="false" :model="model" :model-selectable="true" :send="send" :stores-pastes="true" :select-model="(next) => { picked = next }" :reasoning-effort="reasoningEffort" :select-effort="(value) => { reasoningEffort = value }" :list-skills="listSkills" :plan-mode="{ active: planning, toggle: () => { planning = !planning } }">
       <template #status>
         <details ref="menu" class="composer-popover workspace-menu">
           <summary class="ui-button" data-variant="ghost" data-size="xs" data-trailing v-tooltip="cwd || undefined">

@@ -7,7 +7,7 @@ import { ConnectionLost, RpcError } from "../rpc/client"
 import type { Goal, GoalCall } from "../goal"
 import { canChooseWorkspace as inDesktopShell, notifyDesktop } from "../desktop"
 import { translate, type TranslationKey } from "../i18n"
-import { MAIN_BRANCH, type ApprovalDecision, type ApprovalRequest, type DraftAttachments, type FileCandidate, type ModelId, type Notification, type PendingQuestion, type PermissionPreset, type PermissionPolicy, type QueuedInput, type QuestionAnswer, type SessionEvent, type UserInput, type WithdrawResult } from "../rpc/protocol"
+import { MAIN_BRANCH, type ApprovalDecision, type ApprovalRequest, type DraftAttachments, type FileCandidate, type ModelId, type Notification, type PendingPlan, type PendingQuestion, type PermissionPreset, type PermissionPolicy, type QueuedInput, type QuestionAnswer, type SessionEvent, type TodoItem, type UserInput, type WithdrawResult } from "../rpc/protocol"
 import { readRevision, readRules } from "../rpc/general-settings"
 import { ProtocolError, readAck, readAttachmentPath, readBranchCreate, readCompactResult, readConfigurationOutcome, readContextUsage, readFileCandidates, readForkedSessionId, readHistory, readModelUpdate, readMemberApproval, readPermissionState, readPermissionVersion, readSessionMethods, readWithdrawResult } from "../rpc/read"
 import { useConnectionStore } from "./connection"
@@ -44,6 +44,12 @@ export type SessionView = {
   approvals: ApprovalRequest[]
   /** Waiting `ask_user` questions of every branch, oldest first. */
   questions: PendingQuestion[]
+  /** Waiting `exit_plan_mode` reviews of every branch, oldest first. */
+  reviews: PendingPlan[]
+  /** Whether plan mode is on for the main line. */
+  planning: boolean
+  /** The main line's task list. */
+  todos: TodoItem[]
   /** The method names this Session serves (`session.methods`); empty when the daemon offers no table. */
   methods: readonly string[]
   /** The policy of `main`: read after history loads, then kept current by `permission/changed`. */
@@ -129,6 +135,9 @@ export const useChatStore = defineStore("chat", () => {
       sessionRunning: stored?.running ?? false,
       approvals: [],
       questions: [],
+      reviews: [],
+      planning: false,
+      todos: [],
       methods: [],
       permission: undefined,
       goal: undefined,
@@ -303,6 +312,7 @@ export const useChatStore = defineStore("chat", () => {
         view.sessionRunning = false
         view.approvals = []
         view.questions = []
+        view.reviews = []
         useSessionsStore().forget(view.sessionId)
         useUiStore().resetSessionTabs(view.sessionId)
         break
@@ -463,6 +473,15 @@ export const useChatStore = defineStore("chat", () => {
     const asked = view.questions.filter((ask) => !channel.asked.has(ask.requestId))
     for (const ask of asked) channel.asked.add(ask.requestId)
     if (asked.length > 0) alertUser(channel, "desktop.needsAnswer")
+    view.reviews = [
+      ...channel.main.projection.reviews().map((review) => ({ branchId: MAIN_BRANCH, ...review })),
+      ...[...channel.branches].flatMap(([id, branch]) => branch.projection.reviews().map((review) => ({ branchId: id, ...review }))),
+    ]
+    const reviewed = view.reviews.filter((review) => !channel.asked.has(`plan:${review.requestId}:${review.callId}`))
+    for (const review of reviewed) channel.asked.add(`plan:${review.requestId}:${review.callId}`)
+    if (reviewed.length > 0) alertUser(channel, "desktop.needsPlanReview")
+    view.planning = channel.main.projection.planningFold.planning
+    view.todos = channel.main.projection.planningFold.todos()
     const branches: Record<string, BranchView> = {}
     for (const [id, branch] of channel.branches) {
       const state = stateOf(channel, id)
@@ -578,6 +597,23 @@ export const useChatStore = defineStore("chat", () => {
     }, readAck)
   }
 
+  /** Turns plan mode on or off for the main line (Planning §2). */
+  async function setPlanning(sessionId: string, active: boolean): Promise<void> {
+    await client().call("session.plan.set", { sessionId, branchId: MAIN_BRANCH, active }, readAck)
+  }
+
+  /** Approves a waiting plan, or sends it back with the user's feedback. */
+  async function reviewPlan(sessionId: string, review: PendingPlan, approved: boolean, feedback?: string): Promise<void> {
+    await client().call("session.plan.respond", {
+      sessionId,
+      branchId: review.branchId,
+      requestId: review.requestId,
+      callId: review.callId,
+      approved,
+      ...(approved || feedback === undefined || feedback.trim() === "" ? {} : { feedback: feedback.trim() }),
+    }, readAck)
+  }
+
   /** The Session's method table; a daemon without it offers no session commands, and an unreadable table offers none either. */
   async function sessionMethods(sessionId: string): Promise<string[]> {
     if (!useConnectionStore().supports("session.methods")) return []
@@ -663,5 +699,5 @@ export const useChatStore = defineStore("chat", () => {
     publish(channel)
   }
 
-  return { views, open, resync, receive, ensureLine, retryLine, submit, stop, createLine, endLine, respond, allowAlways, allowForSession, answerQuestion, compact, usage, fork, writeGoal, setEffort, setPermission, withdrawInput, searchFiles, memberApproval, setModel }
+  return { views, open, resync, receive, ensureLine, retryLine, submit, stop, createLine, endLine, respond, allowAlways, allowForSession, answerQuestion, setPlanning, reviewPlan, compact, usage, fork, writeGoal, setEffort, setPermission, withdrawInput, searchFiles, memberApproval, setModel }
 })

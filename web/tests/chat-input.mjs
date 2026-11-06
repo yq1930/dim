@@ -78,7 +78,7 @@ function mount(t, branchId, questions = [], component, stores = {}) {
   const replies = [], submissions = []
   const view = reactive({
     status: "ready", rows: [], running: true, stopping: false, sessionRunning: true,
-    approvals: [], questions, methods: ["attachment.put", "session.files.search"], queued: [],
+    approvals: [], questions, reviews: [], planning: false, todos: [], methods: ["attachment.put", "session.files.search"], queued: [],
     lines: [{ id: "worker", purpose: "Worker", parentId: "main", state: { kind: "working" } }],
     branches: { worker: { status: "ready", rows: [], running: true } },
   })

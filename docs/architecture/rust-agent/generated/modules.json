@@ -2447,6 +2447,18 @@
       ]
     },
     {
+      "id": "dim_app_server::planning",
+      "crate": "dim_app_server",
+      "parent": "dim_app_server",
+      "file": "crates/dim-app-server/src/planning.rs",
+      "unexpandedMacros": [
+        "format",
+        "json",
+        "tokio::select",
+        "vec"
+      ]
+    },
+    {
       "id": "dim_app_server::plugin_files",
       "crate": "dim_app_server",
       "parent": "dim_app_server",
@@ -17953,6 +17965,13 @@
     },
     {
       "from": "dim_app_server",
+      "to": "dim_app_server::planning",
+      "references": [
+        "mod planning"
+      ]
+    },
+    {
+      "from": "dim_app_server",
       "to": "dim_app_server::plugin_files",
       "references": [
         "mod plugin_files",
@@ -19236,6 +19255,13 @@
       "to": "dim_app_server::pipe_client",
       "references": [
         "path crate::pipe_client::run"
+      ]
+    },
+    {
+      "from": "dim_app_server::cli",
+      "to": "dim_app_server::planning",
+      "references": [
+        "path crate::planning::install"
       ]
     },
     {
@@ -23221,6 +23247,179 @@
         "use crate::settings::BusinessDocument",
         "use crate::settings::SettingsError",
         "use crate::settings::SettingsService"
+      ]
+    },
+    {
+      "from": "dim_app_server::planning",
+      "to": "dim_agent_capabilities::host",
+      "references": [
+        "path HostError",
+        "path HostError::Cancelled",
+        "path HostError::failed",
+        "path HostFuture",
+        "path ToolExecutionContext",
+        "use dim_agent_capabilities::host::HostError",
+        "use dim_agent_capabilities::host::HostFuture",
+        "use dim_agent_capabilities::host::ToolExecutionContext"
+      ]
+    },
+    {
+      "from": "dim_app_server::planning",
+      "to": "dim_agent_capabilities::methods",
+      "references": [
+        "path RpcError",
+        "path RpcError::app",
+        "path RpcError::invalid",
+        "path RpcError::reloading",
+        "path SessionMethods",
+        "path params",
+        "path reply",
+        "use dim_agent_capabilities::methods::Interruption",
+        "use dim_agent_capabilities::methods::MethodDecl",
+        "use dim_agent_capabilities::methods::RpcError",
+        "use dim_agent_capabilities::methods::SessionMethods",
+        "use dim_agent_capabilities::methods::params",
+        "use dim_agent_capabilities::methods::reply"
+      ]
+    },
+    {
+      "from": "dim_app_server::planning",
+      "to": "dim_agent_capabilities::permission",
+      "references": [
+        "path Permission",
+        "path PermissionState",
+        "path PermissionUpdateError",
+        "path PermissionUpdateError::Closed",
+        "path PermissionUpdateError::Conflict",
+        "path PermissionUpdateError::Failed",
+        "use dim_agent_capabilities::permission::Permission",
+        "use dim_agent_capabilities::permission::PermissionState",
+        "use dim_agent_capabilities::permission::PermissionUpdateError"
+      ]
+    },
+    {
+      "from": "dim_app_server::planning",
+      "to": "dim_agent_capabilities::timeline_tree",
+      "references": [
+        "path TreeCommands",
+        "use dim_agent_capabilities::timeline_tree::TreeCommands"
+      ]
+    },
+    {
+      "from": "dim_app_server::planning",
+      "to": "dim_agent_capabilities::tool_registry",
+      "references": [
+        "path ToolContribution",
+        "path ToolHandler",
+        "path ToolRegistry",
+        "path definition",
+        "use dim_agent_capabilities::tool_registry::ToolContribution",
+        "use dim_agent_capabilities::tool_registry::ToolHandler",
+        "use dim_agent_capabilities::tool_registry::ToolRegistry",
+        "use dim_agent_capabilities::tool_registry::definition"
+      ]
+    },
+    {
+      "from": "dim_app_server::planning",
+      "to": "dim_agent_runtime::assembly",
+      "references": [
+        "path AgentBuilder",
+        "use dim_agent_runtime::AgentBuilder"
+      ]
+    },
+    {
+      "from": "dim_app_server::planning",
+      "to": "dim_agent_runtime::config",
+      "references": [
+        "path SessionConfig",
+        "use dim_agent_runtime::SessionConfig"
+      ]
+    },
+    {
+      "from": "dim_app_server::planning",
+      "to": "dim_agent_runtime::error",
+      "references": [
+        "path AgentError",
+        "use dim_agent_runtime::AgentError"
+      ]
+    },
+    {
+      "from": "dim_app_server::planning",
+      "to": "dim_agent_runtime::lifecycle",
+      "references": [
+        "path CAPABILITY_RELOADING",
+        "use dim_agent_runtime::CAPABILITY_RELOADING"
+      ]
+    },
+    {
+      "from": "dim_app_server::planning",
+      "to": "dim_agent_runtime::names",
+      "references": [
+        "path Names",
+        "use dim_agent_runtime::Names"
+      ]
+    },
+    {
+      "from": "dim_app_server::planning",
+      "to": "dim_agent_runtime::parts",
+      "references": [
+        "path Feature::new",
+        "use dim_agent_runtime::Feature"
+      ]
+    },
+    {
+      "from": "dim_app_server::planning",
+      "to": "dim_agent_runtime::timeline_query",
+      "references": [
+        "path TimelineQuery",
+        "path TimelineQueryDirection::Descending",
+        "path TimelineQueryOrderBy::Sequence",
+        "path TimelineQueryScope::Branch",
+        "use dim_agent_runtime::TimelineQuery",
+        "use dim_agent_runtime::TimelineQueryDirection",
+        "use dim_agent_runtime::TimelineQueryOrderBy",
+        "use dim_agent_runtime::TimelineQueryScope"
+      ]
+    },
+    {
+      "from": "dim_app_server::planning",
+      "to": "dim_agent_types::events",
+      "references": [
+        "path EventKind::InputMessage",
+        "path InputBlock::Raw",
+        "path InputMessageData",
+        "path InputMode::Append",
+        "use dim_agent_types::EventKind",
+        "use dim_agent_types::InputBlock",
+        "use dim_agent_types::InputMessageData",
+        "use dim_agent_types::InputMode"
+      ]
+    },
+    {
+      "from": "dim_app_server::planning",
+      "to": "dim_agent_types::permission",
+      "references": [
+        "path PermissionPolicy",
+        "path PermissionPreset",
+        "path PermissionPreset::ReadOnly",
+        "use dim_agent_types::PermissionPolicy",
+        "use dim_agent_types::PermissionPreset"
+      ]
+    },
+    {
+      "from": "dim_app_server::planning",
+      "to": "dim_agent_types::tool",
+      "references": [
+        "path ToolCall",
+        "path ToolDefinition",
+        "path ToolResult",
+        "path ToolResult::error",
+        "path ToolResult::text",
+        "path ToolSource::Extension",
+        "use dim_agent_types::ToolCall",
+        "use dim_agent_types::ToolDefinition",
+        "use dim_agent_types::ToolResult",
+        "use dim_agent_types::ToolSource"
       ]
     },
     {

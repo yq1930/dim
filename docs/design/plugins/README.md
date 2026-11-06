@@ -11,6 +11,7 @@ A plugin is split by the owner of its state into parts, each placed in its owner
 | [Migration](Migration.md) | on-demand import tasks, source mappings, progress and retry records; unloaded after settlement | — | — | [Delivery plan](../../plan/analysis/legacy-migration.md) |
 | [Provider management](../appserver/provider-management.md) | existing Provider: configuration, catalogs, client preferences and management methods | — | — | #329 |
 | [Questions](Questions.md) | — | `ask_user` tool, `session.question.respond`, waiters of running `ask_user` calls; no events | — | M2; #262 |
+| [Planning](Planning.md) | — | `todo_write` and `exit_plan_mode` tools, `session.plan.*`, waits of `exit_plan_mode` calls; task list and plan mode as keyed `todo:list` and `plan:mode` blocks | — | App Server product profile |
 | [ShellInput](ShellInput.md) | — | `shell.*` methods, command runs | — | P1 |
 | [Attachments](Attachments.md) | — | `attachment.put`, Session files | — | P1 |
 | [SessionTitle](SessionTitle.md) | — | observes adoption of the first user input, `session.rename` | — | P1 |
@@ -42,5 +43,5 @@ A plugin is split by the owner of its state into parts, each placed in its owner
 | Scope | Parts |
 | --- | --- |
 | Process parts | Provider (management supplement), Scheduler, Workflow, ExternalAgent, Modality, PluginManager, RuntimeManager, RemoteGateway, Skills (installation), PromptSuggestion (the Settings source) in the daemon; AcpGateway in its client host process |
-| Session parts | Questions, ShellInput, Attachments, SessionTitle, PromptSuggestion, Goal, Web, Recall, Hooks, Scheduler, Workflow, PromptSources, Prompt (the entries table) |
+| Session parts | Questions, Planning, ShellInput, Attachments, SessionTitle, PromptSuggestion, Goal, Web, Recall, Hooks, Scheduler, Workflow, PromptSources, Prompt (the entries table) |
 | Branch parts | Goal (with Pursuit), Hooks, Prompt |

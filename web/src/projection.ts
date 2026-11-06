@@ -12,6 +12,7 @@
  * `rows` re-renders only the rows that changed.
  */
 import { GoalFold, type Goal } from "./goal"
+import { PlanningFold } from "./planning"
 import type { AskQuestion, ModelId, ModelProgress, QueuedInput, SessionEvent, ToolResult } from "./rpc/protocol"
 
 export type TimelineRow =
@@ -58,6 +59,10 @@ export class Projection {
   private held = new Map<string, QueuedInput>()
   /** The branch's goal, folded from its events (goal.ts). */
   readonly goalFold = new GoalFold()
+  /** The branch's task list and plan mode, folded from its events (planning.ts). */
+  readonly planningFold = new PlanningFold()
+  /** `exit_plan_mode` calls whose batch has no `step/tool-result` yet, oldest first. */
+  private plans: Array<{ requestId: string; callId: string; plan: string }> = []
 
   /** The goal in force on this branch. */
   get goal(): Goal | undefined {
@@ -74,11 +79,17 @@ export class Projection {
     return this.asks
   }
 
+  /** The waiting `exit_plan_mode` calls of this branch: named by batch `requestId` and call id. */
+  reviews(): readonly { requestId: string; callId: string; plan: string }[] {
+    return this.plans
+  }
+
   /** Applies one event; false when it was already applied. */
   apply(event: SessionEvent): boolean {
     if (event.sequence <= this.cursor) return false
     this.cursor = event.sequence
     this.goalFold.apply(event)
+    this.planningFold.apply(event)
     const content = event.content
     switch (content.kind) {
       case "input":
@@ -157,6 +168,7 @@ export class Projection {
         break
       case "tool-call":
         for (const ask of content.asks) this.asks.push({ requestId: content.requestId, callId: ask.callId, questions: ask.questions })
+        for (const plan of content.plans) this.plans.push({ requestId: content.requestId, callId: plan.callId, plan: plan.plan })
         break
       case "tool-completed":
         this.completeTool(content.callId, content.result)
@@ -164,6 +176,7 @@ export class Projection {
       case "tool-result":
         for (const result of content.results) this.completeTool(result.callId, result.result)
         this.asks = this.asks.filter((ask) => ask.requestId !== content.requestId || !content.results.some((result) => result.callId === ask.callId))
+        this.plans = this.plans.filter((plan) => plan.requestId !== content.requestId || !content.results.some((result) => result.callId === plan.callId))
         break
       case "model-end":
         this.closeThinking(content.requestId)

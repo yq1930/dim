@@ -138,7 +138,7 @@ export type EventContent =
   | { kind: "thinking"; requestId: string; delta: string }
   | { kind: "text"; requestId: string; delta: string }
   | { kind: "tool-use"; requestId: string; callId: string; name: string; input: Record<string, unknown> }
-  | { kind: "tool-call"; requestId: string; asks: AskCall[] }
+  | { kind: "tool-call"; requestId: string; asks: AskCall[]; plans: PlanCall[] }
   | { kind: "tool-completed"; callId: string; result: ToolResult }
   | { kind: "tool-result"; requestId: string; results: Array<{ callId: string; result: ToolResult }> }
   | { kind: "model-end"; requestId: string; error?: string }
@@ -200,6 +200,13 @@ export type AskCall = { callId: string; questions: AskQuestion[] }
 
 /** A waiting question, named by the branch, the batch's `requestId` and its call. */
 export type PendingQuestion = { branchId: string; requestId: string; callId: string; questions: AskQuestion[] }
+
+/** An `exit_plan_mode` call of a `step/tool-call` that waits for the user's decision (Planning §2). */
+export type PlanCall = { callId: string; plan: string }
+export type PendingPlan = { branchId: string; requestId: string; callId: string; plan: string }
+
+/** One task of a branch's list, as Planning's `todo:list` block carries it. */
+export type TodoItem = { content: string; status: "pending" | "in_progress" | "completed" }
 
 /** One answer per question; `custom` is the typed text. */
 export type QuestionAnswer = { questionId: string; selected: string[]; custom?: string }

@@ -18,7 +18,7 @@ const display = computed(() => tool.value === undefined ? undefined : resolveToo
 const label = computed(() => {
   const current = display.value
   if (current === undefined || tool.value === undefined) return ""
-  return current.renderer === "generic" ? tool.value.name : t(current.labelKey)
+  return current.labelKey === "prompt.useTool" ? tool.value.name : t(current.labelKey)
 })
 
 const thinkingTitle = computed(() => {

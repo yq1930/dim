@@ -110,7 +110,7 @@ impl Service {
         let (service, app) = (self.clone(), app.clone());
         tauri::async_runtime::spawn(async move {
             if let Err(error) = service.stop(&app).await {
-                eprintln!("Dim restart: {error}");
+                eprintln!("Lacus restart: {error}");
             }
             if !service.quitting.load(Ordering::Acquire) {
                 service.start(&app);
@@ -154,7 +154,7 @@ impl Service {
         for file in ["web/index.html", "plugins-payload/default-plugins.json"] {
             if !self.resources.join(file).is_file() {
                 return Err(Failure::Startup(format!(
-                    "应用缺少资源 {file}，请重新构建 Dim.app。"
+                    "应用缺少资源 {file}，请重新构建 Lacus.app。"
                 )));
             }
         }
@@ -260,14 +260,14 @@ impl Service {
         Ok(())
     }
 
-    /// Asks whether to restart the service or quit; nothing else in Dim works
+    /// Asks whether to restart the service or quit; nothing else in the app works
     /// without it. The question is a sheet on the main window, shown first:
     /// without a parent, macOS presents it as a system alert that may not
     /// appear, and its silent answer would quit.
     fn report(self: &Arc<Self>, app: &AppHandle, failure: Failure) {
         let (title, message) = match failure {
-            Failure::Startup(message) => ("Dim 无法启动本地服务", message),
-            Failure::Stopped(message) => ("Dim 的本地服务已停止", message),
+            Failure::Startup(message) => ("野塘漫水无法启动本地服务", message),
+            Failure::Stopped(message) => ("野塘漫水的本地服务已停止", message),
         };
         let Some(main) = app.get_webview_window(window::MAIN) else {
             return app.exit(1);
@@ -281,7 +281,7 @@ impl Service {
             .parent(&main)
             .buttons(MessageDialogButtons::OkCancelCustom(
                 "重启本地服务".into(),
-                "退出 Dim".into(),
+                "退出野塘漫水".into(),
             ))
             .show(move |restart| {
                 if restart {

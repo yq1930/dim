@@ -114,7 +114,7 @@ pub fn build(app: &AppHandle, desktop: &Arc<Desktop>, store: [u8; 16]) -> Result
     let navigation = app.clone();
     let popups = app.clone();
     let window = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
-        .title("Dim")
+        .title("野塘漫水")
         .inner_size(state.width, state.height)
         .min_inner_size(MIN_SIZE.0, MIN_SIZE.1)
         .center()
@@ -155,7 +155,7 @@ pub fn show(app: &AppHandle) {
 }
 
 /// Closing the window hides it; the service and its sessions keep running
-/// until Dim quits.
+/// until the app quits.
 pub fn hide(app: &AppHandle) {
     remember(app);
     if let Some(window) = app.get_webview_window(MAIN) {
@@ -186,7 +186,7 @@ pub fn remember(app: &AppHandle) {
     state.maximized = maximized;
     *state = state.normalized();
     if let Err(error) = state.save(desktop.service.home()) {
-        eprintln!("Dim: cannot save the window state: {error}");
+        eprintln!("Lacus: cannot save the window state: {error}");
     }
 }
 
@@ -204,6 +204,6 @@ pub fn zoom(app: &AppHandle, zoom: Zoom) {
         let _ = window.set_zoom(state.zoom_factor());
     }
     if let Err(error) = state.save(desktop.service.home()) {
-        eprintln!("Dim: cannot save the window state: {error}");
+        eprintln!("Lacus: cannot save the window state: {error}");
     }
 }

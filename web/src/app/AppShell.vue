@@ -38,7 +38,7 @@ const pageTitle = computed(() => {
   return t("route.newSession")
 })
 
-watch(pageTitle, (title) => { document.title = `${title} — Dim` }, { immediate: true })
+watch(pageTitle, (title) => { document.title = `${title} — ${t("brand.product")}` }, { immediate: true })
 watch(() => ui.drawerOpen, async (open) => {
   await nextTick()
   const element = drawer.value
@@ -162,7 +162,7 @@ function resizeBy(delta: number): void {
           <PanelLeftOpen aria-hidden="true" />
         </button>
         <header v-if="!settingsRoute" class="main-header">
-          <div><p>Dim {{ connection.hello?.serverVersion }}</p><strong>{{ pageTitle }}</strong></div>
+          <div><p>{{ t("brand.product") }} {{ connection.hello?.serverVersion }}</p><strong>{{ pageTitle }}</strong></div>
         </header>
         <p v-if="connection.phase === 'reconnecting'" class="reconnect-banner" role="status">{{ t("page.reconnecting") }}</p>
         <RouterView :key="settingsRoute ? 'settings' : route.fullPath" />

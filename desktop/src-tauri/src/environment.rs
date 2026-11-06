@@ -50,7 +50,7 @@ pub fn service_environment(user_home: &Path) -> BTreeMap<OsString, OsString> {
     match login_shell_variables(user_home) {
         Ok(shell) => merge(&mut variables, shell),
         Err(failures) => eprintln!(
-            "Dim: the login shell environment is unavailable ({})",
+            "Lacus: the login shell environment is unavailable ({})",
             failures.join("; ")
         ),
     }

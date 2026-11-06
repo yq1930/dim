@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Dim",
+  "productName": "Lacus",
   "version": "../package.json",
   "identifier": "com.yetang.dim",
   "build": {
@@ -18,7 +18,7 @@
     "active": true,
     "targets": ["app"],
     "category": "DeveloperTool",
-    "shortDescription": "Dim local agent workspace",
+    "shortDescription": "Lacus (野塘漫水) local agent workspace",
     "icon": ["../../staging/macos-app/icons/icon.icns", "../../staging/macos-app/icons/icon.png"],
     "externalBin": ["../../staging/macos-app/dimcode"],
     "resources": {
@@ -30,7 +30,11 @@
     "macOS": {
       "minimumSystemVersion": "14.0",
       "signingIdentity": "-",
-      "hardenedRuntime": true
+      "hardenedRuntime": true,
+      "files": {
+        "Resources/zh_CN.lproj/InfoPlist.strings": "locales/zh_CN.lproj/InfoPlist.strings",
+        "Resources/en.lproj/InfoPlist.strings": "locales/en.lproj/InfoPlist.strings"
+      }
     }
   }
 }

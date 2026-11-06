@@ -26,20 +26,20 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let item = |id: &str, text: &str, accelerator: Option<&str>| {
         MenuItem::with_id(app, id, text, true, accelerator)
     };
-    let dim = Submenu::with_items(
+    let product = Submenu::with_items(
         app,
-        "Dim",
+        "野塘漫水",
         true,
         &[
-            &PredefinedMenuItem::about(app, Some("关于 Dim"), Some(about(app)))?,
+            &PredefinedMenuItem::about(app, Some("关于野塘漫水"), Some(about(app)))?,
             &separator()?,
             &PredefinedMenuItem::services(app, Some("服务"))?,
             &separator()?,
-            &PredefinedMenuItem::hide(app, Some("隐藏 Dim"))?,
+            &PredefinedMenuItem::hide(app, Some("隐藏野塘漫水"))?,
             &PredefinedMenuItem::hide_others(app, Some("隐藏其他"))?,
             &PredefinedMenuItem::show_all(app, Some("全部显示"))?,
             &separator()?,
-            &PredefinedMenuItem::quit(app, Some("退出 Dim"))?,
+            &PredefinedMenuItem::quit(app, Some("退出野塘漫水"))?,
         ],
     )?;
     let edit = Submenu::with_items(
@@ -96,7 +96,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
             &item(RESTART_SERVICE, "重启本地服务", None)?,
         ],
     )?;
-    Menu::with_items(app, &[&dim, &edit, &view, &windows, &help])
+    Menu::with_items(app, &[&product, &edit, &view, &windows, &help])
 }
 
 /// The About panel's version, and the commit and date the bundle was built
@@ -119,7 +119,7 @@ fn about(app: &AppHandle) -> AboutMetadata<'static> {
         _ => None,
     };
     AboutMetadata {
-        name: Some("Dim".into()),
+        name: Some("野塘漫水".into()),
         version: Some(
             text("version", usize::MAX).unwrap_or_else(|| app.package_info().version.to_string()),
         ),

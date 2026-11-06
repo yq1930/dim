@@ -1,4 +1,4 @@
-//! Dim for macOS: a Tauri window over the local Web workspace that the
+//! 野塘漫水 (Lacus) for macOS: a Tauri window over the local Web workspace that the
 //! bundled `dimcode` serves.
 
 mod commands;
@@ -64,7 +64,7 @@ fn main() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("Cannot initialize Dim desktop");
+        .expect("Cannot initialize the Lacus desktop");
 
     app.run(|app, event| match event {
         RunEvent::WindowEvent {
@@ -85,7 +85,7 @@ fn main() {
             window::remember(app);
             let service = app.state::<Arc<Desktop>>().service.clone();
             if let Err(error) = tauri::async_runtime::block_on(service.quit(app)) {
-                eprintln!("Dim shutdown: {error}");
+                eprintln!("Lacus shutdown: {error}");
             }
         }
         _ => {}

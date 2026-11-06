@@ -17,7 +17,7 @@ const title = computed(() => {
 })
 
 watch([showShell, title], ([shell, next]) => {
-  if (!shell) document.title = `${next} — Dim`
+  if (!shell) document.title = `${next} — ${t("brand.product")}`
 }, { immediate: true })
 </script>
 

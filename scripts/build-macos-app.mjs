@@ -7,7 +7,7 @@ const args = process.argv.slice(2);
 assert(args.length === 0 || (args.length === 1 && args[0] === '--debug'),
   'Usage: node scripts/build-macos-app.mjs [--debug]');
 assert(process.platform === 'darwin' && process.arch === 'arm64',
-  'Build Dim.app on an Apple Silicon Mac.');
+  'Build Lacus.app on an Apple Silicon Mac.');
 
 const repo = path.resolve(import.meta.dirname, '..');
 const desktop = path.join(repo, 'desktop');
@@ -28,8 +28,8 @@ function read(command, parameters, cwd = repo) {
 }
 
 const sourceBranch = read('git', ['branch', '--show-current']);
-assert.equal(sourceBranch, 'master', 'Build Dim.app from master; switch branches before building.');
-assert.equal(read('git', ['status', '--porcelain']), '', 'Build Dim.app from a clean worktree.');
+assert.equal(sourceBranch, 'master', 'Build Lacus.app from master; switch branches before building.');
+assert.equal(read('git', ['status', '--porcelain']), '', 'Build Lacus.app from a clean worktree.');
 run('git', ['fetch', '--no-tags', 'origin', 'refs/heads/master:refs/remotes/origin/master']);
 const sourceCommit = read('git', ['rev-parse', 'origin/master']);
 
@@ -63,7 +63,7 @@ run('node', ['scripts/stage-plugins.mjs', path.join(stage, 'plugins-payload')]);
 mkdirSync(path.join(stage, 'boot'));
 writeFileSync(path.join(stage, 'boot/index.html'), readFileSync(path.join(repo, 'web/index.html'), 'utf8')
   .replace(/\s*<script type="module" src="\/src\/main\.ts"><\/script>/, '')
-  .replace('aria-label="Loading"', 'aria-label="正在启动 Dim"'));
+  .replace('aria-label="Loading"', 'aria-label="正在启动野塘漫水"'));
 run('npm', ['exec', '--', 'tauri', 'icon', path.join(desktop, 'icon.svg'), '--output', path.join(stage, 'icons')], desktop);
 
 mkdirSync(path.join(stage, 'licenses'));
@@ -84,8 +84,8 @@ writeFileSync(path.join(stage, 'build-info.json'), `${JSON.stringify({
 
 run('npm', ['exec', '--', 'tauri', 'build', '--bundles', 'app', '--target', target,
   ...(profile === 'debug' ? ['--debug'] : []), '--', '--locked'], desktop);
-const bundle = path.join(desktop, 'src-tauri/target', target, profile, 'bundle/macos/Dim.app');
-assert(existsSync(bundle), 'Tauri did not produce Dim.app.');
+const bundle = path.join(desktop, 'src-tauri/target', target, profile, 'bundle/macos/Lacus.app');
+assert(existsSync(bundle), 'Tauri did not produce Lacus.app.');
 for (const name of ['dim-desktop', 'dimcode']) {
   assert.equal(read('lipo', ['-archs', path.join(bundle, 'Contents/MacOS', name)]), 'arm64', name);
 }
@@ -94,7 +94,7 @@ run('codesign', ['--verify', '--deep', '--strict', bundle]);
 verifySource();
 assert.equal(read('git', ['ls-remote', '--exit-code', '--heads', 'origin', 'refs/heads/master']),
   `${sourceCommit}\trefs/heads/master`, 'Remote master changed during the build; update master and build again.');
-const output = path.join(repo, 'dist/macos/Dim.app');
+const output = path.join(repo, 'dist/macos/Lacus.app');
 mkdirSync(path.dirname(output), { recursive: true });
 rmSync(output, { recursive: true, force: true });
 cpSync(bundle, output, { recursive: true, preserveTimestamps: true });

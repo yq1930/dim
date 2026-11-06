@@ -753,6 +753,9 @@ dependencies = [
 name = "dim-desktop"
 version = "0.1.0-alpha.18"
 dependencies = [
+ "libc",
+ "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",

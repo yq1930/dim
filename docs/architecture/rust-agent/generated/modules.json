@@ -14208,7 +14208,8 @@
       "from": "dim_agent_capabilities::workspace_tools",
       "to": "dim_agent_capabilities::workspace_tools::files::rewind",
       "references": [
-        "path files::rewind::ENTRY"
+        "path files::rewind::ENTRY",
+        "path files::rewind::rewindable"
       ]
     },
     {

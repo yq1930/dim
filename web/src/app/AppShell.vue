@@ -8,6 +8,7 @@ import ToastRegion from "../components/ToastRegion.vue"
 import EndLineDialog from "../features/lines/EndLineDialog.vue"
 import LinesPanel from "../features/lines/LinesPanel.vue"
 import NewLineDialog from "../features/lines/NewLineDialog.vue"
+import SessionChangesPanel from "../features/chat/SessionChangesPanel.vue"
 import { settingsMessages } from "../i18n/settings"
 import { useConnectionStore } from "../stores/connection"
 import { useSessionsStore, workspaceName } from "../stores/sessions"
@@ -181,8 +182,9 @@ function resizeBy(delta: number): void {
         @keydown.left.prevent="resizeBy(-16)"
         @keydown.right.prevent="resizeBy(16)"
       />
-      <aside v-if="detailOpen && sessionId" class="detail-region" data-active="true" :aria-label="t('lines.panelAria')" @pointerdown="ui.detailFocused = true" @focusin="ui.detailFocused = true">
-        <LinesPanel :session-id="sessionId" />
+      <aside v-if="detailOpen && sessionId" class="detail-region" data-active="true" :aria-label="ui.detailView === 'changes' ? t('sessionChanges.title') : t('lines.panelAria')" @pointerdown="ui.detailFocused = true" @focusin="ui.detailFocused = true">
+        <SessionChangesPanel v-if="ui.detailView === 'changes'" :session-id="sessionId" />
+        <LinesPanel v-else :session-id="sessionId" />
       </aside>
     </div>
 

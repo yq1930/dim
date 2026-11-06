@@ -35,5 +35,8 @@ export const router = createRouter({
 })
 
 router.afterEach((to) => {
-  if (to.name === "chat-session" && typeof to.params.sessionId === "string") useUiStore().lastSessionId = to.params.sessionId
+  const ui = useUiStore()
+  const sessionId = to.name === "chat-session" && typeof to.params.sessionId === "string" ? to.params.sessionId : undefined
+  ui.viewSession(sessionId)
+  if (sessionId !== undefined) ui.lastSessionId = sessionId
 })

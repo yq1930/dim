@@ -274,6 +274,7 @@ export const useChatStore = defineStore("chat", () => {
           if (view.running && !notification.running) {
             refreshDirectorySoon()
             alertUser(channel, "desktop.runFinished")
+            useUiStore().markUnread(view.sessionId)
           }
         }
         channel.states.set(notification.branchId, { running: notification.running, stopping: notification.stopping })
@@ -515,7 +516,8 @@ export const useChatStore = defineStore("chat", () => {
     publish(channel)
   }
 
-  async function submit(sessionId: string, branchId: string, text: string, attachments: DraftAttachments = { images: [], pastes: [] }): Promise<void> {
+  /** `queue` waits for the turn under way to end; `steer` enters it at its next tool result. */
+  async function submit(sessionId: string, branchId: string, text: string, attachments: DraftAttachments = { images: [], pastes: [] }, mode: "queue" | "steer" = "queue"): Promise<void> {
     let body = text
     for (const paste of attachments.pastes) {
       const path = await client().call("attachment.put", { sessionId, text: paste }, readAttachmentPath)
@@ -527,7 +529,7 @@ export const useChatStore = defineStore("chat", () => {
       const size = file.pdfBase64 === undefined ? `${file.text.split("\n").length} lines` : "PDF"
       body = `${body}${body === "" ? "" : "\n"}[File: ${name}; ${path} (${size})]`
     }
-    const params: Record<string, unknown> = { sessionId, branchId, submissionId: crypto.randomUUID(), mode: "queue" }
+    const params: Record<string, unknown> = { sessionId, branchId, submissionId: crypto.randomUUID(), mode }
     if (attachments.images.length === 0) params.text = body
     else params.user = { content: [...(body === "" ? [] : [{ type: "text", text: body }]), ...attachments.images] }
     await client().call("session.submit", params, readAck)

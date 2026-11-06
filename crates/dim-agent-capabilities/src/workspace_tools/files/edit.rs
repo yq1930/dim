@@ -358,7 +358,7 @@ fn too_large(size: u64) -> ToolResult {
     )
 }
 
-fn to_lf(text: &str) -> String {
+pub(super) fn to_lf(text: &str) -> String {
     text.replace("\r\n", "\n")
 }
 
@@ -965,7 +965,7 @@ fn nearest_eol(text: &str, start: usize, end: usize) -> Option<Eol> {
 }
 
 /// Display-only unified diff hunks in LF space.
-fn unified_diff(before: &str, after: &str) -> String {
+pub(super) fn unified_diff(before: &str, after: &str) -> String {
     let diff = similar::TextDiff::from_lines(before, after);
     let mut lines = Vec::new();
     for hunk in diff

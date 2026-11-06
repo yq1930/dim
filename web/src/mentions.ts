@@ -35,6 +35,18 @@ export function fileLink(label: string, path: string): string {
   return `[${text}](${path})`
 }
 
+/** A sent message back as a draft: each file link becomes its `@path` label again, with the file it names. */
+export function unlinkMentions(text: string): { text: string; mentions: FileMention[] } {
+  const mentions: FileMention[] = []
+  const plain = text.replace(/\[(@(?:\\[[\]\\]|[^[\]\\])+)\]\((?:<([^<>]*)>|([^\s()<>]+))\)/g, (_link, escaped: string, bracketed?: string, bare?: string) => {
+    const label = escaped.replace(/\\([[\]\\])/g, "$1")
+    const path = bracketed === undefined ? bare! : bracketed.replaceAll("%3C", "<").replaceAll("%3E", ">")
+    if (!mentions.some((mention) => mention.label === label && mention.path === path)) mentions.push({ label, path })
+    return label
+  })
+  return { text: plain, mentions }
+}
+
 /**
  * The message with each inserted file's `@path` replaced by its link. A label
  * counts only where the text still has it as a whole word, so a file whose

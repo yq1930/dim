@@ -5,6 +5,9 @@ import { useAppearanceStore } from "./appearance"
 
 export type ShellMode = "compact" | "regular" | "wide"
 
+/** What the right detail panel shows: the Session's lines, or the files it changed. */
+export type DetailView = "lines" | "changes"
+
 export type NewLineRequest = {
   sessionId: string
   parentBranchId: string
@@ -29,12 +32,13 @@ type Persisted = {
   collapsedWorkspaces: string[]
   lastSessionId: string | undefined
   detailOpen: boolean
+  detailView: DetailView
   detailWidth: number
 }
 
 /** localStorage is outside the app: read it once, keeping only well-formed fields. */
 function readPersisted(): Persisted {
-  const fallback: Persisted = { sidebarCollapsed: false, collapsedWorkspaces: [], lastSessionId: undefined, detailOpen: false, detailWidth: 420 }
+  const fallback: Persisted = { sidebarCollapsed: false, collapsedWorkspaces: [], lastSessionId: undefined, detailOpen: false, detailView: "lines", detailWidth: 420 }
   try {
     const value: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")
     if (value === null || typeof value !== "object") return fallback
@@ -47,6 +51,7 @@ function readPersisted(): Persisted {
       collapsedWorkspaces: Array.isArray(stored.collapsedWorkspaces) ? stored.collapsedWorkspaces.filter((item): item is string => typeof item === "string") : [],
       lastSessionId: typeof stored.lastSessionId === "string" ? stored.lastSessionId : undefined,
       detailOpen: stored.detailOpen === true,
+      detailView: stored.detailView === "changes" ? "changes" : "lines",
       detailWidth: width,
     }
   } catch {
@@ -64,6 +69,7 @@ export const useUiStore = defineStore("ui", () => {
   const shellWidth = ref(typeof window !== "undefined" && window.innerWidth > 0 ? window.innerWidth : 1200)
   const shellMode = computed<ShellMode>(() => shellWidth.value < 720 ? "compact" : shellWidth.value < 960 ? "regular" : "wide")
   const detailOpen = ref(persisted.detailOpen)
+  const detailView = ref<DetailView>(persisted.detailView)
   const detailWidth = ref(persisted.detailWidth)
   const detailExpanded = ref(false)
   const detailFocused = ref(false)
@@ -71,14 +77,19 @@ export const useUiStore = defineStore("ui", () => {
   const activeLineTab = ref<Record<string, string | undefined>>({})
   const newLine = ref<NewLineRequest | undefined>()
   const endingLine = ref<EndLineRequest | undefined>()
+  /** The Session on screen, if any; a run that ends elsewhere leaves its Session unread. */
+  const viewingSessionId = ref<string>()
+  /** Sessions whose run ended while another page was shown; kept for this page load only. */
+  const unread = ref<string[]>([])
 
-  watch([sidebarCollapsed, collapsedWorkspaces, lastSessionId, detailOpen, detailWidth], () => {
+  watch([sidebarCollapsed, collapsedWorkspaces, lastSessionId, detailOpen, detailView, detailWidth], () => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         sidebarCollapsed: sidebarCollapsed.value,
         collapsedWorkspaces: collapsedWorkspaces.value,
         lastSessionId: lastSessionId.value,
         detailOpen: detailOpen.value,
+        detailView: detailView.value,
         detailWidth: detailWidth.value,
       }))
     } catch {
@@ -106,14 +117,37 @@ export const useUiStore = defineStore("ui", () => {
     detailWidth.value = Math.min(DETAIL_MAX, Math.max(DETAIL_MIN, Math.round(width)))
   }
 
+  function viewSession(sessionId: string | undefined): void {
+    viewingSessionId.value = sessionId
+    if (sessionId !== undefined && unread.value.includes(sessionId)) unread.value = unread.value.filter((id) => id !== sessionId)
+  }
+
+  function markUnread(sessionId: string): void {
+    if (sessionId !== viewingSessionId.value && !unread.value.includes(sessionId)) unread.value = [...unread.value, sessionId]
+  }
+
+  function openChanges(): void {
+    detailView.value = "changes"
+    detailOpen.value = true
+    detailFocused.value = true
+  }
+
+  function toggleChanges(): void {
+    if (detailOpen.value && detailView.value === "changes") {
+      detailOpen.value = false
+      detailFocused.value = false
+    } else openChanges()
+  }
+
   function openLines(sessionId: string): void {
+    detailView.value = "lines"
     detailOpen.value = true
     detailFocused.value = true
     activeLineTab.value = { ...activeLineTab.value, [sessionId]: undefined }
   }
 
   function toggleLines(sessionId: string): void {
-    if (detailOpen.value && activeLineTab.value[sessionId] === undefined) {
+    if (detailOpen.value && detailView.value === "lines" && activeLineTab.value[sessionId] === undefined) {
       detailOpen.value = false
       detailFocused.value = false
     } else openLines(sessionId)
@@ -123,6 +157,7 @@ export const useUiStore = defineStore("ui", () => {
     const tabs = lineTabs.value[sessionId] ?? []
     if (!tabs.includes(branchId)) lineTabs.value = { ...lineTabs.value, [sessionId]: [...tabs, branchId] }
     activeLineTab.value = { ...activeLineTab.value, [sessionId]: branchId }
+    detailView.value = "lines"
     detailOpen.value = true
     detailFocused.value = true
   }
@@ -133,6 +168,7 @@ export const useUiStore = defineStore("ui", () => {
       return
     }
     activeLineTab.value = { ...activeLineTab.value, [sessionId]: branchId }
+    detailView.value = "lines"
     detailOpen.value = true
     detailFocused.value = true
   }
@@ -156,7 +192,7 @@ export const useUiStore = defineStore("ui", () => {
       detailOpen: detailOpen.value,
       detailExpanded: detailExpanded.value,
       shellWidth: shellWidth.value,
-      activeLine: activeLineTab.value[sessionId],
+      activeLine: detailView.value === "lines" ? activeLineTab.value[sessionId] : undefined,
       detailFocused: detailFocused.value,
     }) === branchId
   }
@@ -189,8 +225,9 @@ export const useUiStore = defineStore("ui", () => {
   return {
     sidebarCollapsed, lastSessionId, drawerOpen, shellWidth, shellMode, setShellWidth,
     isWorkspaceExpanded, toggleWorkspace,
-    detailOpen, detailWidth, detailExpanded, detailFocused, lineTabs, activeLineTab, newLine, endingLine,
-    setDetailWidth, openLines, toggleLines, openLine, activateLine, closeLineTab, closeDetail,
+    detailOpen, detailView, detailWidth, detailExpanded, detailFocused, lineTabs, activeLineTab, newLine, endingLine,
+    setDetailWidth, openChanges, toggleChanges, openLines, toggleLines, openLine, activateLine, closeLineTab, closeDetail,
+    viewingSessionId, unread, viewSession, markUnread,
     approvalKeyboard,
     requestNewLine, closeNewLine, requestEndLine, closeEndLine, resetSessionTabs,
   }

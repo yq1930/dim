@@ -42,7 +42,7 @@ The CLI owns terminal and command interactions; the App Server owns host configu
 - `/queue`: view messages awaiting submission and messages being incorporated into the current run; select an entry to steer or delete it.
 - Retrieve for editing: with an empty draft, press Shift+Left to move the newest queued message back into the input area. Messages with attachments or file references cannot be retrieved this way; use `/queue` to manage them.
 - Queue deletion: remove messages that have not been sent; a steering instruction already handed to the current run cannot be deleted as a queued message.
-- Interrupt: press Esc to stop the current Agent run; queued messages return to the input area instead of running; an open dialog or input suggestion takes priority.
+- Interrupt: press Esc to stop the current Agent run; queued messages return to the input area instead of running; an open dialog or input suggestion takes priority. The Web composer stops a run with Esc too.
 - Clear draft and exit: while idle, clear the draft or exit the terminal. During a run, the first `Ctrl+C` interrupts in scrollback; fullscreen TUI clears the draft or enters the exit flow according to the input state.
 
 `send`, `queue` and `steer` name submission behaviors. There are no `/send` or `/steer` commands.
@@ -50,7 +50,7 @@ The CLI owns terminal and command interactions; the App Server owns host configu
 ### Input, references and attachments
 
 - Multiline editing: use `Shift+Enter` or `Ctrl+J` for a newline; `Shift+Enter` requires terminal support.
-- Input history: use Up/Down to retrieve submitted prompts and `!` / `!!` command history, stored per working directory; availability depends on cursor position and draft state.
+- Input history: use Up/Down to retrieve submitted prompts and `!` / `!!` command history, stored per working directory; availability depends on cursor position and draft state. The Web composer recalls the Session's earlier messages into an empty draft the same way.
 - Command completion: use `/` to find commands and Skills; execute a selected command or complete it before entering arguments.
 - Skill references: choose a Skill through the `/` command palette, or type `$skill: <name>`; the reference loads that Skill with the message it is submitted with. Inserting a reference does not send the message. `/` is the only trigger, and `@` remains the file picker.
 - File references: use `@` to search project paths, browse directories and select files; ordinary files are passed as paths for the Agent to read as needed.
@@ -78,11 +78,11 @@ The CLI owns terminal and command interactions; the App Server owns host configu
 ### Run feedback and confirmation
 
 - Streaming output: display Agent replies, model-provided reasoning previews and tool results as they arrive. Reasoning has a single-line preview without a separate full-text expansion entry.
-- Run status: show the current task, tool status and errors; scrollback also shows elapsed run and tool-wait time.
+- Run status: show the current task, tool status and errors; scrollback also shows elapsed run and tool-wait time, and the Web timeline the run's elapsed time. The Web sidebar marks each Session as waiting for the operator, running or unread.
 - Terminal status: tell the terminal whether dim is idle, working, waiting on a permission or a question, done or failed (OSC 7501), in both terminal UI modes, so tabs and inboxes can show it; `DIM_TERMINAL_STATUS=off` turns it off.
 - Terminal progress bar: an indeterminate bar while a run works and a paused one while it waits on a permission or a question (OSC 9;4), in both terminal UI modes, on Windows Terminal, ConEmu, Ghostty, WezTerm and iTerm2 3.6.6+; `DIM_TERMINAL_PROGRESS=off` turns it off and `on` draws it in any terminal.
-- File change feedback: show write/edit results and diff summaries.
-- Tool approvals: allow or deny operations during a run, with one-time authorization and remembered permission decisions.
+- File change feedback: show write/edit results and diff summaries; a write that replaces a file reports its diff too. The Web workspace's Changes panel lists every file a Session's main line changed, with each change's diff.
+- Tool approvals: allow or deny operations during a run, with one-time authorization and remembered permission decisions. The Web prompt's “Reject and say why” steers the operator's words into the run with the refusal.
 - User questions: answer Agent questions with single choice, multiple choice, multiple questions and custom answers.
 - Todo status: show the Agent's task breakdown, current item and completion state; the Agent keeps it with `todo_write` ([Planning](design/plugins/Planning.md)).
 - Background tasks: view background processes, subagents and workflows in the Session; open output or conversation details and stop individual or all tasks.
@@ -124,7 +124,7 @@ The CLI owns terminal and command interactions; the App Server owns host configu
 - `/goal`: switch Goal mode; set, edit, pause, resume and clear a goal.
 - Goal continuation: continue toward an explicit goal and record completion or blockage.
 - `/permissions`: select the session's permission preset and manage command rules; `/approvals` and `/approval` are aliases. The preset is remembered for new sessions.
-- Permission policies: read-only, ask (every write and command asks first), workspace-write and full access ([ADR 022](adr/022-the-ask-preset.md)). The Web composer offers them with plan mode as one mode menu: Ask, Accept edits, Auto, Plan and Read only.
+- Permission policies: read-only, ask (every write and command asks first), workspace-write and full access ([ADR 022](adr/022-the-ask-preset.md)). The Web composer offers them with plan mode as one mode menu: Ask, Accept edits, Auto, Plan and Read only; Shift+Tab steps through Ask, Accept edits and Plan.
 - Sandbox: configure file, network and process access; availability depends on the platform and runtime environment.
 - Command rules: configure allowed commands and the execution Shell.
 - `/compact`: manually compact the current Session context.

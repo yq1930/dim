@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch, type ComponentPublicInstance } from "vue"
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type ComponentPublicInstance } from "vue"
 import { useI18n } from "vue-i18n"
 import { useVirtualizer } from "@tanstack/vue-virtual"
 import { ChevronDown, FileDiff, GitBranch, LoaderCircle } from "lucide-vue-next"
@@ -9,6 +9,7 @@ import TimelineUserMessage from "./TimelineUserMessage.vue"
 import TimelineWorkRow from "./TimelineWorkRow.vue"
 import { groupRows } from "./work"
 import { RAIL_MIN_MARKERS, timelineMarkers } from "../../timeline-markers"
+import { formatElapsedSeconds } from "./timeline-time"
 
 /**
  * `quotable`: the composer is shown, so a message can be quoted into it.
@@ -36,6 +37,19 @@ const expandedGroups = ref<Record<string, boolean>>({})
 const expandedItems = ref<Record<string, boolean>>({})
 
 const display = computed(() => groupRows(props.rows))
+
+/** When the run under way began, as this view saw it, and a clock for its elapsed time. */
+const runStart = ref<number>()
+const now = ref(Date.now())
+let ticker: ReturnType<typeof setInterval> | undefined
+watch(() => props.running, (running) => {
+  clearInterval(ticker)
+  now.value = Date.now()
+  runStart.value = running ? now.value : undefined
+  if (running) ticker = setInterval(() => { now.value = Date.now() }, 1000)
+}, { immediate: true })
+onBeforeUnmount(() => clearInterval(ticker))
+const elapsed = computed(() => runStart.value === undefined ? "" : formatElapsedSeconds(now.value - runStart.value))
 
 function shortId(id: string): string {
   return id.slice(0, 8)
@@ -179,7 +193,7 @@ onMounted(() => void toEnd())
           </template>
         </div>
       </div>
-      <div v-if="running" class="processing-row" role="status"><LoaderCircle :size="14" class="is-spinning" aria-hidden="true" /><span>{{ t("work.processing") }}</span></div>
+      <div v-if="running" class="processing-row" role="status"><LoaderCircle :size="14" class="is-spinning" aria-hidden="true" /><span>{{ t("work.processing") }}</span><span class="processing-meta" aria-hidden="true">{{ elapsed }}<template v-if="variant !== 'panel'"> · {{ t("work.interruptHint") }}</template></span></div>
     </div>
     <nav v-if="showRail" class="timeline-rail" :aria-label="t('timeline.rail')">
       <button

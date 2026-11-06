@@ -34,6 +34,8 @@ const ICONS: Record<WorkMode, Component> = {
   "read-only": Eye,
 }
 const icon = computed(() => props.current === undefined ? Hand : ICONS[props.current])
+/** The composer's Shift+Tab cycles Ask, Accept edits and Plan where two of them are offered. */
+const cycles = computed(() => props.modes.filter((mode) => mode === "ask" || mode === "workspace-write" || mode === "plan").length > 1)
 
 /** The confirmation lives inside the menu, so the menu closes only once it is answered. */
 async function choose(mode: WorkMode): Promise<void> {
@@ -78,6 +80,7 @@ defineExpose({ open: () => {
         <hr class="ui-menu-separator">
         <RouterLink class="ui-menu-item work-mode-link" :to="{ name: 'settings-permissions' }" @click="details && (details.open = false)">{{ t("composer.mode.processIsolation") }}</RouterLink>
       </template>
+      <p v-if="cycles" class="work-mode-keys">{{ t("composer.mode.cycleKeys") }}</p>
     </div>
     <ConfirmDialog ref="confirm" />
   </details>
@@ -93,4 +96,5 @@ defineExpose({ open: () => {
 .work-mode-text { display: grid; min-width: 0; flex: 1; }
 .work-mode-note { margin: 0; padding: var(--space-1) var(--space-2); color: var(--muted-foreground); font-size: var(--text-xs); overflow-wrap: anywhere; }
 .work-mode-link { color: var(--muted-foreground); font-size: var(--text-sm); }
+.work-mode-keys { margin: var(--space-1) 0 0; padding: var(--space-2) var(--space-2) var(--space-1); border-top: 1px solid var(--border); color: var(--muted-foreground); font-size: var(--text-xs); }
 </style>

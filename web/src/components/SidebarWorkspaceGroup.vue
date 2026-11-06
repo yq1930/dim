@@ -3,8 +3,10 @@ import { computed, ref } from "vue"
 import { RouterLink } from "vue-router"
 import { useI18n } from "vue-i18n"
 import { Archive, ChevronRight, Copy, Folder, FolderOpen, Loader2, Pencil, Plus, Trash2, X } from "lucide-vue-next"
+import { useChatStore } from "../stores/chat"
 import { useSessionsStore, type Workspace } from "../stores/sessions"
 import { useConnectionStore } from "../stores/connection"
+import { useUiStore } from "../stores/ui"
 import type { SessionSummary } from "../rpc/protocol"
 import RowActionMenu from "./RowActionMenu.vue"
 import { formatRelativeTimeShort } from "../features/chat/timeline-time"
@@ -15,6 +17,8 @@ const emit = defineEmits<{ toggle: []; navigate: []; action: [kind: "rename" | "
 const { t } = useI18n()
 const sessions = useSessionsStore()
 const connection = useConnectionStore()
+const chat = useChatStore()
+const ui = useUiStore()
 
 // A group shows five sessions until "show more" walks out twenty at a time.
 const FIRST = 5
@@ -23,6 +27,15 @@ const limit = ref(FIRST)
 const shown = computed(() => props.workspace.sessions.slice(0, limit.value))
 const hasMore = computed(() => props.workspace.sessions.length > limit.value)
 const running = computed(() => !props.expanded && props.workspace.sessions.some((session) => session.running))
+const waiting = computed(() => !props.expanded && props.workspace.sessions.some((session) => stateOf(session) === "waiting"))
+
+/** A Session waits on the operator while a line holds an approval, a question or a plan review. */
+function stateOf(session: SessionSummary): "waiting" | "running" | "unread" | "idle" {
+  const view = chat.views[session.sessionId]
+  if (view !== undefined && (view.approvals.length > 0 || view.questions.length > 0 || view.reviews.length > 0)) return "waiting"
+  if (session.running) return "running"
+  return ui.unread.includes(session.sessionId) ? "unread" : "idle"
+}
 
 function toggleReveal(): void {
   limit.value = hasMore.value ? limit.value + STEP : FIRST
@@ -49,7 +62,8 @@ function toggleReveal(): void {
         <strong :title="workspace.cwd">{{ workspace.name }}</strong>
       </button>
       <!-- A collapsed group with a run in flight shows a spinner where the actions fade in. -->
-      <span v-if="running" class="workspace-running" aria-hidden="true"><Loader2 :size="14" class="is-spinning" /></span>
+      <span v-if="waiting" class="workspace-running" aria-hidden="true"><span class="status-dot" data-state="waiting" /></span>
+      <span v-else-if="running" class="workspace-running" aria-hidden="true"><Loader2 :size="14" class="is-spinning" /></span>
       <div class="workspace-row-actions" @click.stop>
         <RouterLink
           class="ui-icon-button workspace-add" data-variant="ghost" data-size="sm"
@@ -74,8 +88,8 @@ function toggleReveal(): void {
           :title="session.title ?? session.preview"
           @click="emit('navigate')"
         >
-          <span class="status-dot" :data-state="session.running ? 'running' : 'idle'" aria-hidden="true" />
-          <strong>{{ session.title ?? session.preview ?? t("sidebar.untitled") }}</strong>
+          <span class="status-dot" :data-state="stateOf(session)" aria-hidden="true" />
+          <strong>{{ session.title ?? session.preview ?? t("sidebar.untitled") }}<span v-if="stateOf(session) !== 'idle'" class="sr-only">, {{ t(`sidebar.state.${stateOf(session)}`) }}</span></strong>
           <small>{{ formatRelativeTimeShort(new Date(session.updatedAt), nowMs) }}</small>
         </RouterLink>
         <span class="session-actions"><RowActionMenu :label="t('sidebar.sessionActions', { name: session.title ?? session.preview ?? t('sidebar.untitled') })">

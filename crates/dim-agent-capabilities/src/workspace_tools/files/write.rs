@@ -4,6 +4,7 @@ use super::super::file_reads::{
     Bom, EncodingSource, FileReads, TextEncoding, TextFileBinding, WriteBinding,
 };
 use super::codec;
+use super::edit::{to_lf, unified_diff};
 use super::{
     Before, Cancelled, FileTools, NotRegular, blocking, cancelled, failed, field, hex,
     invalid_input, not_regular, open_options, open_regular, record_published, resolve_path,
@@ -17,6 +18,9 @@ use std::{
     path::Path,
 };
 use tokio_util::sync::CancellationToken;
+
+/// A larger replaced file gets no display diff.
+const WRITE_DIFF_MAX_BYTES: usize = 256 * 1024;
 
 pub(super) fn definition() -> Value {
     json!({
@@ -109,6 +113,10 @@ struct Prepared {
     original: Option<std::fs::File>,
     /// The bytes the publish replaces; `None` for a new file.
     replaced: Option<Vec<u8>>,
+    /// Display-only hunks against the replaced text, as `edit` reports them;
+    /// `None` for a new file, an unchanged or undecodable one, or one over
+    /// `WRITE_DIFF_MAX_BYTES`.
+    diff: Option<String>,
     binding: TextFileBinding,
     text: String,
     bytes: Vec<u8>,
@@ -186,10 +194,17 @@ fn prepare(
         Ok(bytes) => bytes,
         Err(error) => return done(error.into_result()),
     };
+    let diff = replaced
+        .as_deref()
+        .filter(|replaced| replaced.len() <= WRITE_DIFF_MAX_BYTES)
+        .and_then(|replaced| codec::decode_text(replaced, &binding).ok())
+        .map(|old| unified_diff(&to_lf(&old), &to_lf(&text)))
+        .filter(|diff| !diff.is_empty());
     Ok(Ok(Prepared {
         display: display.to_owned(),
         original,
         replaced,
+        diff,
         binding,
         text,
         bytes,
@@ -206,6 +221,7 @@ fn publish(
     let Prepared {
         display,
         original,
+        diff,
         binding,
         text,
         bytes,
@@ -237,12 +253,12 @@ fn publish(
         record_published(&mut result, before, &raw_revision);
         return done(result);
     }
-    let result = wrote(
-        format!("Wrote {display}"),
-        json!({ "path": display, "bytesWritten": bytes.len(), "revision": hex(&raw_revision) }),
-        &display,
-        before,
-    );
+    let mut structured =
+        json!({ "path": display, "bytesWritten": bytes.len(), "revision": hex(&raw_revision) });
+    if let Some(diff) = diff {
+        structured["diff"] = json!(diff);
+    }
+    let result = wrote(format!("Wrote {display}"), structured, &display, before);
     let binding = TextFileBinding {
         raw_revision,
         eol: codec::detect_eol(&text),

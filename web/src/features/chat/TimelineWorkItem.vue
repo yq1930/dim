@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref } from "vue"
 import { Check, ChevronRight, Copy } from "lucide-vue-next"
 import { useI18n } from "vue-i18n"
 import { copyText } from "../../clipboard"
+import DiffLines from "./DiffLines.vue"
 import { diffLines, resolveToolDisplay } from "./tool-display"
 import { formatElapsedSeconds } from "./timeline-time"
 import type { WorkItem } from "./work"
@@ -40,13 +41,14 @@ function inputString(key: string): string | undefined {
 const output = computed(() => clip((tool.value?.result?.text ?? "").replace(/\s+$/u, "")))
 const isError = computed(() => tool.value?.status === "error")
 const name = computed(() => tool.value?.name.trim().toLowerCase() ?? "")
-const diff = computed(() => name.value === "edit" ? diffLines(tool.value?.input ?? {}, tool.value?.result?.diff) : [])
-const written = computed(() => name.value === "write" ? clip(inputString("content") ?? "") : "")
+/** An edit's diff, or a write's when it replaced a file and reported one. */
+const diff = computed(() => name.value === "edit" || (name.value === "write" && tool.value?.result?.diff !== undefined) ? diffLines(tool.value?.input ?? {}, tool.value?.result?.diff) : [])
+const written = computed(() => name.value === "write" && diff.value.length === 0 ? clip(inputString("content") ?? "") : "")
 
 /** An edit's `+N −N` line counts. */
 const stats = computed(() => {
   if (diff.value.length > 0) return { added: diff.value.filter((line) => line.sign === "+").length, removed: diff.value.filter((line) => line.sign === "-").length }
-  if (written.value !== "") return { added: written.value.split("\n").length, removed: 0 }
+  if (written.value !== "") return { added: written.value.replace(/\n$/, "").split("\n").length, removed: 0 }
   return undefined
 })
 
@@ -132,9 +134,7 @@ async function copy(section: PanelSection): Promise<void> {
             <div class="is-strong">{{ section.copy }}</div>
             <div v-if="inputString('pattern') && inputString('path')" class="is-faint">  path: {{ inputString("path") }}</div>
           </div>
-          <div v-else-if="section.body === 'diff'" class="tool-panel-diff">
-            <div v-for="(line, index) in diff" :key="index" class="tool-panel-diff-line" :data-sign="line.sign"><span class="tool-panel-sign" aria-hidden="true">{{ line.sign }}</span>{{ line.text }}</div>
-          </div>
+          <DiffLines v-else-if="section.body === 'diff'" :lines="diff" />
           <div v-else-if="section.body === 'lines'" class="tool-panel-lines">
             <template v-for="(line, index) in written.split('\n')" :key="index">
               <span class="tool-panel-line-number" aria-hidden="true">{{ index + 1 }}</span><span class="tool-panel-line">{{ line }}</span>
@@ -163,11 +163,6 @@ async function copy(section: PanelSection): Promise<void> {
 .tool-panel-code .is-faint { color: color-mix(in oklab, var(--muted-foreground) 70%, transparent); }
 .tool-panel-pre { color: color-mix(in oklab, var(--foreground) 80%, transparent); }
 .tool-panel-pre.is-error { color: var(--danger); }
-.tool-panel-diff { padding: var(--space-2) 0; font: var(--text-sm)/var(--leading-mono) var(--font-mono); }
-.tool-panel-diff-line { padding: 0 var(--space-3); white-space: pre-wrap; overflow-wrap: anywhere; }
-.tool-panel-diff-line[data-sign="-"] { background: color-mix(in oklab, var(--danger) 8%, transparent); color: color-mix(in oklab, var(--danger) 72%, var(--foreground)); }
-.tool-panel-diff-line[data-sign="+"] { background: color-mix(in oklab, var(--success) 10%, transparent); color: color-mix(in oklab, var(--success) 66%, var(--foreground)); }
-.tool-panel-sign { display: inline-block; width: 2ch; user-select: none; }
 .tool-panel-lines { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: var(--space-3); padding: var(--space-2) var(--space-3); font: var(--text-sm)/var(--leading-mono) var(--font-mono); }
 .tool-panel-line-number { color: color-mix(in oklab, var(--muted-foreground) 60%, transparent); text-align: right; user-select: none; }
 .tool-panel-line { color: color-mix(in oklab, var(--foreground) 80%, transparent); white-space: pre-wrap; overflow-wrap: anywhere; }

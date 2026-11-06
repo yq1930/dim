@@ -335,7 +335,8 @@ code { font-family: var(--font-mono); }
 .session-list small { color: var(--muted-foreground); font-size: var(--text-sm); }
 .status-dot { width: 6px; height: 6px; flex: 0 0 6px; border: 1px solid var(--muted-foreground); border-radius: 50%; }
 .status-dot[data-state="running"], .status-dot[data-state="stopping"] { border-color: var(--primary); background: var(--primary); animation: status-pulse 1.8s ease-in-out infinite; }
-.status-dot[data-state="waiting_permission"], .status-dot[data-state="waiting_user"] { border-color: var(--warning); background: var(--warning); }
+.status-dot[data-state="waiting"], .status-dot[data-state="waiting_permission"], .status-dot[data-state="waiting_user"] { border-color: var(--warning); background: var(--warning); }
+.status-dot[data-state="unread"] { border-color: var(--info); background: var(--info); }
 .status-dot[data-state="blocked"], .status-dot[data-state="failed"] { border-color: var(--danger); background: var(--danger); }
 .status-dot[data-state="working"] { border-color: var(--accent-strong); background: var(--accent-strong); }
 .status-dot[data-state="idle"], .status-dot[data-state="paused"] { border-color: var(--muted-foreground); }
@@ -605,6 +606,7 @@ button.compaction-divider-label:hover { color: var(--foreground); }
 /* In-progress row (spec v1): primary 14px spinner, 13px label, mono 11 elapsed seconds. */
 .processing-row { display: flex; align-items: center; gap: var(--space-2); color: var(--muted-foreground); font-size: var(--text-md); }
 .processing-row > svg { flex: none; color: var(--primary); }
+.processing-meta { color: color-mix(in oklab, var(--muted-foreground) 75%, transparent); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
 .processing-elapsed { font-family: var(--font-mono); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
 /* Details indent to the row's text edge (chevron 14 + gap 8). */
 .timeline-work-item-details { padding: 0 0 var(--space-1) 22px; }

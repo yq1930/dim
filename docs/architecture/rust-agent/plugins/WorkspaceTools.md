@@ -240,6 +240,15 @@ It records what it did as one Append input on the branch and replies
 `{restored, removed, failed?, recorded}`. A turn the branch never started is
 `invalid_params` for both.
 
+### Display diff
+
+`edit` reports the hunks it applied in `structuredContent.diff`: unified hunks in
+LF space with three lines of context, for clients to show. `write` reports the
+same when it replaces a text file of at most 256 KiB that it can decode with the
+file's binding and whose content changes; a created file, a larger or
+undecodable one and an unchanged one get no field. The model reads only the
+result text, so the diff costs no context.
+
 ### Declared effects
 
 `write`, `edit` and `exec` declare the effect of each call on its result, through

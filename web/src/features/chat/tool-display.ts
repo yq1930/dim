@@ -45,8 +45,11 @@ export function resolveToolDisplay(toolName: string, input: Record<string, unkno
   return { renderer: "generic", labelKey: "prompt.useTool" }
 }
 
-/** Display lines of an edit: the tool's unified diff when it reported one, else old then new text. */
-export function diffLines(input: Record<string, unknown>, diff: string | undefined): Array<{ sign: "-" | "+" | " "; text: string }> {
+/** One line of a display diff: removed, added or unchanged context. */
+export type DiffLine = { sign: "-" | "+" | " "; text: string }
+
+/** Display lines of an edit or a write: the tool's unified diff when it reported one, else old then new text. */
+export function diffLines(input: Record<string, unknown>, diff: string | undefined): DiffLine[] {
   if (diff !== undefined) {
     return diff.split("\n").filter((line) => !line.startsWith("---") && !line.startsWith("+++") && !line.startsWith("@@")).map((line) => {
       const sign = line.startsWith("+") ? "+" : line.startsWith("-") ? "-" : " "

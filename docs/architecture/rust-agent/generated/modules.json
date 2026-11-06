@@ -15267,10 +15267,21 @@
       "from": "dim_agent_capabilities::workspace_tools::files::write",
       "to": "dim_agent_capabilities::workspace_tools::files::codec",
       "references": [
+        "path codec::decode_text",
         "path codec::detect_eol",
         "path codec::encode_text",
         "path codec::normalize_eol",
         "use super::codec"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::write",
+      "to": "dim_agent_capabilities::workspace_tools::files::edit",
+      "references": [
+        "path to_lf",
+        "path unified_diff",
+        "use super::edit::to_lf",
+        "use super::edit::unified_diff"
       ]
     },
     {

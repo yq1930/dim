@@ -2,7 +2,7 @@
 import { computed, ref, watch } from "vue"
 import { RouterLink, useRouter } from "vue-router"
 import { useI18n } from "vue-i18n"
-import { GitBranch, Menu } from "lucide-vue-next"
+import { FileDiff, GitBranch, Menu } from "lucide-vue-next"
 import BrandMark from "../../components/BrandMark.vue"
 import ConfirmDialog from "../../components/ConfirmDialog.vue"
 import ApprovalPrompt from "./ApprovalPrompt.vue"
@@ -13,6 +13,7 @@ import QuestionPrompt from "./QuestionPrompt.vue"
 import TimelineView from "./TimelineView.vue"
 import TodoPanel from "./TodoPanel.vue"
 import TurnChangesDialog from "./TurnChangesDialog.vue"
+import { changedFileCount } from "./session-changes"
 import { MAIN_BRANCH, type ContextUsage, type DraftAttachments, type ModelId, type PermissionPreset } from "../../rpc/protocol"
 import { readSkills } from "../../rpc/general-settings"
 import { goalCall, goalObjective, parseGoalRequest, type Goal, type GoalStatus } from "../../goal"
@@ -53,6 +54,10 @@ const storesPastes = computed(() => view.value?.methods.includes("attachment.put
 const searchFiles = computed(() => view.value?.methods.includes("session.files.search") ? (query: string) => chat.searchFiles(props.sessionId, query) : undefined)
 const fileChanges = computed(() => view.value?.methods.includes("session.files.changes") === true && view.value.methods.includes("session.files.rewind"))
 const changesDialog = ref<InstanceType<typeof TurnChangesDialog>>()
+const changedFiles = computed(() => changedFileCount(view.value?.rows ?? [], summary.value?.cwd))
+const changesShown = computed(() => ui.detailOpen && ui.detailView === "changes")
+/** The main line's messages, oldest first, for the composer's ↑ recall. */
+const sentMessages = computed(() => (view.value?.rows ?? []).flatMap((row) => row.kind === "user" && row.text.trim() !== "" ? [row.text] : []))
 /** The App Server serves the permission methods on the connection; a Session may also list them. */
 const permissionControl = computed(() => {
   const session = view.value
@@ -311,6 +316,21 @@ async function fork(): Promise<void> {
           <h1 data-route-heading tabindex="-1" :title="title">{{ title }}</h1>
         </div>
         <button
+          v-if="changedFiles > 0 || changesShown"
+          class="ui-button session-lines"
+          data-variant="ghost"
+          data-size="sm"
+          type="button"
+          :aria-pressed="changesShown"
+          :aria-label="t('sessionChanges.open')"
+          v-tooltip="t('sessionChanges.open')"
+          @click="ui.toggleChanges()"
+        >
+          <FileDiff aria-hidden="true" />
+          <span>{{ t("sessionChanges.title") }}</span>
+          <span v-if="changedFiles > 0" class="ui-badge" data-size="sm">{{ changedFiles }}</span>
+        </button>
+        <button
           v-if="connection.supports('session.branch_end')"
           class="ui-button session-lines"
           data-variant="ghost"
@@ -374,6 +394,7 @@ async function fork(): Promise<void> {
       :list-skills="listSkills"
       :context-usage="contextUsage"
       :plan-mode="planControl"
+      :history="sentMessages"
     />
   </section>
 </template>
@@ -382,5 +403,6 @@ async function fork(): Promise<void> {
 .session-running { gap: 6px; }
 .session-running > .status-dot { border: 0; }
 .session-lines { gap: 6px; flex: none; }
+.session-lines[aria-pressed="true"] { background: var(--hover); color: var(--foreground); }
 .session-lines .ui-badge { min-width: 18px; padding-inline: 4px; }
 </style>

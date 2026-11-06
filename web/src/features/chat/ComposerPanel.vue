@@ -5,7 +5,7 @@ import { useI18n } from "vue-i18n"
 import { ArrowUp, FileSearch, FileText, Paperclip, Square, X } from "lucide-vue-next"
 import type { ContextUsage, DraftAttachments, FileCandidate, ImageBlock, ModelId, PermissionPreset, PermissionPolicy } from "../../rpc/protocol"
 import { formatTokens } from "./usage-format"
-import { linkMentions, mentionTrigger, type FileMention, type MentionTrigger } from "../../mentions"
+import { linkMentions, mentionTrigger, unlinkMentions, type FileMention, type MentionTrigger } from "../../mentions"
 import { useModelsStore } from "../../stores/models"
 import { useSessionsStore } from "../../stores/sessions"
 import ComposerModeMenu, { type WorkMode } from "./ComposerModeMenu.vue"
@@ -28,7 +28,8 @@ type SessionCommands = {
 /**
  * The message composer: a growing text field, the model menu, and one button
  * that sends, or stops the run while one is in flight. Enter sends,
- * Shift+Enter breaks the line.
+ * Shift+Enter breaks the line, Escape stops a run, Shift+Tab steps through the
+ * work modes and ↑/↓ recall the line's earlier messages into an empty draft.
  */
 const props = withDefaults(defineProps<{
   running: boolean
@@ -64,6 +65,8 @@ const props = withDefaults(defineProps<{
   openLines?: () => void
   /** Session commands the menu lists, each only when given. */
   sessionCommands?: SessionCommands
+  /** The line's earlier messages, oldest first, as sent. */
+  history?: readonly string[]
 }>(), { attachments: true })
 const { t } = useI18n()
 const route = useRoute()
@@ -92,6 +95,12 @@ const workModes = computed<WorkMode[]>(() => [
   ...(props.permission === undefined ? [] : ["read-only"] as const),
 ])
 const workMode = computed<WorkMode | undefined>(() => props.planMode?.active ? "plan" : props.permission?.policy?.preset)
+/** Shift+Tab steps through these, as the CLI cycles its permission modes; Auto and Read only are chosen in the menu. */
+const cycleModes = computed<WorkMode[]>(() => workModes.value.filter((mode) => mode === "ask" || mode === "workspace-write" || mode === "plan"))
+/** Read out once a mode changes by keyboard. */
+const announcement = ref("")
+/** The `history` entry the draft holds while ↑/↓ walk it. */
+const recalled = ref<number>()
 const error = computed({ get: () => draft.value.error, set: (value) => { draft.value.error = value } })
 const composing = ref(false)
 const focused = ref(false)
@@ -118,7 +127,7 @@ const pastes = computed({ get: () => draft.value.pastes, set: (value) => { draft
 const files = computed({ get: () => draft.value.files, set: (value) => { draft.value.files = value } })
 const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"])
 const FILE_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,application/pdf,.pdf,text/*,application/json,application/javascript,application/xml,.ts,.tsx,.jsx,.vue,.rs,.go,.py,.php,.sql,.md,.yaml,.yml,.toml,.ini,.sh,.css,.scss,.jsonc,.log,.diff,.patch,.svg"
-watch(() => props.draftKey, () => { mention.value = undefined; candidates.value = []; fileDialog.value?.close(); void nextTick(resize) })
+watch(() => props.draftKey, () => { mention.value = undefined; candidates.value = []; recalled.value = undefined; fileDialog.value?.close(); void nextTick(resize) })
 
 const availableCommands = computed(() => ([
   { category: "model", name: "models", available: props.modelSelectable && models.available && !changingModel.value },
@@ -383,6 +392,7 @@ async function submit(): Promise<void> {
       target.files = target.files.filter((file) => !sentFiles.includes(file))
     }
     if (target.text === message) target.text = ""
+    recalled.value = undefined
     await nextTick()
     resize()
   } catch (cause) {
@@ -460,6 +470,49 @@ async function onMode(mode: WorkMode): Promise<void> {
   }
 }
 
+async function cycleMode(): Promise<void> {
+  const modes = cycleModes.value
+  const current = workMode.value === undefined ? -1 : modes.indexOf(workMode.value)
+  const next = modes[(current + 1) % modes.length]!
+  await onMode(next)
+  if (error.value === "") announcement.value = t("composer.mode.switched", { mode: t(`composer.mode.${next}`) })
+}
+
+/**
+ * ↑ on the first line of an empty draft, or of one still holding a recalled
+ * message, steps back through `history`; ↓ on its last line steps forward and
+ * past the newest back to an empty draft. A draft the operator wrote is never
+ * replaced.
+ */
+function recall(step: -1 | 1): boolean {
+  const element = field.value
+  const history = props.history ?? []
+  if (element === undefined || history.length === 0) return false
+  const shown = recalled.value === undefined ? undefined : history[recalled.value]
+  const browsing = shown !== undefined && text.value === unlinkMentions(shown).text
+  if (!browsing && text.value !== "") return false
+  if (step < 0 && text.value.slice(0, element.selectionStart).includes("\n")) return false
+  if (step > 0 && (!browsing || text.value.slice(element.selectionEnd).includes("\n"))) return false
+  const next = (browsing ? recalled.value! : history.length) + step
+  if (next < 0) return true
+  if (next >= history.length) {
+    recalled.value = undefined
+    text.value = ""
+    fileMentions.value = []
+  } else {
+    const { text: plain, mentions } = unlinkMentions(history[next]!)
+    recalled.value = next
+    text.value = plain
+    fileMentions.value = mentions
+  }
+  void nextTick(() => {
+    const end = text.value.length
+    element.setSelectionRange(end, end)
+    resize()
+  })
+  return true
+}
+
 async function runMenuEntry(entry: MenuEntry): Promise<void> {
   if (entry.category !== "skill") return runCommand(entry.name)
   if (composing.value) return
@@ -521,6 +574,22 @@ function onKeydown(event: KeyboardEvent): void {
   if (menuOpen.value && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
     event.preventDefault()
     activeIndex.value = (activeIndex.value + (event.key === "ArrowDown" ? 1 : -1) + matches.value.length) % matches.value.length
+    return
+  }
+  const plain = !event.altKey && !event.ctrlKey && !event.metaKey
+  if (event.key === "Tab" && event.shiftKey && plain && props.variant !== "panel" && cycleModes.value.length > 1) {
+    event.preventDefault()
+    if (!changingMode.value) void cycleMode()
+    return
+  }
+  // Escape closes an open menu first (AppShell); otherwise it stops the run, as the CLI's Esc interrupts.
+  if (event.key === "Escape" && plain && props.running && props.stop !== undefined && !props.stopping && document.querySelector("details.composer-popover[open]") === null) {
+    event.preventDefault()
+    void stop()
+    return
+  }
+  if ((event.key === "ArrowUp" || event.key === "ArrowDown") && plain && !event.shiftKey && recall(event.key === "ArrowUp" ? -1 : 1)) {
+    event.preventDefault()
     return
   }
   if (event.key === "Enter" && !event.shiftKey && !event.altKey) {
@@ -643,6 +712,7 @@ defineExpose({ focus: () => field.value?.focus(), quote })
         </div>
       </footer>
     </div>
+    <span class="sr-only" role="status" aria-live="polite">{{ announcement }}</span>
     <div v-if="$slots.status" class="composer-statusbar">
       <div class="composer-status-start"><slot name="status" /></div>
     </div>

@@ -37,6 +37,16 @@ const KEEPING_TOOLS: [&str; 2] = ["write", "edit"];
 /// How many facts one page of a turn's read takes.
 const PAGE: u64 = 256;
 
+/// Whether a Session declaring `tools` (every tool when `None`) can make the
+/// changes a rewind undoes, and so needs the guide entry of [`MARKER`].
+pub(crate) fn rewindable(tools: Option<&[String]>) -> bool {
+    tools.is_none_or(|tools| {
+        tools
+            .iter()
+            .any(|tool| KEEPING_TOOLS.contains(&tool.as_str()))
+    })
+}
+
 /// A turn's `write` and `edit` changes and the commands it ran.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

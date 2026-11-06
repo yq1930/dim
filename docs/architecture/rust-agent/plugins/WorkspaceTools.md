@@ -27,10 +27,10 @@ the domain new ones enter.
 | --- | --- |
 | `P:HostPlatform` | Home, shell, environment and process supervision. |
 | `S:TreeCommands` | Resolve the calling branch per call. |
-| `S:SessionConfig` | cwd and collaboration role. |
+| `S:SessionConfig` | cwd, collaboration role and declared tools. |
 | `S:SessionIdentity` | Session-specific output directory. |
 | `S:SessionMethods` | Register the `session.exec.output` namespace, until this part unloads. |
-| `S:GuideEntries` | Register the `dim-file-rewind` entry for the Session, until this part unloads. |
+| `S:GuideEntries` | Register the `dim-file-rewind` entry for a Session that declares `write` or `edit`, until this part unloads. |
 
 Exec looks up the optional `S:FileAccessFacts` service when preparing a process,
 to recognize its resolved cwd and obtain confirmed additional workspace roots
@@ -382,7 +382,8 @@ changed.", protocol: it states the guarantee that the file is unchanged.
 A rewind's record is the marker `dim-file-rewind`: one line per file, `restored
 <path>` or `removed <path>`, paths escaped as runtime tags escape content. The
 element, the two words and the line form are protocol. Its guide entry, registered
-for the Session, is protocol throughout:
+for a Session that declares `write` or `edit` (a Session without a mount list
+declares both), is protocol throughout:
 
 ```
 <dim-file-rewind>: the operator undid file changes that write and edit made in an earlier turn. Each line names one file: restored means it again holds its content from before that turn, and removed means that turn created it and it was deleted. Files not listed, and changes made by commands, are as they were. Your earlier reads of the listed files no longer match them. This is information, not a request.

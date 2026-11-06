@@ -193,7 +193,8 @@ removed /work/src/new.rs
 
 每行一个文件，`restored` 表示恢复为这一轮之前的内容，`removed` 表示删除了这一轮新建的文件；路径按
 运行时标签的规则转义。只列实际完成的文件。指南条目由 WorkspaceTools 的 Session 部件在 `apply` 中
-以 Session 范围注册（一次还原可能写到 Session 的任意分支），文本与类别见
+以 Session 范围注册（一次还原可能写到 Session 的任意分支），且只在 Session 声明了 `write` 或 `edit`
+时注册（未限定工具清单即全部声明）：其他 Session 不会有可还原的改动，不必每次请求都带这段文本。文本与类别见
 [WorkspaceTools 的模型文本](../architecture/rust-agent/plugins/WorkspaceTools.md#model-facing-texts)。
 
 还原不修改分支的读取绑定（FileReads）：绑定记录的是还原前的版本，之后对这些文件的 `write`/`edit`

@@ -376,15 +376,17 @@ impl DynPlugin for WorkspaceToolsPlugin {
             let tree = ctx.require_at(&self.tree)?;
             let methods = ctx.require_at(&self.methods)?;
             let guide = ctx.require_at(&self.guide)?;
-            guide.register(
-                ctx,
-                GuideScope::Session,
-                GuideEntry {
-                    markers: vec![files::rewind::MARKER.into()],
-                    order: 110,
-                    text: files::rewind::ENTRY.into(),
-                },
-            )?;
+            if files::rewind::rewindable(config.tools.as_deref()) {
+                guide.register(
+                    ctx,
+                    GuideScope::Session,
+                    GuideEntry {
+                        markers: vec![files::rewind::MARKER.into()],
+                        order: 110,
+                        text: files::rewind::ENTRY.into(),
+                    },
+                )?;
+            }
             let cwd = PathBuf::from(&config.cwd);
             let output_dir = self.config.output_root.join(&identity.session_id);
             let owner = ctx.get::<SessionFilesHost>();

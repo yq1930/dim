@@ -3,6 +3,10 @@
 //! once its signature checks out, replaces the bundle before Lacus restarts.
 
 use crate::{Desktop, Result, window};
+use reqwest::{
+    StatusCode,
+    header::{ACCEPT, RANGE},
+};
 use std::{
     cmp::Ordering as Precedence,
     io::Write,
@@ -22,6 +26,11 @@ use tauri_plugin_updater::{Update, UpdaterExt};
 const FIRST_CHECK: Duration = Duration::from_secs(10);
 const CHECK_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 const SKIP_FILE: &str = "desktop-update.json";
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+/// A download that receives nothing for this long resumes from where it stopped.
+const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+/// Download attempts in a row that receive nothing before the update gives up.
+const ATTEMPTS: u32 = 4;
 /// How much of a release's notes the offer shows.
 const NOTE_LINES: usize = 12;
 const INSTALL: &str = "更新并重启";
@@ -235,9 +244,9 @@ fn offer(
 }
 
 /// Downloads the release and checks its signature, stops the service with the
-/// running bundle's own CLI, swaps the bundle and restarts. A download or
-/// signature failure leaves Lacus running as it was; a failed swap restores
-/// the previous bundle, which the restart then opens.
+/// running bundle's own CLI, swaps the bundle and restarts. A download that
+/// gives up or a signature failure leaves Lacus running as it was; a failed
+/// swap restores the previous bundle, which the restart then opens.
 async fn install(app: AppHandle, desktop: Arc<Desktop>, update: Update) {
     let main = app.get_webview_window(window::MAIN);
     let progress = |progress: Option<u64>| {
@@ -249,21 +258,16 @@ async fn install(app: AppHandle, desktop: Arc<Desktop>, update: Update) {
             });
         }
     };
-    let (mut received, mut shown) = (0u64, None);
-    let downloaded = update
-        .download(
-            |chunk, total| {
-                received += chunk as u64;
-                let percent = total.map(|total| (received * 100 / total.max(1)).min(100));
-                if percent != shown {
-                    shown = percent;
-                    progress(Some(percent.unwrap_or(0)));
-                }
-            },
-            || {},
-        )
-        .await
-        .and_then(|bytes| update.verify(&bytes).map(|()| bytes));
+    let mut shown = None;
+    let downloaded = download(&update, |received, total| {
+        let percent = total.map(|total| (received * 100 / total.max(1)).min(100));
+        if percent != shown {
+            shown = percent;
+            progress(Some(percent.unwrap_or(0)));
+        }
+    })
+    .await
+    .and_then(|bytes| Ok(update.verify(&bytes).map(|()| bytes)?));
     progress(None);
     let bytes = match downloaded {
         Ok(bytes) => bytes,
@@ -304,6 +308,65 @@ async fn install(app: AppHandle, desktop: Arc<Desktop>, update: Update) {
             }
         }
     }
+}
+
+/// Downloads the release package. A connection that drops or stays idle for
+/// `IDLE_TIMEOUT` resumes from the bytes already received; the download gives
+/// up after `ATTEMPTS` attempts in a row that receive nothing.
+async fn download(update: &Update, mut progress: impl FnMut(u64, Option<u64>)) -> Result<Vec<u8>> {
+    // Already installed when the updater has made a request.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let client = reqwest::Client::builder()
+        .user_agent("Lacus")
+        .connect_timeout(CONNECT_TIMEOUT)
+        .read_timeout(IDLE_TIMEOUT)
+        .build()?;
+    let (mut bytes, mut total, mut stalled) = (Vec::new(), None, 0);
+    loop {
+        let received = bytes.len();
+        let attempt = resume(&client, update, &mut bytes, &mut total, &mut progress).await;
+        if attempt.is_ok() && total.is_none_or(|total| bytes.len() as u64 >= total) {
+            return Ok(bytes);
+        }
+        stalled = if bytes.len() > received {
+            0
+        } else {
+            stalled + 1
+        };
+        if stalled == ATTEMPTS {
+            return Err(attempt
+                .err()
+                .map_or_else(|| "下载多次中断".into(), Into::into));
+        }
+        tokio::time::sleep(Duration::from_secs(1 << stalled)).await;
+    }
+}
+
+/// One request for the bytes not received yet; a server that ignores `Range`
+/// sends the whole package again.
+async fn resume(
+    client: &reqwest::Client,
+    update: &Update,
+    bytes: &mut Vec<u8>,
+    total: &mut Option<u64>,
+    progress: &mut impl FnMut(u64, Option<u64>),
+) -> reqwest::Result<()> {
+    let mut request = client
+        .get(update.download_url.clone())
+        .header(ACCEPT, "application/octet-stream");
+    if !bytes.is_empty() {
+        request = request.header(RANGE, format!("bytes={}-", bytes.len()));
+    }
+    let mut response = request.send().await?.error_for_status()?;
+    if response.status() != StatusCode::PARTIAL_CONTENT {
+        bytes.clear();
+        *total = response.content_length();
+    }
+    while let Some(chunk) = response.chunk().await? {
+        bytes.extend_from_slice(&chunk);
+        progress(bytes.len() as u64, *total);
+    }
+    Ok(())
 }
 
 /// A dialog as a sheet on the main window: without a parent, macOS may not

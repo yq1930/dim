@@ -770,6 +770,8 @@ name = "dim-desktop"
 version = "0.1.0-alpha.18"
 dependencies = [
  "libc",
+ "reqwest",
+ "rustls",
  "serde",
  "serde_json",
  "tauri",

@@ -191,7 +191,7 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
       :rewind="(turnId, paths) => chat.rewindTurn(sessionId, MAIN_BRANCH, turnId, paths)"
     />
     <div class="chat-page-top">
-      <header class="session-header">
+      <header class="session-header" data-tauri-drag-region="deep">
         <button v-if="ui.shellMode === 'compact'" class="ui-icon-button session-nav" data-variant="ghost" data-size="md" type="button" :aria-label="t('sidebar.openMenu')" @click="ui.drawerOpen = true"><Menu aria-hidden="true" /></button>
         <div class="session-heading">
           <template v-if="summary">

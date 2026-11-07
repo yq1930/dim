@@ -2,23 +2,19 @@
 import { computed, ref } from "vue"
 import { RouterLink } from "vue-router"
 import { useI18n } from "vue-i18n"
-import { Archive, ChevronRight, Copy, Folder, FolderOpen, Loader2, Pencil, Plus, Trash2, X } from "lucide-vue-next"
-import { useChatStore } from "../stores/chat"
+import { ChevronRight, Copy, Folder, FolderOpen, Loader2, Plus, X } from "lucide-vue-next"
 import { useSessionsStore, type Workspace } from "../stores/sessions"
-import { useConnectionStore } from "../stores/connection"
-import { useUiStore } from "../stores/ui"
 import type { SessionSummary } from "../rpc/protocol"
 import RowActionMenu from "./RowActionMenu.vue"
-import { formatRelativeTimeShort } from "../features/chat/timeline-time"
+import SidebarSessionRow from "./SidebarSessionRow.vue"
+import { useSessionState } from "./session-state"
 
-/** One workspace (a working directory) and its sessions, most recent first. */
-const props = defineProps<{ workspace: Workspace; expanded: boolean; activeSessionId?: string; nowMs: number; busy?: boolean }>()
+/** One workspace (a working directory) and its sessions, most recent first; `hasPinned` marks one whose other sessions sit pinned above. */
+const props = defineProps<{ workspace: Workspace; expanded: boolean; activeSessionId?: string; nowMs: number; busy?: boolean; hasPinned?: boolean }>()
 const emit = defineEmits<{ toggle: []; navigate: []; action: [kind: "rename" | "archive" | "delete", session: SessionSummary]; copy: [path: string] }>()
 const { t } = useI18n()
 const sessions = useSessionsStore()
-const connection = useConnectionStore()
-const chat = useChatStore()
-const ui = useUiStore()
+const stateOf = useSessionState()
 
 // A group shows five sessions until "show more" walks out twenty at a time.
 const FIRST = 5
@@ -28,14 +24,6 @@ const shown = computed(() => props.workspace.sessions.slice(0, limit.value))
 const hasMore = computed(() => props.workspace.sessions.length > limit.value)
 const running = computed(() => !props.expanded && props.workspace.sessions.some((session) => session.running))
 const waiting = computed(() => !props.expanded && props.workspace.sessions.some((session) => stateOf(session) === "waiting"))
-
-/** A Session waits on the operator while a line holds an approval, a question or a plan review. */
-function stateOf(session: SessionSummary): "waiting" | "running" | "unread" | "idle" {
-  const view = chat.views[session.sessionId]
-  if (view !== undefined && (view.approvals.length > 0 || view.questions.length > 0 || view.reviews.length > 0)) return "waiting"
-  if (session.running) return "running"
-  return ui.unread.includes(session.sessionId) ? "unread" : "idle"
-}
 
 function toggleReveal(): void {
   limit.value = hasMore.value ? limit.value + STEP : FIRST
@@ -79,26 +67,17 @@ function toggleReveal(): void {
       </div>
     </div>
     <ul v-if="expanded" class="session-list">
-      <li v-for="session in shown" :key="session.sessionId" class="session-row">
-        <RouterLink
-          class="session-open"
-          :to="{ name: 'chat-session', params: { sessionId: session.sessionId } }"
-          :data-open="session.sessionId === activeSessionId ? 'true' : undefined"
-          :aria-current="session.sessionId === activeSessionId ? 'page' : undefined"
-          :title="session.title ?? session.preview"
-          @click="emit('navigate')"
-        >
-          <span class="status-dot" :data-state="stateOf(session)" aria-hidden="true" />
-          <strong>{{ session.title ?? session.preview ?? t("sidebar.untitled") }}<span v-if="stateOf(session) !== 'idle'" class="sr-only">, {{ t(`sidebar.state.${stateOf(session)}`) }}</span></strong>
-          <small>{{ formatRelativeTimeShort(new Date(session.updatedAt), nowMs) }}</small>
-        </RouterLink>
-        <span class="session-actions"><RowActionMenu :label="t('sidebar.sessionActions', { name: session.title ?? session.preview ?? t('sidebar.untitled') })">
-          <button v-if="connection.supports('session.methods')" type="button" class="ui-menu-item" :disabled="busy || connection.phase !== 'connected'" @click="emit('action', 'rename', session)"><Pencil aria-hidden="true" />{{ t("sidebar.rename") }}</button>
-          <button v-if="connection.supports('session.archive')" type="button" class="ui-menu-item" :disabled="busy || session.running || connection.phase !== 'connected'" @click="emit('action', 'archive', session)"><Archive aria-hidden="true" />{{ t("sidebar.archive") }}</button>
-          <button type="button" class="ui-menu-item" @click="emit('copy', session.cwd)"><Copy aria-hidden="true" />{{ t("workspace.copyPath") }}</button>
-          <button v-if="connection.supports('session.delete')" type="button" class="ui-menu-item" :disabled="busy || session.running || connection.phase !== 'connected'" @click="emit('action', 'delete', session)"><Trash2 aria-hidden="true" />{{ t("sidebar.delete") }}</button>
-        </RowActionMenu></span>
-      </li>
+      <SidebarSessionRow
+        v-for="session in shown"
+        :key="session.sessionId"
+        :session="session"
+        :active-session-id="activeSessionId"
+        :now-ms="nowMs"
+        :busy="busy"
+        @navigate="emit('navigate')"
+        @action="(kind, target) => emit('action', kind, target)"
+        @copy="emit('copy', $event)"
+      />
       <li v-if="workspace.sessions.length > FIRST">
         <button class="ui-button reveal-more" data-variant="ghost" data-size="sm" type="button" @click="toggleReveal">
           <ChevronRight :data-open="hasMore ? undefined : 'true'" aria-hidden="true" />
@@ -106,7 +85,7 @@ function toggleReveal(): void {
         </button>
       </li>
     </ul>
-    <p v-if="expanded && !workspace.sessions.length" class="sidebar-empty">{{ t("workspace.empty") }}</p>
+    <p v-if="expanded && !workspace.sessions.length && !hasPinned" class="sidebar-empty">{{ t("workspace.empty") }}</p>
   </section>
 </template>
 
@@ -125,18 +104,8 @@ function toggleReveal(): void {
 .workspace-row:is(:hover, :focus-within) .workspace-row-actions { opacity: 1; }
 .workspace-running { position: absolute; top: 0; right: 0; bottom: 0; display: grid; width: var(--control-sm); place-items: center; color: var(--muted-foreground); pointer-events: none; }
 .workspace-row:is(:hover, :focus-within) .workspace-running { opacity: 0; }
-/* The session link reuses the row geometry of the kit's .session-open. */
-.session-list .session-open { grid-template-columns: var(--control-xs) minmax(0, 1fr) auto; border-radius: var(--control-sm-radius); color: inherit; text-decoration: none; }
-.session-row { display: flex; align-items: center; gap: 2px; }
-.session-row .session-open { flex: 1; min-width: 0; }
-.session-actions { flex: none; opacity: .4; }
-.session-row:is(:hover, :focus-within) .session-actions { opacity: 1; }
-.session-list .session-open .status-dot { justify-self: center; }
-.session-list .session-open:hover { background: var(--hover); }
-.session-list .session-open[data-open="true"] { background: var(--card); box-shadow: var(--shadow-xs), 0 0 0 1px var(--border); }
 @media (hover: none) {
   .workspace-row-actions { opacity: 1; }
   .workspace-running { display: none; }
-  .session-actions { opacity: 1; }
 }
 </style>

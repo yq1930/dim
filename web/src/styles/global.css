@@ -126,24 +126,25 @@
   /* Content columns — one width per context, shared by every layer of that page */
   --content-page: 760px;  /* settings and generic route pages */
   --content-chat: 760px;  /* chat stack: timeline, runtime stack, composer column */
-  /* Colors follow Desktop's opaque (non-vibrant) window palette, renderer styles/global.css. */
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  /* Warm neutrals after Claude Code's desktop app: an ivory page, a darker sidebar and white
+     cards; the Lacus green stays the accent. Lightness matches the neutral set it replaced. */
+  --background: oklch(0.985 0.004 95);
+  --foreground: oklch(0.17 0.004 95);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.17 0.004 95);
   --primary: oklch(0.6 0.138 150);
   --primary-foreground: oklch(1 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.52 0 0); /* small text passes AA on --muted */
-  --fg-2: oklch(0.38 0 0); /* secondary text: ghost/chip labels, descriptions, neutral banners */
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --border: oklch(0.922 0 0);
+  --muted: oklch(0.96 0.006 95);
+  --muted-foreground: oklch(0.51 0.01 95); /* small text passes AA on --muted */
+  --fg-2: oklch(0.37 0.008 95); /* secondary text: ghost/chip labels, descriptions, neutral banners */
+  --accent: oklch(0.96 0.006 95);
+  --accent-foreground: oklch(0.2 0.006 95);
+  --border: oklch(0.91 0.009 95);
   --ring: var(--primary);
   --accent-strong: var(--primary);
   --surface: transparent;
-  --sidebar: oklch(0.965 0.002 240);
-  --sidebar-foreground: oklch(0.145 0 0 / 92%);
+  --sidebar: oklch(0.955 0.008 95);
+  --sidebar-foreground: oklch(0.17 0.004 95 / 92%);
   --danger: oklch(0.577 0.245 27.325);
   --danger-foreground: oklch(0.99 0 0);
   --warning: oklch(0.577 0.179 58.318);
@@ -161,10 +162,10 @@
   --primary-ink: oklch(0.45 0.11 150); /* green text on --background */
   --danger-hover: oklch(0.61 0.235 27.3); /* solid danger button states */
   --danger-press: oklch(0.52 0.22 27.3);
-  --border-strong: oklch(0.86 0 0);   /* hovered fields, unchecked boxes, off switch track */
-  --hover: oklch(0.145 0 0 / 5%);     /* every transparent control on hover / keyboard highlight */
-  --press: oklch(0.145 0 0 / 9%);
-  --muted-press: oklch(0.94 0 0); /* pressed fill of bordered controls (secondary button) */
+  --border-strong: oklch(0.85 0.01 95);   /* hovered fields, unchecked boxes, off switch track */
+  --hover: oklch(0.3 0.02 85 / 6%);     /* every transparent control on hover / keyboard highlight */
+  --press: oklch(0.3 0.02 85 / 10%);
+  --muted-press: oklch(0.93 0.008 95); /* pressed fill of bordered controls (secondary button) */
   --control-bg: var(--background); /* fill of bordered controls: secondary buttons, fields, chips, checkboxes */
   /* Tone tints — badge, banner and selected-card backgrounds; text keeps the solid tone.
      Declared on :root = <html>, which also carries .dark, so they follow the theme. */
@@ -180,20 +181,20 @@
 
 .dark {
   color-scheme: dark;
-  --background: oklch(0.16 0 0);
-  --foreground: oklch(0.9431 0 0);
-  --card: oklch(0.21 0 0);
-  --card-foreground: oklch(0.9431 0 0);
+  --background: oklch(0.235 0.003 95);
+  --foreground: oklch(0.95 0.004 95);
+  --card: oklch(0.28 0.004 95);
+  --card-foreground: oklch(0.95 0.004 95);
   --primary: oklch(0.76 0.15 149);
   --primary-foreground: oklch(0.11 0.024 150);
-  --muted: oklch(0.27 0 0);
-  --muted-foreground: oklch(0.6334 0 0);
-  --fg-2: oklch(0.8 0 0);
-  --accent: oklch(0.27 0 0);
-  --accent-foreground: oklch(0.9431 0 0);
-  --border: oklch(1 0 0 / 14%);
-  --sidebar: oklch(0.14 0.008 240);
-  --sidebar-foreground: oklch(0.985 0 0 / 92%);
+  --muted: oklch(0.31 0.004 95);
+  --muted-foreground: oklch(0.68 0.008 95);
+  --fg-2: oklch(0.82 0.006 95);
+  --accent: oklch(0.31 0.004 95);
+  --accent-foreground: oklch(0.95 0.004 95);
+  --border: oklch(0.97 0.01 95 / 12%);
+  --sidebar: oklch(0.205 0.003 80);
+  --sidebar-foreground: oklch(0.97 0.004 95 / 92%);
   --danger: oklch(0.704 0.191 22.216);
   --danger-foreground: oklch(0.11 0.02 22);
   --warning: oklch(0.78 0.14 75);
@@ -208,11 +209,11 @@
   --danger-hover: oklch(0.74 0.18 22.2);
   --danger-press: oklch(0.65 0.19 22.2);
   --primary-ink: oklch(0.8 0.13 149);
-  --border-strong: oklch(1 0 0 / 22%);
-  --hover: oklch(1 0 0 / 7%);
-  --press: oklch(1 0 0 / 12%);
-  --muted-press: oklch(0.31 0 0);
-  --control-bg: oklch(1 0 0 / 4%); /* lifts off both --background and --card */
+  --border-strong: oklch(0.97 0.01 95 / 20%);
+  --hover: oklch(0.97 0.01 95 / 7%);
+  --press: oklch(0.97 0.01 95 / 12%);
+  --muted-press: oklch(0.34 0.004 95);
+  --control-bg: oklch(0.97 0.01 95 / 4%); /* lifts off both --background and --card */
   --shadow-xs: 0 1px 2px oklch(0 0 0 / 30%);
   --shadow-sm: 0 1px 3px oklch(0 0 0 / 40%);
   --shadow-pop: 0 12px 32px -6px oklch(0 0 0 / 50%), 0 0 0 1px oklch(1 0 0 / 6%);

@@ -251,7 +251,9 @@ impl Service {
                 .local(false)
                 .remote(format!("{origin}/*"))
                 .permission("allow-choose-workspace")
-                .permission("allow-notify-attention"),
+                .permission("allow-notify-attention")
+                .permission("core:window:allow-start-dragging")
+                .permission("core:window:allow-internal-toggle-maximize"),
             )?;
         }
         app.get_webview_window(window::MAIN)

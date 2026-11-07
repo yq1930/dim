@@ -1,0 +1,23 @@
+/* Lines detail panel (web-workspace Lines and branch) and the line marks in a transcript. */
+.detail-region > * { height: 100%; }
+.app-shell[data-mode="compact"] .content-region[data-has-detail="true"] { grid-template-columns: minmax(0, 1fr); }
+.app-shell[data-mode="compact"] .detail-resizer { display: none; }
+.app-shell[data-mode="compact"] .detail-region { position: fixed; inset: 0; z-index: var(--z-dialog); width: 100%; border-left: 0; }
+.timeline-shell[data-variant="panel"] .timeline { padding: var(--space-4) var(--space-3) var(--space-3); }
+.timeline-shell[data-variant="panel"] .timeline > :not(.sr-only) { width: 100%; }
+.timeline-line-marker { display: flex; width: 100%; min-width: 0; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--card); color: var(--foreground); font: inherit; font-size: var(--text-md); text-align: left; cursor: pointer; }
+.timeline-line-marker:hover:not(:disabled) { background: var(--hover); }
+.timeline-line-marker:disabled { cursor: default; opacity: .7; }
+.timeline-line-marker > svg { flex: none; color: var(--primary); }
+.timeline-line-name { min-width: 0; overflow: hidden; font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
+.timeline-line-marker code { flex: none; color: var(--muted-foreground); font-family: var(--font-mono); font-size: var(--text-xs); }
+.timeline-line-cut { min-width: 0; overflow: hidden; color: var(--muted-foreground); font-size: var(--text-xs); text-overflow: ellipsis; white-space: nowrap; }
+.timeline-line-failed { flex: none; color: var(--danger); font-size: var(--text-xs); }
+.timeline-line-notice { display: flex; min-width: 0; align-items: baseline; gap: var(--space-2); margin: 0; color: var(--muted-foreground); font-size: var(--text-md); line-height: var(--leading-normal); }
+.timeline-line-from { flex: none; color: var(--foreground); font-weight: var(--weight-medium); }
+@media (max-width: 1099.98px) {
+  .app-shell:not([data-mode="compact"]) .content-region[data-has-detail="true"] { grid-template-columns: minmax(0, 1fr); }
+  .app-shell:not([data-mode="compact"]) .detail-resizer { display: none; }
+  .app-shell:not([data-mode="compact"]) .detail-region { position: fixed; inset: 0; z-index: var(--z-dialog); width: 100%; border-left: 0; }
+}
+.timeline-line-notice > span:last-child { min-width: 0; overflow-wrap: anywhere; }

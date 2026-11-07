@@ -9,7 +9,9 @@ import { RpcError } from "../../rpc/client"
 import { readAck } from "../../rpc/read"
 import { useConnectionStore } from "../../stores/connection"
 import GeneralSettingsStatus from "./GeneralSettingsStatus.vue"
+import InstallSourceFields from "./InstallSourceFields.vue"
 import { bindSettingsDirty, messageFrom, reloadSettingsOnReconnect } from "./context"
+import { clearSource, idParams, installSource, sourceEdited, sourceParams } from "./install-source"
 
 const SOURCE_TIMEOUT_MS = 180_000
 
@@ -25,25 +27,18 @@ const status = ref("")
 const packages = ref<PluginEntry[]>([])
 const installations = ref<SkillInstallation[]>([])
 const installationsError = ref("")
-const sourceType = ref<"path" | "git">("path")
-const source = ref("")
-const gitRef = ref("")
-const installId = ref("")
+/** The source the preview reads and the Skill installation copies from. */
+const source = installSource()
 const preview = ref<SkillPreview>()
 const previewError = ref("")
 const selection = ref<string[]>([])
-const packageType = ref<"path" | "git">("path")
-const packageSource = ref("")
-const packageRef = ref("")
-const packageId = ref("")
-const dirty = computed(() => !!source.value || !!gitRef.value || !!installId.value || !!packageSource.value || !!packageRef.value || !!packageId.value || selection.value.length > 0)
+/** A skill package, installed as a plugin. */
+const packageSource = installSource()
+const dirty = computed(() => sourceEdited(source) || sourceEdited(packageSource) || selection.value.length > 0)
 bindSettingsDirty(dirty)
 const entries = computed(() => catalog.value?.entries.filter((skill) => `${skill.name}\n${skill.description}\n${skill.filePath}`.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())) ?? [])
 function scope(): Record<string, unknown> { return loadedCwd.value ? { cwd: loadedCwd.value } : {} }
-function sourceParams(): Record<string, unknown> {
-  return sourceType.value === "path" ? { path: source.value.trim() } : { git: source.value.trim(), ...(gitRef.value.trim() ? { ref: gitRef.value.trim() } : {}) }
-}
-watch([source, gitRef, sourceType, installId], () => { preview.value = undefined; selection.value = [] })
+watch(source, () => { preview.value = undefined; selection.value = [] })
 async function loadInstallations(): Promise<void> {
   if (!connection.supports("skills.installations")) return
   try { installations.value = await connection.client.call("skills.installations", {}, readSkillInstallations); installationsError.value = "" }
@@ -90,11 +85,11 @@ async function action(run: () => Promise<void>): Promise<void> {
   try { await run() } catch (cause) { error.value = messageFrom(cause) } finally { busy.value = false }
 }
 function loadPreview(): void {
-  if (busy.value || !source.value.trim() || !connection.supports("skills.preview")) return
+  if (busy.value || !source.location.trim() || !connection.supports("skills.preview")) return
   void action(async () => {
     previewError.value = ""
     try {
-      const next = await connection.client.call("skills.preview", { ...scope(), source: sourceParams(), ...(installId.value.trim() ? { id: installId.value.trim() } : {}) }, readSkillPreview, SOURCE_TIMEOUT_MS)
+      const next = await connection.client.call("skills.preview", { ...scope(), source: sourceParams(source), ...idParams(source) }, readSkillPreview, SOURCE_TIMEOUT_MS)
       preview.value = next
       const conflicted = new Set(next.conflicts.map((conflict) => conflict.path))
       selection.value = next.skills.filter((skill) => !conflicted.has(skill.path)).map((skill) => skill.path)
@@ -113,13 +108,11 @@ async function install(overwrite: boolean): Promise<void> {
   status.value = ""
   try {
     const skills = picked.skills.filter((skill) => selection.value.includes(skill.path)).map((skill) => ({ path: skill.path, revision: skill.revision }))
-    const result = await connection.client.call("skills.install", { source: sourceParams(), ...(installId.value.trim() ? { id: installId.value.trim() } : {}), skills, overwrite }, readSkillInstall, SOURCE_TIMEOUT_MS)
+    const result = await connection.client.call("skills.install", { source: sourceParams(source), ...idParams(source), skills, overwrite }, readSkillInstall, SOURCE_TIMEOUT_MS)
     status.value = s(`Installed ${result.installation.skills.length} skill(s) as ${result.installation.id}.`, `已将 ${result.installation.skills.length} 个技能安装为 ${result.installation.id}。`)
     preview.value = undefined
     selection.value = []
-    source.value = ""
-    gitRef.value = ""
-    installId.value = ""
+    clearSource(source)
     await readCatalog()
     await readPackages()
     await loadInstallations()
@@ -164,7 +157,7 @@ async function packageAction(method: string, params: Record<string, unknown>): P
   status.value = ""
   try {
     await connection.client.call(method, params, readAck, SOURCE_TIMEOUT_MS)
-    if (method === "plugin.install") { packageSource.value = ""; packageRef.value = ""; packageId.value = "" }
+    if (method === "plugin.install") clearSource(packageSource)
     await readPackages()
     await connection.client.call("skills.refresh", scope(), readAck)
     await readCatalog()
@@ -172,8 +165,8 @@ async function packageAction(method: string, params: Record<string, unknown>): P
   finally { busy.value = false }
 }
 function installPackage(): void {
-  if (!packageSource.value.trim()) return
-  void packageAction("plugin.install", { source: packageType.value === "path" ? { path: packageSource.value.trim() } : { git: packageSource.value.trim(), ...(packageRef.value.trim() ? { ref: packageRef.value.trim() } : {}) }, ...(packageId.value.trim() ? { id: packageId.value.trim() } : {}), enable: false })
+  if (!packageSource.location.trim()) return
+  void packageAction("plugin.install", { source: sourceParams(packageSource), ...idParams(packageSource), enable: false })
 }
 reloadSettingsOnReconnect(connection, () => load(), dirty)
 onMounted(() => load())
@@ -190,11 +183,8 @@ onMounted(() => load())
       <h3>{{ s('Install from a source', '从来源安装') }}</h3>
       <p>{{ s('Preview the skills of a local directory or Git repository, without a plugin manifest, then install only the ones you choose into your user skills.', '预览本地目录或 Git 仓库中的技能（无需插件清单），然后只把你选中的技能安装到用户技能目录。') }}</p>
       <fieldset :disabled="busy || !connection.supports('skills.preview')">
-        <label><span>{{ s('Source type', '来源类型') }}</span><select v-model="sourceType" class="ui-field" data-size="md"><option value="path">{{ s('Local directory', '本地目录') }}</option><option value="git">Git</option></select></label>
-        <label><span>{{ s('Source', '来源') }}</span><input v-model="source" class="ui-field" data-size="md" required :placeholder="sourceType === 'path' ? '/path/to/skills' : 'https://github.com/owner/skills.git'" /></label>
-        <label v-if="sourceType === 'git'"><span>{{ s('Git ref (optional)', 'Git 引用（可选）') }}</span><input v-model="gitRef" class="ui-field" data-size="md" /></label>
-        <label><span>{{ s('Installation ID (optional)', '安装 ID（可选）') }}</span><input v-model="installId" class="ui-field" data-size="md" :placeholder="s('derived from the source', '由来源推导')" /></label>
-        <button class="ui-button" data-size="md" data-variant="secondary" :disabled="busy || !source.trim()">{{ s('Preview', '预览') }}</button>
+        <InstallSourceFields :source="source" path-placeholder="/path/to/skills" git-placeholder="https://github.com/owner/skills.git" :id-placeholder="s('derived from the source', '由来源推导')" />
+        <button class="ui-button" data-size="md" data-variant="secondary" :disabled="busy || !source.location.trim()">{{ s('Preview', '预览') }}</button>
       </fieldset>
       <p v-if="previewError" class="ui-banner" data-tone="danger">{{ previewError }}</p>
       <div v-if="preview">
@@ -234,13 +224,12 @@ onMounted(() => load())
 
     <section v-for="plugin in packages" :key="plugin.name" class="settings-card"><h3>{{ plugin.name }}</h3><p>{{ plugin.status ?? (plugin.off ? s('Disabled', '已禁用') : s('Content package', '内容包')) }}</p><p v-if="plugin.error" class="ui-banner" data-tone="danger">{{ plugin.error }}</p><div v-for="candidate in plugin.candidates.filter((item) => item.kinds.includes('skills'))" :key="candidate.id" class="settings-actions"><code>{{ candidate.id }}</code><button class="ui-button" data-size="sm" data-variant="secondary" :disabled="busy || plugin.locked || !connection.supports('plugin.enable')" @click="packageAction('plugin.enable', { name: plugin.name, use: candidate.id })">{{ s('Enable / use', '启用 / 使用') }}</button><button v-if="candidate.git" class="ui-button" data-size="sm" data-variant="secondary" :disabled="busy || !connection.supports('plugin.update')" @click="packageAction('plugin.update', { id: candidate.id })">{{ s('Update', '更新') }}</button><button v-if="candidate.id !== 'builtin' && candidate.id !== 'default'" class="ui-button" data-size="sm" data-variant="danger-ghost" :disabled="busy || plugin.locked || !connection.supports('plugin.remove')" @click="packageAction('plugin.remove', { id: candidate.id })">{{ s('Remove package', '移除包') }}</button></div><button class="ui-button" data-size="sm" data-variant="secondary" :disabled="busy || plugin.locked || plugin.off || !connection.supports('plugin.disable')" @click="packageAction('plugin.disable', { name: plugin.name })">{{ s('Disable package', '禁用包') }}</button></section>
 
-    <form class="settings-card settings-form" @submit.prevent="installPackage"><h3>{{ s('Install a skill package', '安装技能包') }}</h3><p>{{ s('A Dim package declares its skills directory in dim-plugin.json and may also carry plugin code. A repository without a manifest is installed from the source preview above.', 'Dim 包在 dim-plugin.json 中声明技能目录，也可以包含插件代码。没有清单的仓库请使用上方的来源预览安装。') }}</p><fieldset :disabled="busy || !connection.supports('plugin.install')"><label><span>{{ s('Source type', '来源类型') }}</span><select v-model="packageType" class="ui-field" data-size="md"><option value="path">{{ s('Local directory', '本地目录') }}</option><option value="git">Git</option></select></label><label><span>{{ s('Source', '来源') }}</span><input v-model="packageSource" class="ui-field" data-size="md" required :placeholder="packageType === 'path' ? '/path/to/skill-package' : 'https://github.com/owner/skills.git'" /></label><label v-if="packageType === 'git'"><span>{{ s('Git ref (optional)', 'Git 引用（可选）') }}</span><input v-model="packageRef" class="ui-field" data-size="md" /></label><label><span>{{ s('Installation ID (optional)', '安装 ID（可选）') }}</span><input v-model="packageId" class="ui-field" data-size="md" /></label><button class="ui-button" data-size="md" data-variant="primary">{{ s('Install package', '安装包') }}</button></fieldset></form>
+    <form class="settings-card settings-form" @submit.prevent="installPackage"><h3>{{ s('Install a skill package', '安装技能包') }}</h3><p>{{ s('A Dim package declares its skills directory in dim-plugin.json and may also carry plugin code. A repository without a manifest is installed from the source preview above.', 'Dim 包在 dim-plugin.json 中声明技能目录，也可以包含插件代码。没有清单的仓库请使用上方的来源预览安装。') }}</p><fieldset :disabled="busy || !connection.supports('plugin.install')"><InstallSourceFields :source="packageSource" path-placeholder="/path/to/skill-package" git-placeholder="https://github.com/owner/skills.git" /><button class="ui-button" data-size="md" data-variant="primary">{{ s('Install package', '安装包') }}</button></fieldset></form>
   </article>
 </template>
 
 <style scoped>
 fieldset { display: grid; gap: var(--space-4); min-width: 0; padding: 0; border: 0; }
-fieldset label { display: grid; gap: var(--space-2); }
 .skill-heading { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); }
 .skill-heading h3, .skill-heading h4 { margin: 0; }
 .skill-search { display: grid; gap: var(--space-2); margin-block: var(--space-4); }

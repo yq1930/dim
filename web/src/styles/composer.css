@@ -1,0 +1,87 @@
+/* Prompts and the composer: approval, question and plan cards, the input surface and its popovers. */
+
+.inline-prompt { padding-bottom: var(--space-2); }
+.question-prompts { display: grid; gap: var(--space-3); max-height: 60dvh; overflow-y: auto; }
+/* Permission card (spec v1): r12, p14, shadow-xs; a 20px warning icon square, 13/500 title and an Awaiting badge head it. */
+.prompt-card { padding: 14px; /* spec v1, off-grid by design */ border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--card); box-shadow: var(--shadow-xs); }
+.prompt-header { display: flex; min-width: 0; align-items: center; gap: var(--space-2); }
+.prompt-icon { display: inline-flex; width: 20px; height: 20px; flex: none; align-items: center; justify-content: center; border-radius: var(--control-xs-radius); background: var(--warning-soft); color: var(--warning); }
+.prompt-title { min-width: 0; flex: 1; margin: 0; font-size: var(--text-md); font-weight: var(--weight-medium); line-height: var(--leading-snug); }
+/* The command under approval: a muted r8 mono block, no section label. */
+.approval-command { max-height: 240px; margin-top: var(--space-3); overflow: auto; padding: var(--space-2) var(--space-3); border-radius: var(--control-md-radius); background: var(--muted); font: var(--text-sm)/var(--leading-mono) var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.approval-panel { max-height: 240px; margin-top: var(--space-3); overflow: auto; isolation: isolate; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--card); }
+.approval-panel-header { position: sticky; z-index: var(--z-sticky); top: 0; overflow: hidden; padding: var(--space-2) var(--space-3) var(--space-1); background: var(--card); color: var(--muted-foreground); font-size: var(--text-xs); text-overflow: ellipsis; white-space: nowrap; }
+.approval-panel-header.is-mono { font-family: var(--font-mono); }
+.approval-panel-body { margin: 0; padding: 0 var(--space-3) var(--space-2); font: var(--text-sm)/var(--leading-mono) var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.approval-muted { color: var(--muted-foreground); }
+.approval-diff-del { color: var(--danger); }
+.approval-diff-add { color: var(--primary); }
+.approval-line-number { display: inline-block; min-width: 2.5em; margin-right: var(--space-3); color: var(--muted-foreground); text-align: right; user-select: none; }
+.prompt-error { margin: var(--space-3) 0 0; color: var(--danger); font-size: var(--text-sm); }
+.prompt-subtitle { margin: var(--space-1) 0 0; color: var(--muted-foreground); font-size: var(--text-sm); }
+.prompt-resource { margin-top: var(--space-2); font-family: var(--font-mono); font-size: var(--text-sm); overflow-wrap: anywhere; }
+.prompt-model { display: flex; align-items: center; gap: var(--space-3); margin-top: var(--space-3); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--control-md-radius); background: var(--background); }
+.prompt-model-badge { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex-shrink: 0; border: 1px solid var(--border); border-radius: var(--control-sm-radius); background: var(--card); color: var(--muted-foreground); font-size: var(--text-xs); font-weight: var(--weight-medium); }
+.prompt-model-meta { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+.prompt-model-name { overflow: hidden; font-size: var(--text-sm); font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
+.prompt-model-provider { color: var(--muted-foreground); font-size: var(--text-xs); }
+.prompt-model-flag { flex-shrink: 0; color: var(--warning); font-size: var(--text-xs); white-space: nowrap; }
+.prompt-plan { margin-top: var(--space-3); }
+.prompt-plan-name { font-size: var(--text-base); font-weight: var(--weight-medium); }
+.prompt-plan-warning { margin: var(--space-2) 0 0; color: var(--warning); font-size: var(--text-xs); }
+.prompt-buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-3); }
+/* container-type makes this a stacking context at z 0; lift it to the sticky layer (later in
+   DOM, so it wins the tie) or the timeline's .jump-latest paints over composer popovers. */
+.composer-panel { position: relative; z-index: var(--z-sticky); container: composer / inline-size; padding: var(--space-2) clamp(var(--space-3), 3vw, var(--space-7)) calc(var(--space-4) + env(safe-area-inset-bottom)); background: var(--background); }
+.composer-panel > * { width: min(100%, var(--content-chat)); margin-inline: auto; }
+/* Input surface (spec v1): r20, p12, shadow-sm; translucent so the timeline reads through. */
+.composer-surface { position: relative; display: flex; min-width: 0; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-2xl); background: color-mix(in oklab, var(--background) 70%, transparent); box-shadow: var(--shadow-sm); backdrop-filter: blur(24px); cursor: text; transition: border-color var(--duration-press) ease, box-shadow var(--duration-press) ease, background-color var(--duration-press) ease; }
+.composer-surface.is-drag-active { border-style: dashed; border-color: var(--primary); background: var(--primary-soft); box-shadow: var(--focus-ring); }
+.composer-toolbar { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--space-1); }
+.composer-tool-group, .composer-run-group { display: flex; min-width: 0; align-items: center; gap: var(--space-1); }
+.composer-run-group { justify-content: flex-end; }
+.send-slot { position: relative; display: inline-flex; flex: none; }
+/* Follows the send button in DOM order, so it paints over it without a z-index. */
+.stop-keycap { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: var(--radius-pill); background: color-mix(in oklab, var(--background) 75%, transparent); box-shadow: var(--shadow-xs); backdrop-filter: blur(4px); font-size: var(--text-sm); font-weight: var(--weight-medium); pointer-events: none; }
+.composer-statusbar { display: flex; width: min(100%, var(--content-chat)); height: 40px; align-items: center; justify-content: space-between; padding: 0 var(--space-4); font-size: var(--text-xs); }
+.composer-status-start { display: flex; min-width: 0; align-items: center; gap: var(--space-1); }
+.composer-status-end { display: flex; min-width: 0; align-items: center; gap: var(--space-1); margin-left: auto; }
+/* .ui-button is flex:none, so on narrow bars the triggers overflowed their shrunk
+   <details> and painted over each other. Only the branch name gives way (ellipsis). */
+.composer-status-start, .composer-statusbar .context-menu { flex: none; }
+.composer-statusbar .branch-menu { min-width: 0; }
+.composer-statusbar .branch-menu > summary { max-width: 100%; min-width: 0; flex-shrink: 1; }
+.composer-statusbar .branch-label { min-width: 0; flex-shrink: 1; }
+/* Inline error / diagnostic lines, one shared spec for every surface
+   (timeline, composer, panels, sidebar). */
+.inline-error { margin-block: var(--space-1); color: var(--danger); font-size: var(--text-xs); line-height: var(--leading-snug); }
+.chat-error { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--border); font-size: var(--text-sm); }
+.diagnostic-line, .reselect-line { margin-block: var(--space-1); color: var(--warning); font-size: var(--text-xs); }
+.composer-surface .reselect-line { padding-inline: 0; }
+/* Popovers opened from the composer: native <details>. The panel is a .ui-popover;
+   these rules only place it (upward by default, .is-end aligns right, the
+   new-thread workspace menu opens downward). */
+.composer-popover { position: relative; display: inline-flex; min-width: 0; }
+.composer-popover > summary { user-select: none; }
+.composer-popover.is-disabled { opacity: .5; pointer-events: none; }
+.composer-popover-content { position: absolute; bottom: calc(100% + var(--space-2)); left: 0; cursor: default; transform-origin: bottom left; --popover-enter-y: 4px; }
+.composer-popover-content.is-end { right: 0; left: auto; transform-origin: bottom right; }
+.composer-popover-content.workspace-menu-content { top: calc(100% + var(--space-2)); bottom: auto; transform-origin: top left; --popover-enter-y: -4px; }
+/* fitPopover flips it above the trigger when the page has no room below (phones). */
+.composer-popover-content.workspace-menu-content[data-placement="top"] { top: auto; bottom: calc(100% + var(--space-2)); transform-origin: bottom left; --popover-enter-y: 4px; }
+/* Narrow composer (phones): trigger-anchored panels ran off either edge (model
+   picker is 400 wide). Anchor them to the composer surface / status bar instead
+   and span its width. */
+@container composer (max-width: 480px) {
+  .composer-popover { position: static; }
+  .composer-statusbar { position: relative; }
+  /* Three classes: must outrank .ui-popover[data-width] and scoped per-menu widths. */
+  .composer-panel .composer-popover > .composer-popover-content { right: 0; left: 0; width: auto; max-width: none; transform-origin: bottom center; }
+}
+/* Grow triggers (mode/skills menus): a ghost .ui-button collapsed to its icon and
+   widened to the label while open. */
+:is(.mode-trigger, .grow-trigger).ui-button { max-width: var(--control-sm); justify-content: flex-start; gap: 0; padding: 0; overflow: hidden; transition: max-width var(--duration-popover) var(--ease-out), background-color var(--duration-hover) ease, color var(--duration-hover) ease, transform var(--duration-press) var(--ease-out); }
+.mode-menu[open] .mode-trigger, .grow-menu[open] .grow-trigger { max-width: 140px; }
+.mode-icon, .grow-icon { display: flex; width: var(--control-sm); height: var(--control-sm); flex: none; align-items: center; justify-content: center; }
+.mode-label, .grow-label { flex: none; padding-right: var(--space-3); white-space: nowrap; opacity: 0; transition: opacity var(--duration-popover) ease; }
+.mode-menu[open] .mode-label, .grow-menu[open] .grow-label { opacity: 1; }

@@ -61,7 +61,7 @@ async function copy(): Promise<void> {
 </template>
 
 <style scoped>
-/* The bubble column is capped at 85%; the shared bubble spec lives in global.css (.user-bubble). */
+/* The bubble column is capped at 85%; the shared bubble spec lives in styles/timeline.css (.user-bubble). */
 .user-message { display: flex; min-width: 0; flex-direction: column; align-items: flex-end; gap: var(--space-1); margin: 0; }
 .user-bubble { min-width: 0; }
 .user-bubble-content { max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; }

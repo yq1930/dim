@@ -1,0 +1,38 @@
+/* The new-Session page. */
+
+.new-session-page { display: flex; min-height: 0; flex-direction: column; align-items: center; gap: var(--space-8); overflow-y: auto; padding: var(--space-8) clamp(var(--space-3), 5vw, var(--space-16)); }
+.new-session-hero { display: flex; margin-top: auto; flex-direction: column; align-items: center; gap: var(--space-4); }
+.new-session-mark { width: 56px; height: 56px; }
+.new-session-page h1 { margin: 0; font-size: var(--text-title); font-weight: var(--weight-semibold); text-align: center; }
+/* Desktop NewThread: the controls row is a drawer tucked under the input, one continuous panel. */
+.new-session-page > .composer-panel { width: min(100%, 42rem); margin-bottom: auto; padding: 0; border-radius: var(--radius-2xl); background: transparent; box-shadow: var(--shadow-sm); }
+.composer-panel.is-new-thread > * { width: 100%; }
+/* z-index: the drawer below tucks under the surface; on narrow composers the
+   status bar is positioned (popover anchor) and would otherwise paint over it. */
+.composer-panel.is-new-thread .composer-surface { z-index: 1; background: var(--background); }
+.composer-panel.is-new-thread .composer-statusbar { height: auto; justify-content: flex-start; margin-top: calc(-1 * var(--space-3)); padding: var(--space-5) var(--space-2) var(--space-2); border: 1px solid var(--border); border-top: 0; border-radius: 0 0 var(--radius-2xl) var(--radius-2xl); background: color-mix(in oklab, var(--muted) 80%, transparent); }
+.chat-loading { display: flex; min-height: 0; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-4); color: var(--muted-foreground); font-size: var(--text-sm); }
+.chat-loading p { margin: 0; }
+.removed-state a { display: inline-flex; min-height: var(--control-lg); margin-top: var(--space-4); align-items: center; color: var(--primary); }
+
+
+@media (max-width: 800px) {
+  .main-header { display: none; }
+  .main-region { grid-template-rows: minmax(0, 1fr); }
+  .main-region > .route-page, .main-region > .chat-page, .main-region > .new-session-page, .main-region > .chat-loading { grid-row: 1; }
+  .app-shell[data-chat-route="true"] .main-region { grid-template-rows: auto minmax(0, 1fr); }
+  .app-shell[data-chat-route="true"] .main-region > :is(.chat-page, .new-session-page, .chat-loading, .removed-state) { grid-row: 2; }
+  .session-header { min-height: 52px; padding-inline: var(--space-3); }
+  .timeline { padding-inline: var(--space-4); }
+  .composer-panel { padding-inline: var(--space-3); }
+}
+
+@media (max-width: 520px) {
+  .timeline-row[data-role="user"], .user-bubble { width: 94%; max-width: 94%; }
+}
+
+
+@media (pointer: coarse) {
+  .session-list .session-open { min-height: var(--hit-target); }
+  /* No hover on touch: row actions must be permanently visible, not hover-revealed. */
+}

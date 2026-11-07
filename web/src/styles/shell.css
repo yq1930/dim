@@ -1,0 +1,216 @@
+/* App shell: the shared control atoms, the sidebar and its rows, the drawer, auth and boot pages, and the shared spinner. */
+
+/* Control atoms — the single definition of each shared control. Surface rules
+   may alias their element selectors into these lists but must not restate the
+   spec; see docs/packages/cli-web/design-tokens.md. */
+
+
+
+/* Menu empty-state row (composer menus, workspace browser, command palette). */
+.menu-empty { margin: 0; padding: var(--space-4) var(--space-3); color: var(--muted-foreground); font-size: var(--text-sm); }
+/* Timestamps (turn/sent times): tabular figures on a shared line-height. */
+.timestamp { font-size: var(--text-sm); font-variant-numeric: tabular-nums; line-height: 1; }
+
+.skip-link { position: fixed; z-index: 100; top: var(--space-2); left: var(--space-2); transform: translateY(-160%); padding: var(--space-3) var(--space-4); border-radius: var(--control-lg-radius); background: var(--foreground); color: var(--background); transition: transform var(--duration-press) var(--ease-out); }
+.skip-link:focus { transform: none; }
+
+.app-shell { --sidebar-width: 280px; --detail-width: 360px; display: grid; width: 100%; height: 100dvh; grid-template-columns: var(--sidebar-width) minmax(0, 1fr); overflow: hidden; background: var(--background); }
+.app-shell[data-detail-width="280"] { --detail-width: 280px; }
+.app-shell[data-detail-width="296"] { --detail-width: 296px; }
+.app-shell[data-detail-width="312"] { --detail-width: 312px; }
+.app-shell[data-detail-width="328"] { --detail-width: 328px; }
+.app-shell[data-detail-width="344"] { --detail-width: 344px; }
+.app-shell[data-detail-width="360"] { --detail-width: 360px; }
+.app-shell[data-detail-width="376"] { --detail-width: 376px; }
+.app-shell[data-detail-width="392"] { --detail-width: 392px; }
+.app-shell[data-detail-width="408"] { --detail-width: 408px; }
+.app-shell[data-detail-width="424"] { --detail-width: 424px; }
+.app-shell[data-detail-width="440"] { --detail-width: 440px; }
+.app-shell[data-detail-width="456"] { --detail-width: 456px; }
+.app-shell[data-detail-width="472"] { --detail-width: 472px; }
+.app-shell[data-detail-width="488"] { --detail-width: 488px; }
+.app-shell[data-detail-width="504"] { --detail-width: 504px; }
+.app-shell[data-detail-width="520"] { --detail-width: 520px; }
+/* A collapsed sidebar only gives its column back: the page keeps its own single header row. */
+.app-shell[data-sidebar-collapsed="true"] { grid-template-columns: minmax(0, 1fr); }
+.app-shell[data-sidebar-collapsed="true"] .content-region { grid-column: 1; }
+.sidebar-reopen { position: absolute; z-index: var(--z-sticky); top: var(--space-2); left: var(--space-3); }
+.app-shell[data-sidebar-collapsed="true"]:not([data-mode="compact"]) .main-header,
+.app-shell[data-sidebar-collapsed="true"]:not([data-mode="compact"]) .session-header { padding-left: 52px; }
+.compact-header { display: none; min-width: 0; align-items: center; gap: var(--space-3); padding: var(--space-1) var(--space-3); border-bottom: 1px solid var(--border); background: var(--background); }
+.compact-title { min-width: 0; overflow: hidden; font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
+
+.app-sidebar { position: relative; display: flex; min-width: 0; height: 100%; flex-direction: column; overflow: hidden; border-right: 1px solid var(--border); background: var(--sidebar); color: var(--sidebar-foreground); }
+.inline-sidebar { grid-column: 1; min-height: 0; }
+/* Brand row: a 36px (--control-lg) row under the sidebar's 12px top inset; the collapse button is ghost sm. */
+.brand-row { display: flex; height: calc(var(--space-3) + var(--control-lg)); flex: none; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4) 0; }
+/* Desktop's SidebarHeader: a 16px mark, then the wordmark. */
+.brand-logo { width: 20px; height: 20px; flex: none; }
+.brand-copy { min-width: 0; flex: 1; }
+.brand-row strong { font-size: var(--text-sm); font-weight: var(--weight-medium); letter-spacing: -.01em; }
+.primary-actions { display: grid; gap: 1px; padding: var(--space-3) var(--space-3) 0; }
+/* Footer Settings link: a sidebar nav row on the md rung (32 · r8). */
+.sidebar-footer > a { display: flex; height: var(--control-md); align-items: center; gap: var(--space-2); padding: 0 var(--space-3); border-radius: var(--control-md-radius); font-size: var(--text-md); font-weight: var(--weight-ui); transition: background-color var(--duration-hover) ease; }
+.sidebar-footer > a:hover { background: var(--hover); }
+.sidebar-footer > a:active { background: var(--press); }
+.sidebar-search { margin: var(--space-3) var(--space-3) var(--space-1); }
+/* Sidebar search: a .ui-field md (32 · r8) that rests borderless on the sidebar
+   tint; hover and focus take the kit's field states. */
+.sidebar-search > .ui-field:not(:hover, :focus) { border-color: transparent; background: var(--hover); box-shadow: none; }
+.workspace-scroll { min-height: 0; flex: 1; overflow-x: hidden; overflow-y: auto; padding: var(--space-1) var(--space-2) var(--space-3); }
+.section-label { margin: var(--space-2) var(--space-2) var(--space-1); color: var(--muted-foreground); font-size: var(--text-2xs); font-weight: var(--weight-medium); letter-spacing: .08em; text-transform: uppercase; }
+/* Desktop ProjectItem: a rule under the builtin workspace, above the project groups. */
+.builtin-workspace-separator { height: 1px; margin: var(--space-1) var(--space-2); border: 0; background: color-mix(in oklab, var(--muted-foreground) 30%, transparent); }
+.sidebar-empty, .session-empty { margin: var(--space-3) var(--space-2); color: var(--muted-foreground); font-size: var(--text-sm); line-height: var(--leading-snug); }
+.workspace-group { margin-bottom: var(--space-1); }
+.workspace-row { display: flex; align-items: center; }
+/* Workspace group row: a sidebar nav row on the md rung (32 · r8). */
+.workspace-toggle { display: flex; min-width: 0; height: var(--control-md); flex: 1; align-items: center; gap: var(--space-1); padding: 0 var(--space-1) 0 var(--space-2); border: 0; border-radius: var(--control-md-radius); background: transparent; text-align: left; cursor: pointer; }
+.workspace-toggle:hover { background: var(--hover); }
+.workspace-toggle:active { background: var(--press); }
+.workspace-toggle strong { min-width: 0; overflow: hidden; font-size: var(--text-md); font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
+.session-list { margin: 0; padding: 0 0 var(--space-1) var(--space-5); list-style: none; }
+/* Sidebar session rows (sm 28 · r8): the row surface lives on
+   SidebarSessionRow; the button inside is transparent. Title sans 12, time mono 11. */
+.session-list .session-open { display: grid; width: 100%; min-height: var(--control-sm); grid-template-columns: 7px minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); padding: 0 var(--space-2); border: 0; border-radius: var(--control-sm-radius); background: transparent; font: inherit; font-family: var(--font-mono); font-size: var(--text-xs); text-align: left; }
+.session-list strong, .session-list small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-list strong { font-family: var(--font-sans); font-size: var(--text-md); font-weight: var(--weight-ui); }
+.session-list .session-open[data-open="true"] strong { font-weight: var(--weight-medium); }
+.session-list small { color: var(--muted-foreground); font-size: var(--text-sm); }
+.status-dot { width: 6px; height: 6px; flex: 0 0 6px; border: 1px solid var(--muted-foreground); border-radius: 50%; }
+.status-dot[data-state="running"], .status-dot[data-state="stopping"] { border-color: var(--primary); background: var(--primary); animation: status-pulse 1.8s ease-in-out infinite; }
+.status-dot[data-state="waiting"], .status-dot[data-state="waiting_permission"], .status-dot[data-state="waiting_user"] { border-color: var(--warning); background: var(--warning); }
+.status-dot[data-state="unread"] { border-color: var(--info); background: var(--info); }
+.status-dot[data-state="blocked"], .status-dot[data-state="failed"] { border-color: var(--danger); background: var(--danger); }
+.status-dot[data-state="working"] { border-color: var(--accent-strong); background: var(--accent-strong); }
+.status-dot[data-state="idle"], .status-dot[data-state="paused"] { border-color: var(--muted-foreground); }
+/* Show more / less: a full-width .ui-button ghost sm. */
+.ui-button.reveal-more { width: 100%; justify-content: flex-start; color: var(--muted-foreground); font-size: var(--text-sm); font-weight: var(--weight-regular); }
+/* Desktop's show-more chevron rotates from "more" (right) to "less" (down),
+   shared by the grouped and flat sidebars. */
+.reveal-more > svg { transition: transform var(--duration-press) var(--ease-out); }
+.reveal-more > svg[data-open="true"] { transform: rotate(90deg); }
+.sidebar-footer { padding: var(--space-2); border-top: 1px solid var(--border); }
+.connection-badge { display: flex; min-height: 32px; align-items: center; gap: var(--space-2); padding: 0 var(--space-3); color: var(--muted-foreground); }
+.connection-badge strong, .connection-badge small { display: block; }
+.connection-badge strong { color: var(--foreground); font-size: var(--text-xs); font-weight: var(--weight-medium); }
+.connection-badge small { display: none; }
+.connection-badge[data-state="connected"] svg { color: var(--primary); }
+
+.content-region { display: grid; min-width: 0; min-height: 0; grid-column: 2; overflow: hidden; }
+.main-region { position: relative; display: grid; min-width: 0; min-height: 0; grid-column: 1; grid-row: 1; grid-template-rows: 56px auto minmax(0, 1fr); overflow: hidden; }
+.main-header { display: flex; min-width: 0; align-items: center; gap: var(--space-3); padding: var(--space-1) clamp(var(--space-4), 3vw, var(--space-8)); border-bottom: 1px solid var(--border); background: color-mix(in oklab, var(--background) 96%, var(--primary)); }
+.main-header > div { min-width: 0; }
+.main-header p { margin: 0 0 var(--space-1); color: var(--muted-foreground); font-family: var(--font-mono); font-size: var(--text-xs); }
+.main-header strong { display: block; overflow: hidden; font-size: var(--text-base); font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
+.main-region > .route-page, .main-region > .base-placeholder { grid-row: 3; }
+.reconnect-banner { z-index: var(--z-sticky); min-height: var(--space-9); margin: 0; padding: var(--space-2) var(--space-4); border-bottom: 1px solid color-mix(in oklab, var(--warning) 45%, var(--border)); background: color-mix(in oklab, var(--warning) 13%, var(--background)); font-size: var(--text-sm); }
+.route-page { min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: clamp(var(--space-8), 7vw, 84px) clamp(var(--space-5), 6vw, 76px); }
+.route-page > * { max-width: var(--content-page); }
+/* The workspace chooser is a centered column in the main region, like Desktop's new-thread view:
+   side padding grows so the content-page column sits in the middle. */
+.workspace-chooser-page { padding-inline: max(clamp(var(--space-5), 6vw, 76px), calc((100% - var(--content-page)) / 2)); }
+.route-page h1, .auth-page h1 { margin: var(--space-2) 0 var(--space-3); font-size: var(--text-display); font-weight: var(--weight-semibold); letter-spacing: -.03em; line-height: var(--leading-tight); }
+.eyebrow { margin: 0; color: var(--primary); font-size: var(--text-xs); font-weight: var(--weight-medium); letter-spacing: .12em; text-transform: uppercase; }
+.page-description, .auth-page > p:last-of-type { max-width: 620px; margin: 0; color: var(--muted-foreground); font-size: var(--text-base); line-height: var(--leading-relaxed); }
+.state-icon { margin-bottom: var(--space-6); color: var(--muted-foreground); }
+.workspace-chooser { display: grid; gap: 1px; margin-top: var(--space-8); border-block: 1px solid var(--border); }
+.workspace-chooser a { display: grid; min-width: 0; min-height: var(--space-16); grid-template-columns: var(--space-6) minmax(0, 1fr) var(--space-6); align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border); }
+.workspace-chooser a:last-child { border-bottom: 0; }
+.workspace-chooser a:hover { background: var(--accent); }
+.workspace-chooser span { min-width: 0; }
+.workspace-chooser strong, .workspace-chooser small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-chooser strong { font-weight: var(--weight-medium); }
+.workspace-chooser small { margin-top: var(--space-1); color: var(--muted-foreground); font-family: var(--font-mono); font-size: var(--text-xs); }
+.empty-line { color: var(--muted-foreground); }
+/* Terminal-density layer: scan surfaces (sidebar) opt in via --font-mono. */
+
+.content-region[data-has-detail="true"] { grid-template-columns: minmax(0, 1fr) 8px minmax(320px, var(--detail-width)); }
+.content-region[data-has-detail="true"][data-detail-expanded="true"] { grid-template-columns: 0 0 minmax(0, 1fr); }
+.content-region[data-has-detail="true"][data-detail-expanded="true"] > .main-region { display: none; }
+.detail-resizer { grid-column: 2; grid-row: 1; cursor: col-resize; background: transparent; touch-action: none; }
+.detail-resizer:hover, .detail-resizer:focus { background: color-mix(in oklab, var(--primary) 25%, transparent); outline: none; }
+.detail-region { display: none; min-width: 0; min-height: 0; grid-column: 3; grid-row: 1; overflow: hidden; border-left: 1px solid var(--border); background: var(--background); }
+.detail-region[data-active="true"] { display: block; }
+.base-placeholder { overflow: hidden; }
+
+.auth-page { display: grid; width: min(680px, calc(100% - 40px)); min-height: 100dvh; margin: auto; align-content: center; justify-items: start; }
+.auth-signal { width: 28px; height: 3px; margin-bottom: var(--space-9); border-radius: var(--radius-pill); background: var(--muted); }
+.boot-page { position: fixed; inset: 0; display: grid; place-items: center; }
+.boot-mark { width: 56px; height: 56px; }
+.boot-issue { position: absolute; top: calc(50% + 52px); width: min(480px, calc(100% - 40px)); margin: 0; color: var(--muted-foreground); font-size: var(--text-sm); line-height: var(--leading-normal); text-align: center; }
+/* Auth/boot page action: a .ui-button (primary lg); only its spacing lives here. */
+.auth-page > .ui-button { margin-top: var(--space-6); }
+.auth-form { display: grid; width: min(420px, 100%); gap: var(--space-2); margin-top: var(--space-6); }
+.auth-form label { font-size: var(--text-sm); font-weight: var(--weight-medium); }
+.auth-form-row { display: flex; gap: var(--space-2); }
+.auth-form-row .ui-field { flex: 1; min-width: 0; }
+.auth-form-error { margin: 0; color: var(--danger); font-size: var(--text-sm); }
+
+.drawer-content { position: fixed; inset: 0 auto 0 0; width: min(88vw, 340px); max-width: none; height: 100dvh; max-height: none; margin: 0; padding: 0; border: 0; background: transparent; color: inherit; outline: none; opacity: 0; transform: translateX(-18px); transition: opacity var(--duration-popover) var(--ease-out), transform var(--duration-popover) var(--ease-out), display var(--duration-popover) allow-discrete; }
+.drawer-content[open] { opacity: 1; transform: none; }
+.drawer-content::backdrop { background: oklch(0.08 0 0 / 55%); opacity: 0; transition: opacity var(--duration-popover) var(--ease-out), display var(--duration-popover) allow-discrete; }
+.drawer-content[open]::backdrop { opacity: 1; }
+@starting-style {
+  .drawer-content[open] { opacity: 0; transform: translateX(-18px); }
+  .drawer-content[open]::backdrop { opacity: 0; }
+}
+/* Opened or closed from the keyboard (⌘B, Esc): no slide — keyboard actions never animate. */
+.drawer-content[data-instant], .drawer-content[data-instant]::backdrop { transition: none; }
+.drawer-content .app-sidebar { width: 100%; }
+/* Precedes the (positioned) sidebar in DOM order for focus order, so it needs a layer above it. */
+.drawer-close { position: absolute; z-index: var(--z-sticky); top: var(--space-2); right: var(--space-2); }
+.drawer-content .sidebar-collapse { display: none; }
+
+.app-scroll-viewport { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+.app-scroll-viewport:hover, .app-scroll-viewport:focus-within { scrollbar-color: var(--border) transparent; }
+
+.app-shell[data-mode="compact"] { grid-template-columns: minmax(0, 1fr); grid-template-rows: 52px minmax(0, 1fr); }
+.app-shell[data-mode="compact"] .compact-header { display: flex; grid-column: 1; grid-row: 1; }
+.app-shell[data-mode="compact"] .content-region { grid-column: 1; grid-row: 2; }
+.app-shell[data-mode="compact"] .main-header { padding-inline: var(--space-4); }
+.app-shell[data-mode="compact"] .route-page { padding: var(--space-8) var(--space-5) var(--space-11); }
+
+@keyframes status-pulse { 50% { opacity: .35; transform: scale(.8); } }
+
+
+/* Single shared spinner definition; components reference it instead of declaring local copies. */
+@keyframes spin { to { transform: rotate(360deg); } }
+.is-spinning { animation: spin 1s linear infinite; }
+@keyframes spinner-pulse { 50% { opacity: .35; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 1ms !important; animation-iteration-count: 1 !important; }
+  /* Spinners signal ongoing work; a frozen frame loses that signal. Swap the
+     rotation for an opacity pulse (color/opacity survive reduced motion). */
+  .is-spinning { animation: spinner-pulse 1.8s ease-in-out infinite !important; }
+  /* The running status dot keeps signaling live work: swap its scale pulse for
+     the same slow opacity pulse the spinner uses. */
+  .status-dot[data-state="running"], .status-dot[data-state="stopping"] { animation: spinner-pulse 1.8s ease-in-out infinite !important; }
+  :where(
+    .workspace-toggle,
+    .session-open, .settings-back,
+    .settings-nav nav a,
+    .image-remove
+  ):active:not(:disabled) { transform: none; }
+  .drawer-content, .drawer-content[open] {
+    transform: none;
+    transition: opacity var(--duration-press) ease-out, display var(--duration-press) allow-discrete;
+  }
+  /* Popover entrances keep only the opacity fade. */
+  .composer-popover[open] > .composer-popover-content,
+  .goal-chip[open] > .goal-popover, .todo-chip[open] > .todo-popover { transition: opacity var(--duration-press) ease-out; }
+  /* Grow, meter and progress fills are movement: they snap to their end state
+     (colors may still fade). !important so the global rules also override the
+     scoped component styles that declare these transitions. */
+  .mode-trigger, .grow-trigger { transition: background-color var(--duration-press) ease !important; }
+  .workflow-progress-fill { transition: none !important; }
+  /* Switch thumbs and disclosure chevrons are movement too: the thumb snaps,
+     chevrons rotate instantly (background/color fades stay). !important so the
+     rule also overrides the scoped component styles that declare them. */
+  :is(.reveal-more > svg, .timeline-work-group-toggle svg, .timeline-work-item-toggle svg, .ask-toggle svg, .workspace-disclosure-chevron > svg, .workspace-chevron, .user-bubble-expand svg) { transition: none !important; }
+  /* The timeline chevrons also fade color; keep that, drop the rotation. */
+  .timeline-work-group-toggle svg, .timeline-work-item-toggle svg { transition: color var(--duration-press) ease !important; }
+  /* The skip link appears instantly instead of sliding in. */
+  .skip-link { transition: none; }
+}

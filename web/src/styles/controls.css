@@ -1,6 +1,6 @@
 /* Control kit v1 — the only styling for new and migrated controls.
    Spec: docs/packages/cli-web/design-tokens.md「控件规范 v1」. Legacy atoms in
-   global.css retire region by region; components never restate these rules
+   shell.css retire region by region; components never restate these rules
    (no :hover/:active/:focus-visible/:disabled in scoped styles for ui-* controls).
    Size is data-size="xs|sm|md|lg" (lg when absent); variants are explicit. */
 
@@ -409,7 +409,7 @@ select.ui-field:disabled { background-color: var(--muted); }
 .ui-toast-icon[data-tone="primary"] { --_tone: var(--primary-fill); }
 .ui-toast-title { margin: 0; font-size: var(--text-md); font-weight: var(--weight-medium); line-height: var(--leading-snug); }
 .ui-toast-title, .ui-toast-description { overflow-wrap: anywhere; } /* paths and URLs have no spaces to break at */
-.ui-toast-description { margin: 2px 0 0; color: var(--muted-foreground); font-size: var(--text-sm); line-height: var(--leading-snug); }
+.ui-toast-description { margin: 2px 0 0; color: var(--muted-foreground); font-size: var(--text-sm); line-height: var(--leading-snug); white-space: pre-line; } /* several lines, as /status sends */
 
 /* ---------- Touch: grow the hit area to 44 without changing the drawn size ---------- */
 @media (pointer: coarse) {

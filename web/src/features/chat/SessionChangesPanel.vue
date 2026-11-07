@@ -1,16 +1,18 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue"
+import { computed, nextTick, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
-import { ChevronRight, FileDiff, Maximize2, Minimize2, X } from "lucide-vue-next"
+import { ChevronRight, FileDiff, Maximize2, MessageSquare, Minimize2, Trash2, X } from "lucide-vue-next"
 import { useChatStore } from "../../stores/chat"
 import { useSessionsStore } from "../../stores/sessions"
-import { useUiStore } from "../../stores/ui"
+import { useUiStore, type ReviewNote } from "../../stores/ui"
 import DiffLines from "./DiffLines.vue"
-import { sessionChanges, workspacePath } from "./session-changes"
+import { sessionChanges, workspacePath, type FileEdit } from "./session-changes"
 
 /**
  * The detail panel's review of what the Session's main line changed: every
  * file its `write` and `edit` calls touched, with each call's diff in order.
+ * Picking a line opens a comment on it; the comments go into the main
+ * composer together, as one message for the operator to send.
  */
 const props = defineProps<{ sessionId: string }>()
 const { t } = useI18n()
@@ -24,7 +26,59 @@ const files = computed(() => sessionChanges(view.value?.rows ?? [], cwd.value))
 const totals = computed(() => files.value.reduce((sum, file) => ({ added: sum.added + file.added, removed: sum.removed + file.removed }), { added: 0, removed: 0 }))
 /** Files the reader folded; every file starts open. */
 const folded = ref<Record<string, boolean>>({})
-watch(() => props.sessionId, () => { folded.value = {} })
+const notes = computed(() => ui.reviewNotes[props.sessionId] ?? [])
+/** The line being commented on, and the comment so far. */
+const drafting = ref<{ key: string; file: string; edit: FileEdit; index: number }>()
+const draftText = ref("")
+const draftField = ref<HTMLTextAreaElement[]>()
+watch(() => props.sessionId, () => { folded.value = {}; drafting.value = undefined })
+
+function noteKey(edit: FileEdit, index: number): string {
+  return `${edit.key}:${index}`
+}
+
+function noteAt(edit: FileEdit, index: number): ReviewNote | undefined {
+  return notes.value.find((note) => note.key === noteKey(edit, index))
+}
+
+function marked(edit: FileEdit): Set<number> {
+  return new Set(edit.lines.flatMap((_, index) => noteAt(edit, index) ? [index] : []))
+}
+
+function pick(path: string, edit: FileEdit, index: number): void {
+  const key = noteKey(edit, index)
+  drafting.value = { key, file: workspacePath(path, cwd.value), edit, index }
+  draftText.value = noteAt(edit, index)?.note ?? ""
+  void nextTick(() => draftField.value?.[0]?.focus())
+}
+
+function saveNote(): void {
+  const draft = drafting.value
+  const note = draftText.value.trim()
+  if (draft === undefined) return
+  if (note === "") ui.removeReviewNote(props.sessionId, draft.key)
+  else {
+    const line = draft.edit.lines[draft.index]!
+    ui.addReviewNote(props.sessionId, { key: draft.key, file: draft.file, ...(line.line === undefined ? {} : { line: line.line }), removed: line.sign === "-", code: line.text, note })
+  }
+  drafting.value = undefined
+}
+
+/** One message for the composer: each comment with where it is and the line it is on. */
+function reviewMessage(): string {
+  const items = notes.value.map((note, index) => {
+    const place = `${note.file}${note.line === undefined ? "" : `:${note.line}`}${note.removed ? t("review.removedLine") : ""}`
+    const code = note.code.trim() === "" ? "" : `\n   > ${note.code.trim()}`
+    return `${index + 1}. ${place} —— ${note.note}${code}`
+  })
+  return `${t("review.intro")}\n\n${items.join("\n")}`
+}
+
+function putIntoComposer(): void {
+  if (notes.value.length === 0) return
+  ui.requestComposerInsert(props.sessionId, reviewMessage())
+  ui.clearReviewNotes(props.sessionId)
+}
 </script>
 
 <template>
@@ -61,12 +115,32 @@ watch(() => props.sessionId, () => { folded.value = {} })
         <div v-if="!folded[file.path]" class="changes-file-body">
           <template v-for="(edit, index) in file.edits" :key="edit.key">
             <hr v-if="index > 0" class="changes-separator">
-            <DiffLines :lines="edit.lines" />
+            <DiffLines :lines="edit.lines" numbered pickable :marked="marked(edit)" @pick="pick(file.path, edit, $event)">
+              <template #after="{ index: line }">
+                <form v-if="drafting?.key === noteKey(edit, line)" class="review-draft" @submit.prevent="saveNote">
+                  <textarea ref="draftField" v-model="draftText" class="ui-field" rows="2" :placeholder="t('review.placeholder')" :aria-label="t('review.placeholder')" @keydown.enter.exact.prevent="saveNote" @keydown.esc.stop.prevent="drafting = undefined" />
+                  <div class="review-draft-actions">
+                    <button type="button" class="ui-button" data-variant="ghost" data-size="sm" @click="drafting = undefined">{{ t("common.cancel") }}</button>
+                    <button type="submit" class="ui-button" data-variant="secondary" data-size="sm">{{ t("review.save") }}</button>
+                  </div>
+                </form>
+                <p v-else-if="noteAt(edit, line)" class="review-note">
+                  <MessageSquare :size="12" aria-hidden="true" />
+                  <span>{{ noteAt(edit, line)!.note }}</span>
+                  <button type="button" class="ui-icon-button" data-variant="ghost" data-size="xs" :aria-label="t('review.remove')" v-tooltip="t('review.remove')" @click="ui.removeReviewNote(sessionId, noteKey(edit, line))"><Trash2 aria-hidden="true" /></button>
+                </p>
+              </template>
+            </DiffLines>
             <p v-if="edit.hidden" class="changes-hidden">{{ t("sessionChanges.hiddenLines", { count: edit.hidden }, edit.hidden) }}</p>
           </template>
         </div>
       </section>
     </div>
+    <footer v-if="notes.length" class="review-bar">
+      <span>{{ t("review.count", { count: notes.length }, notes.length) }}</span>
+      <button type="button" class="ui-button" data-variant="ghost" data-size="sm" @click="ui.clearReviewNotes(sessionId)">{{ t("review.clear") }}</button>
+      <button type="button" class="ui-button" data-variant="primary" data-size="sm" @click="putIntoComposer">{{ t("review.insert") }}</button>
+    </footer>
   </div>
 </template>
 
@@ -89,4 +163,12 @@ watch(() => props.sessionId, () => { folded.value = {} })
 .changes-file-body { border-top: 1px solid var(--border); overflow-x: auto; }
 .changes-separator { margin: 0; border: 0; border-top: 1px dashed var(--border); }
 .changes-hidden { margin: 0; padding: 0 var(--space-3) var(--space-2); color: var(--muted-foreground); font-size: var(--text-xs); }
+.review-draft { display: grid; gap: var(--space-2); margin: var(--space-1) var(--space-3) var(--space-2); font-family: var(--font-sans); }
+.review-draft > .ui-field { width: 100%; resize: vertical; }
+.review-draft-actions { display: flex; justify-content: flex-end; gap: var(--space-1); }
+.review-note { display: flex; align-items: flex-start; gap: var(--space-2); margin: var(--space-1) var(--space-3) var(--space-2); padding: var(--space-1) var(--space-2); border-radius: var(--control-sm-radius); background: color-mix(in oklab, var(--warning) 12%, transparent); font: var(--text-sm)/var(--leading-relaxed) var(--font-sans); white-space: pre-wrap; }
+.review-note > svg { flex: none; margin-top: 4px; color: var(--warning); }
+.review-note > span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.review-bar { display: flex; flex: none; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-top: 1px solid var(--border); font-size: var(--text-sm); }
+.review-bar > span { margin-right: auto; color: var(--muted-foreground); }
 </style>

@@ -47,7 +47,7 @@ function editOf(row: ToolRow): FileEdit {
   else {
     const written = typeof row.input.content === "string" ? row.input.content.replace(/\n$/, "").split("\n") : []
     hidden = Math.max(0, written.length - MAX_WRITTEN_LINES)
-    lines = written.slice(0, MAX_WRITTEN_LINES).map((text) => ({ sign: "+", text }))
+    lines = written.slice(0, MAX_WRITTEN_LINES).map((text, index) => ({ sign: "+", text, line: index + 1 }))
   }
   const edit = {
     key: row.key,

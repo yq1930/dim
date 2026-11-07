@@ -13,7 +13,10 @@ import QuestionPrompt from "./QuestionPrompt.vue"
 import TimelineView from "./TimelineView.vue"
 import TodoPanel from "./TodoPanel.vue"
 import TurnChangesDialog from "./TurnChangesDialog.vue"
+import { useComposerDrafts } from "./composer-drafts"
 import { changedFileCount } from "./session-changes"
+import { formatTokens } from "./usage-format"
+import { copyText } from "../../clipboard"
 import { MAIN_BRANCH, type ContextUsage, type DraftAttachments, type ModelId, type PermissionPreset } from "../../rpc/protocol"
 import { readSkills } from "../../rpc/general-settings"
 import { goalCall, goalObjective, parseGoalRequest, type Goal, type GoalStatus } from "../../goal"
@@ -34,6 +37,7 @@ const ui = useUiStore()
 const toast = useToastStore()
 const router = useRouter()
 const forkConfirm = ref<InstanceType<typeof ConfirmDialog>>()
+const drafts = useComposerDrafts()
 
 watch(() => props.sessionId, (id) => chat.open(id), { immediate: true })
 
@@ -91,7 +95,23 @@ const sessionCommands = computed(() => {
     fork: connection.supports("session.fork") && session.lastTurnEnd !== undefined ? fork : undefined,
     goal: session.methods.includes("session.goal.set") ? goal : undefined,
     effort: effortChoices.value !== undefined && effortChoices.value.length > 0 ? effort : undefined,
+    review,
+    status,
+    copy: copyLastReply,
+    diff: () => ui.openChanges(),
   }
+})
+
+// Text a panel puts into this Session's composer (the review comments of the changes panel).
+watch(() => ui.composerInsert, (request) => {
+  if (request === undefined || request.sessionId !== props.sessionId) return
+  ui.composerInsert = undefined
+  if (composer.value !== undefined) {
+    void composer.value.insert(request.text)
+    return
+  }
+  const draft = drafts.get(`session:${props.sessionId}:main`)
+  draft.text = draft.text === "" ? request.text : `${draft.text}\n\n${request.text}`
 })
 
 const listSkills = computed(() => {
@@ -259,6 +279,50 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
   try {
     const outcome = await chat.setPermission(props.sessionId, preset)
     if (outcome === "conflict") toast.push({ tone: "info", title: t("permission.conflict") })
+  } catch (cause) {
+    failure(cause)
+  }
+}
+
+/** `/review [focus]`: asks the main line to review the workspace's uncommitted changes, as Codex's /review does. */
+async function review(focus: string): Promise<void> {
+  const prompt = focus === "" ? t("review.prompt") : `${t("review.prompt")}\n\n${t("review.focus", { focus })}`
+  try {
+    await chat.submit(props.sessionId, MAIN_BRANCH, prompt)
+  } catch (cause) {
+    failure(cause)
+  }
+}
+
+/** `/status`: the main line's model, mode, context and workspace in one notice. */
+function status(): void {
+  const session = view.value
+  if (session === undefined) return
+  const model = session.model
+  const provider = models.providers?.find((candidate) => candidate.providerId === model?.providerId)
+  const modelName = provider?.models.find((candidate) => candidate.id === model?.modelId)?.name ?? model?.modelId
+  const mode = session.planning ? t("composer.mode.plan") : session.permission ? t(`composer.mode.${session.permission.preset}`) : undefined
+  const reading = contextUsage.value
+  const lines = [
+    t("status.model", { model: [provider?.name, modelName].filter(Boolean).join(" / ") || "—", effort: session.reasoningEffort ?? t("status.defaultEffort") }),
+    ...(mode === undefined ? [] : [t("status.mode", { mode })]),
+    ...(reading === undefined || reading.contextWindow <= 0 ? [] : [t("status.context", { input: formatTokens(reading.estimatedInputTokens), window: formatTokens(reading.contextWindow), percent: Math.floor((reading.estimatedInputTokens * 100) / reading.contextWindow) })]),
+    ...(summary.value ? [t("status.workspace", { cwd: summary.value.cwd })] : []),
+    t("status.session", { id: props.sessionId.slice(0, 8), version: connection.hello?.serverVersion ?? "" }),
+  ]
+  toast.push({ tone: "info", title: t("status.title"), description: lines.join("\n") })
+}
+
+/** `/copy`: the main line's last reply, as its Markdown. */
+async function copyLastReply(): Promise<void> {
+  const reply = [...(view.value?.rows ?? [])].reverse().find((row) => row.kind === "assistant" && row.text.trim() !== "")
+  if (reply?.kind !== "assistant") {
+    toast.push({ tone: "info", title: t("copy.none") })
+    return
+  }
+  try {
+    await copyText(reply.text)
+    toast.push({ tone: "success", title: t("copy.done") })
   } catch (cause) {
     failure(cause)
   }

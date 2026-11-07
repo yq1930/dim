@@ -45,16 +45,33 @@ export function resolveToolDisplay(toolName: string, input: Record<string, unkno
   return { renderer: "generic", labelKey: "prompt.useTool" }
 }
 
-/** One line of a display diff: removed, added or unchanged context. */
-export type DiffLine = { sign: "-" | "+" | " "; text: string }
+/**
+ * One line of a display diff: removed, added or unchanged context. `line` is its number in
+ * the file — the old file for a removed line, the new one otherwise — when the diff says.
+ */
+export type DiffLine = { sign: "-" | "+" | " "; text: string; line?: number }
 
 /** Display lines of an edit or a write: the tool's unified diff when it reported one, else old then new text. */
 export function diffLines(input: Record<string, unknown>, diff: string | undefined): DiffLine[] {
   if (diff !== undefined) {
-    return diff.split("\n").filter((line) => !line.startsWith("---") && !line.startsWith("+++") && !line.startsWith("@@")).map((line) => {
-      const sign = line.startsWith("+") ? "+" : line.startsWith("-") ? "-" : " "
-      return { sign, text: sign === " " ? line.replace(/^ /, "") : line.slice(1) }
-    })
+    const lines: DiffLine[] = []
+    let oldLine: number | undefined
+    let newLine: number | undefined
+    for (const raw of diff.split("\n")) {
+      if (raw.startsWith("---") || raw.startsWith("+++")) continue
+      if (raw.startsWith("@@")) {
+        const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(raw)
+        oldLine = hunk ? Number(hunk[1]) : undefined
+        newLine = hunk ? Number(hunk[2]) : undefined
+        continue
+      }
+      const sign = raw.startsWith("+") ? "+" : raw.startsWith("-") ? "-" : " "
+      const line = sign === "-" ? oldLine : newLine
+      lines.push({ sign, text: sign === " " ? raw.replace(/^ /, "") : raw.slice(1), ...(line === undefined ? {} : { line }) })
+      if (sign !== "+" && oldLine !== undefined) oldLine++
+      if (sign !== "-" && newLine !== undefined) newLine++
+    }
+    return lines
   }
   const oldText = typeof input.oldText === "string" ? input.oldText : undefined
   const newText = typeof input.newText === "string" ? input.newText : undefined

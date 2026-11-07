@@ -8,6 +8,21 @@ export type ShellMode = "compact" | "regular" | "wide"
 /** What the right detail panel shows: the Session's lines, or the files it changed. */
 export type DetailView = "lines" | "changes"
 
+/** A review comment on one line of a change, kept until it is put into the composer. */
+export type ReviewNote = {
+  /** The change and line it is on, unique within the Session. */
+  key: string
+  /** The file as the panel shows it, under the workspace when it lies there. */
+  file: string
+  line?: number
+  removed: boolean
+  code: string
+  note: string
+}
+
+/** Text a panel asks the Session's main composer to take. */
+export type ComposerInsert = { sessionId: string; text: string; id: number }
+
 export type NewLineRequest = {
   sessionId: string
   parentBranchId: string
@@ -81,6 +96,10 @@ export const useUiStore = defineStore("ui", () => {
   const viewingSessionId = ref<string>()
   /** Sessions whose run ended while another page was shown; kept for this page load only. */
   const unread = ref<string[]>([])
+  /** Review comments per Session, for this page load only. */
+  const reviewNotes = ref<Record<string, ReviewNote[]>>({})
+  const composerInsert = ref<ComposerInsert>()
+  let insertSeq = 0
 
   watch([sidebarCollapsed, collapsedWorkspaces, lastSessionId, detailOpen, detailView, detailWidth], () => {
     try {
@@ -124,6 +143,23 @@ export const useUiStore = defineStore("ui", () => {
 
   function markUnread(sessionId: string): void {
     if (sessionId !== viewingSessionId.value && !unread.value.includes(sessionId)) unread.value = [...unread.value, sessionId]
+  }
+
+  function addReviewNote(sessionId: string, note: ReviewNote): void {
+    const notes = (reviewNotes.value[sessionId] ?? []).filter((existing) => existing.key !== note.key)
+    reviewNotes.value = { ...reviewNotes.value, [sessionId]: [...notes, note] }
+  }
+
+  function removeReviewNote(sessionId: string, key: string): void {
+    reviewNotes.value = { ...reviewNotes.value, [sessionId]: (reviewNotes.value[sessionId] ?? []).filter((note) => note.key !== key) }
+  }
+
+  function clearReviewNotes(sessionId: string): void {
+    reviewNotes.value = { ...reviewNotes.value, [sessionId]: [] }
+  }
+
+  function requestComposerInsert(sessionId: string, text: string): void {
+    composerInsert.value = { sessionId, text, id: ++insertSeq }
   }
 
   function openChanges(): void {
@@ -228,6 +264,7 @@ export const useUiStore = defineStore("ui", () => {
     detailOpen, detailView, detailWidth, detailExpanded, detailFocused, lineTabs, activeLineTab, newLine, endingLine,
     setDetailWidth, openChanges, toggleChanges, openLines, toggleLines, openLine, activateLine, closeLineTab, closeDetail,
     viewingSessionId, unread, viewSession, markUnread,
+    reviewNotes, addReviewNote, removeReviewNote, clearReviewNotes, composerInsert, requestComposerInsert,
     approvalKeyboard,
     requestNewLine, closeNewLine, requestEndLine, closeEndLine, resetSessionTabs,
   }

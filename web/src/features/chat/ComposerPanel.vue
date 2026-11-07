@@ -23,6 +23,11 @@ type SessionCommands = {
   goal?: (words: string) => Promise<void>
   /** Receives the words after `/effort`; empty lists the choices. */
   effort?: (words: string) => Promise<void>
+  /** Receives the words after `/review`, the focus of the review; empty reviews everything. */
+  review?: (words: string) => Promise<void>
+  status?: () => void
+  copy?: () => Promise<void>
+  diff?: () => void
 }
 
 /**
@@ -136,6 +141,10 @@ const availableCommands = computed(() => ([
   { category: "session", name: "usage", available: props.sessionCommands?.usage !== undefined },
   { category: "session", name: "fork", available: props.sessionCommands?.fork !== undefined },
   { category: "session", name: "goal", available: props.sessionCommands?.goal !== undefined },
+  { category: "session", name: "review", available: props.sessionCommands?.review !== undefined },
+  { category: "session", name: "diff", available: props.sessionCommands?.diff !== undefined },
+  { category: "session", name: "status", available: props.sessionCommands?.status !== undefined },
+  { category: "session", name: "copy", available: props.sessionCommands?.copy !== undefined },
   { category: "model", name: "effort", available: props.sessionCommands?.effort !== undefined },
   { category: "model", name: "permissions", available: props.permission !== undefined && props.variant !== "panel" },
   { category: "session", name: "lines", available: props.openLines !== undefined },
@@ -364,6 +373,15 @@ async function submit(): Promise<void> {
     await goal(goalCommand[1]?.trim() ?? "")
     return
   }
+  const review = props.sessionCommands?.review
+  const reviewCommand = !dismissed.value && review !== undefined ? /^\/review(?:\s+([\s\S]*))?$/i.exec(message) : null
+  if (review && reviewCommand) {
+    text.value = ""
+    await nextTick()
+    resize()
+    await review(reviewCommand[1]?.trim() ?? "")
+    return
+  }
   const effort = props.sessionCommands?.effort
   const effortCommand = !dismissed.value && effort !== undefined ? /^\/effort(?:\s+([\s\S]*))?$/i.exec(message) : null
   if (effort && effortCommand) {
@@ -526,7 +544,9 @@ async function runMenuEntry(entry: MenuEntry): Promise<void> {
 async function runCommand(name: string): Promise<void> {
   if (composing.value) return
   error.value = ""
-  const argument = name === "branch" || name === "goal" || name === "effort"
+  // WebKit takes a clipboard write only within the key press or click that asked for it.
+  const copying = name === "copy" ? props.sessionCommands?.copy?.() : undefined
+  const argument = name === "branch" || name === "goal" || name === "effort" || name === "review"
   text.value = argument ? `/${name} ` : ""
   await nextTick()
   resize()
@@ -542,7 +562,9 @@ async function runCommand(name: string): Promise<void> {
       error.value = cause instanceof Error ? cause.message : String(cause)
     }
   } else if (name === "permissions") modeMenu.value?.open()
+  else if (name === "copy") await copying
   else if (name === "compact" || name === "usage" || name === "fork") await props.sessionCommands?.[name]?.()
+  else if (name === "status" || name === "diff") props.sessionCommands?.[name]?.()
 }
 
 function onKeydown(event: KeyboardEvent): void {
@@ -598,6 +620,18 @@ function onKeydown(event: KeyboardEvent): void {
   }
 }
 
+/** Puts `block` at the end of the draft as a paragraph of its own and focuses the field. */
+async function insert(block: string): Promise<void> {
+  const gap = text.value === "" || text.value.endsWith("\n\n") ? "" : text.value.endsWith("\n") ? "\n" : "\n\n"
+  text.value = `${text.value}${gap}${block}`
+  recalled.value = undefined
+  await nextTick()
+  resize()
+  const element = field.value
+  element?.focus()
+  element?.setSelectionRange(text.value.length, text.value.length)
+}
+
 /** Quotes `message` at the end of the draft (see quote.ts). */
 async function quote(message: string): Promise<void> {
   text.value = quoteInto(text.value, message)
@@ -610,7 +644,7 @@ async function quote(message: string): Promise<void> {
 
 onMounted(() => { resize(); field.value?.focus() })
 onBeforeUnmount(() => { ++searchSeq; clearTimeout(searchTimer) })
-defineExpose({ focus: () => field.value?.focus(), quote })
+defineExpose({ focus: () => field.value?.focus(), quote, insert })
 </script>
 
 <template>
@@ -644,7 +678,7 @@ defineExpose({ focus: () => field.value?.focus(), quote })
           @click.stop="runMenuEntry(command)"
         >
           <span class="command-category">{{ index === 0 || matches[index - 1]?.category !== command.category ? t(`composer.category.${command.category}`) : '' }}</span>
-          <span class="command-name">/{{ command.name }}<span v-if="command.name === 'branch'" class="command-argument"> &lt;prompt&gt;</span><span v-else-if="command.name === 'goal' || command.name === 'effort'" class="command-argument"> [args]</span></span>
+          <span class="command-name">/{{ command.name }}<span v-if="command.name === 'branch'" class="command-argument"> &lt;prompt&gt;</span><span v-else-if="command.name === 'goal' || command.name === 'effort' || command.name === 'review'" class="command-argument"> [args]</span></span>
           <span class="command-description">{{ command.category === 'skill' ? command.description : t(`composer.command.${command.name}`) }}</span>
         </button>
         <p class="command-keys">{{ t("composer.commandKeys") }}</p>

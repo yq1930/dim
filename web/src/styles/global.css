@@ -797,3 +797,6 @@ button.event-row { width: 100%; border: 0; background: transparent; font: inheri
   .app-shell:not([data-mode="compact"]) .detail-region { position: fixed; inset: 0; z-index: var(--z-dialog); width: 100%; border-left: 0; }
 }
 .timeline-line-notice > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+
+/* Toast descriptions may carry several lines (/status). */
+.ui-toast-description { white-space: pre-line; }

@@ -49,11 +49,13 @@ type Persisted = {
   detailOpen: boolean
   detailView: DetailView
   detailWidth: number
+  /** Sessions shown first in the sidebar, in the order they were pinned. */
+  pinnedSessions: string[]
 }
 
 /** localStorage is outside the app: read it once, keeping only well-formed fields. */
 function readPersisted(): Persisted {
-  const fallback: Persisted = { sidebarCollapsed: false, collapsedWorkspaces: [], lastSessionId: undefined, detailOpen: false, detailView: "lines", detailWidth: 420 }
+  const fallback: Persisted = { sidebarCollapsed: false, collapsedWorkspaces: [], lastSessionId: undefined, detailOpen: false, detailView: "lines", detailWidth: 420, pinnedSessions: [] }
   try {
     const value: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")
     if (value === null || typeof value !== "object") return fallback
@@ -68,6 +70,7 @@ function readPersisted(): Persisted {
       detailOpen: stored.detailOpen === true,
       detailView: stored.detailView === "changes" ? "changes" : "lines",
       detailWidth: width,
+      pinnedSessions: Array.isArray(stored.pinnedSessions) ? stored.pinnedSessions.filter((item): item is string => typeof item === "string") : [],
     }
   } catch {
     return fallback
@@ -86,6 +89,7 @@ export const useUiStore = defineStore("ui", () => {
   const detailOpen = ref(persisted.detailOpen)
   const detailView = ref<DetailView>(persisted.detailView)
   const detailWidth = ref(persisted.detailWidth)
+  const pinnedSessions = ref(persisted.pinnedSessions)
   const detailExpanded = ref(false)
   const detailFocused = ref(false)
   const lineTabs = ref<Record<string, string[]>>({})
@@ -101,7 +105,7 @@ export const useUiStore = defineStore("ui", () => {
   const composerInsert = ref<ComposerInsert>()
   let insertSeq = 0
 
-  watch([sidebarCollapsed, collapsedWorkspaces, lastSessionId, detailOpen, detailView, detailWidth], () => {
+  watch([sidebarCollapsed, collapsedWorkspaces, lastSessionId, detailOpen, detailView, detailWidth, pinnedSessions], () => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         sidebarCollapsed: sidebarCollapsed.value,
@@ -110,6 +114,7 @@ export const useUiStore = defineStore("ui", () => {
         detailOpen: detailOpen.value,
         detailView: detailView.value,
         detailWidth: detailWidth.value,
+        pinnedSessions: pinnedSessions.value,
       }))
     } catch {
     }
@@ -124,6 +129,16 @@ export const useUiStore = defineStore("ui", () => {
 
   function isWorkspaceExpanded(cwd: string): boolean {
     return !collapsedWorkspaces.value.includes(cwd)
+  }
+
+  function togglePinned(sessionId: string): void {
+    pinnedSessions.value = pinnedSessions.value.includes(sessionId)
+      ? pinnedSessions.value.filter((id) => id !== sessionId)
+      : [...pinnedSessions.value, sessionId]
+  }
+
+  function unpin(sessionId: string): void {
+    pinnedSessions.value = pinnedSessions.value.filter((id) => id !== sessionId)
   }
 
   function toggleWorkspace(cwd: string): void {
@@ -260,7 +275,7 @@ export const useUiStore = defineStore("ui", () => {
 
   return {
     sidebarCollapsed, lastSessionId, drawerOpen, shellWidth, shellMode, setShellWidth,
-    isWorkspaceExpanded, toggleWorkspace,
+    isWorkspaceExpanded, toggleWorkspace, pinnedSessions, togglePinned, unpin,
     detailOpen, detailView, detailWidth, detailExpanded, detailFocused, lineTabs, activeLineTab, newLine, endingLine,
     setDetailWidth, openChanges, toggleChanges, openLines, toggleLines, openLine, activateLine, closeLineTab, closeDetail,
     viewingSessionId, unread, viewSession, markUnread,

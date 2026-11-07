@@ -6,6 +6,12 @@ declare global {
 
 export const canChooseWorkspace = typeof window !== "undefined" && window.__TAURI__ !== undefined
 
+/**
+ * The desktop window on macOS draws no title bar: the page runs under the window
+ * controls, leaves them room at its top-left and drags the window from its top bars.
+ */
+export const overlayTitleBar = canChooseWorkspace && navigator.userAgent.includes("Mac")
+
 export async function chooseWorkspace(initialDirectory: string): Promise<string | null> {
   if (!window.__TAURI__) throw new Error("The native folder picker is unavailable")
   return window.__TAURI__.core.invoke<string | null>("choose_workspace", { initialDirectory: initialDirectory || null })

@@ -9,6 +9,7 @@ import EndLineDialog from "../features/lines/EndLineDialog.vue"
 import LinesPanel from "../features/lines/LinesPanel.vue"
 import NewLineDialog from "../features/lines/NewLineDialog.vue"
 import SessionChangesPanel from "../features/chat/SessionChangesPanel.vue"
+import { overlayTitleBar } from "../desktop"
 import { settingsMessages } from "../i18n/settings"
 import { useConnectionStore } from "../stores/connection"
 import { useSessionsStore, workspaceName } from "../stores/sessions"
@@ -26,6 +27,8 @@ let observer: ResizeObserver | undefined
 
 const settingsRoute = computed(() => route.path === "/settings" || route.path.startsWith("/settings/"))
 const chatRoute = computed(() => route.name === "chat-new" || route.name === "chat-session")
+/** Pages without a top bar of their own get an empty one to drag the window by. */
+const titleBarStrip = computed(() => overlayTitleBar && (settingsRoute.value || route.name === "chat-new"))
 const sessionId = computed(() => typeof route.params.sessionId === "string" ? route.params.sessionId : undefined)
 const detailOpen = computed(() => ui.detailOpen && route.name === "chat-session" && sessionId.value !== undefined)
 const pageTitle = computed(() => {
@@ -134,7 +137,7 @@ function resizeBy(delta: number): void {
   >
     <ToastRegion />
 
-    <header v-if="ui.shellMode === 'compact' && !settingsRoute" class="compact-header">
+    <header v-if="ui.shellMode === 'compact' && !settingsRoute" class="compact-header" data-tauri-drag-region="deep">
       <button class="ui-icon-button" data-variant="ghost" data-size="md" type="button" :aria-label="t('sidebar.openMenu')" @click="ui.drawerOpen = true">
         <Menu aria-hidden="true" />
       </button>
@@ -161,7 +164,8 @@ function resizeBy(delta: number): void {
         <button v-if="ui.sidebarCollapsed && ui.shellMode !== 'compact' && !settingsRoute" class="ui-icon-button sidebar-reopen" data-variant="ghost" data-size="md" type="button" :aria-label="t('sidebar.openMenu')" v-tooltip="t('sidebar.openMenu')" @click="ui.sidebarCollapsed = false">
           <PanelLeftOpen aria-hidden="true" />
         </button>
-        <header v-if="!settingsRoute" class="main-header">
+        <div v-if="titleBarStrip" class="window-titlebar" data-tauri-drag-region="deep" />
+        <header v-if="!settingsRoute" class="main-header" data-tauri-drag-region="deep">
           <div><p>{{ t("brand.product") }} {{ connection.hello?.serverVersion }}</p><strong>{{ pageTitle }}</strong></div>
         </header>
         <p v-if="connection.phase === 'reconnecting'" class="reconnect-banner" role="status">{{ t("page.reconnecting") }}</p>

@@ -12,11 +12,13 @@ import { loadMarkdownRenderer } from "./features/chat/markdown-renderer"
 import { i18n, setAppLocale } from "./i18n"
 import { router } from "./router"
 import { exchangeBootstrapToken } from "./rpc/client"
+import { overlayTitleBar } from "./desktop"
 import { useAppearanceStore } from "./stores/appearance"
 import { useConnectionStore } from "./stores/connection"
 import { useUiStore } from "./stores/ui"
 
 watch(i18n.global.locale, (locale) => { document.documentElement.lang = locale }, { immediate: true })
+if (overlayTitleBar) document.documentElement.dataset.titlebar = "overlay"
 const pinia = createPinia()
 useUiStore(pinia)
 

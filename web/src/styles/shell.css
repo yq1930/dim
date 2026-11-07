@@ -37,6 +37,14 @@
 .sidebar-reopen { position: absolute; z-index: var(--z-sticky); top: var(--space-2); left: var(--space-3); }
 .app-shell[data-sidebar-collapsed="true"]:not([data-mode="compact"]) .main-header,
 .app-shell[data-sidebar-collapsed="true"]:not([data-mode="compact"]) .session-header { padding-left: 52px; }
+/* macOS desktop: the window draws no title bar, so the page runs under the window controls.
+   The sidebar's top row and a collapsed sidebar's reopen button leave the controls 92px;
+   pages without a top bar of their own keep an empty 48px one to drag the window by. */
+:root[data-titlebar="overlay"] .brand-row { height: 48px; padding: 0 var(--space-3) 0 92px; }
+:root[data-titlebar="overlay"] .sidebar-reopen { top: var(--space-2); left: 92px; }
+:root[data-titlebar="overlay"] .app-shell[data-sidebar-collapsed="true"]:not([data-mode="compact"]) :is(.main-header, .session-header) { padding-left: 136px; }
+.window-titlebar { grid-row: 1; grid-column: 1; height: 48px; }
+.window-titlebar ~ .reconnect-banner { grid-row: 1; align-self: end; }
 .compact-header { display: none; min-width: 0; align-items: center; gap: var(--space-3); padding: var(--space-1) var(--space-3); border-bottom: 1px solid var(--border); background: var(--background); }
 .compact-title { min-width: 0; overflow: hidden; font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
 
@@ -70,6 +78,7 @@
 .workspace-toggle:active { background: var(--press); }
 .workspace-toggle strong { min-width: 0; overflow: hidden; font-size: var(--text-md); font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
 .session-list { margin: 0; padding: 0 0 var(--space-1) var(--space-5); list-style: none; }
+.session-list.pinned-sessions { padding-left: 0; }
 /* Sidebar session rows (sm 28 · r8): the row surface lives on
    SidebarSessionRow; the button inside is transparent. Title sans 12, time mono 11. */
 .session-list .session-open { display: grid; width: 100%; min-height: var(--control-sm); grid-template-columns: 7px minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); padding: 0 var(--space-2); border: 0; border-radius: var(--control-sm-radius); background: transparent; font: inherit; font-family: var(--font-mono); font-size: var(--text-xs); text-align: left; }

@@ -12,6 +12,9 @@ pub const BOOT_URL: &str = "tauri://localhost/index.html";
 const STATE_FILE: &str = "desktop-state.json";
 const DEFAULT_SIZE: (f64, f64) = (1320.0, 880.0);
 const MIN_SIZE: (f64, f64) = (840.0, 600.0);
+/// Where the window controls sit: centred on the page's 48px top bars, in the room the
+/// sidebar's top row leaves them.
+const TRAFFIC_LIGHTS: (f64, f64) = (18.0, 26.0);
 /// Zoom is a step count; each step scales the page by `ZOOM_STEP`.
 const ZOOM_LEVELS: std::ops::RangeInclusive<i32> = -3..=5;
 const ZOOM_STEP: f64 = 1.1;
@@ -115,6 +118,12 @@ pub fn build(app: &AppHandle, desktop: &Arc<Desktop>, store: [u8; 16]) -> Result
     let popups = app.clone();
     let window = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
         .title("Lacus")
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true)
+        .traffic_light_position(tauri::LogicalPosition::new(
+            TRAFFIC_LIGHTS.0,
+            TRAFFIC_LIGHTS.1,
+        ))
         .inner_size(state.width, state.height)
         .min_inner_size(MIN_SIZE.0, MIN_SIZE.1)
         .center()

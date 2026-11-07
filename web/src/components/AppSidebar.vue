@@ -8,6 +8,7 @@ import { settingsMessages } from "../i18n/settings"
 import BrandMark from "./BrandMark.vue"
 import ConnectionBadge from "./ConnectionBadge.vue"
 import SidebarWorkspaceGroup from "./SidebarWorkspaceGroup.vue"
+import SidebarSessionRow from "./SidebarSessionRow.vue"
 import { useSessionsStore } from "../stores/sessions"
 import { useUiStore } from "../stores/ui"
 import { useToastStore } from "../stores/toast"
@@ -49,7 +50,7 @@ async function action(kind: "rename" | "archive" | "delete", session: SessionSum
   busy.value = true
   try {
     if (kind === "archive") await sessions.setArchived(session.sessionId, true)
-    else { await sessions.remove(session.sessionId); drafts.discardSession(session.sessionId) }
+    else { await sessions.remove(session.sessionId); drafts.discardSession(session.sessionId); ui.unpin(session.sessionId) }
     if (ui.lastSessionId === session.sessionId) ui.lastSessionId = undefined
     if (route.params.sessionId === session.sessionId) await router.replace({ name: "chat-new", query: { cwd: session.cwd } })
   } catch (cause) { useToastStore().push({ tone: "danger", title: t("sidebar.actionFailed"), description: cause instanceof Error ? cause.message : String(cause) }) }
@@ -67,18 +68,25 @@ const activeCwd = computed(() => activeSessionId.value === undefined ? undefined
 const newSessionTo = computed(() => ({ name: "chat-new" as const, ...(activeCwd.value === undefined ? {} : { query: { cwd: activeCwd.value } }) }))
 
 const query = computed(() => search.value.trim().toLocaleLowerCase())
+const titled = (session: SessionSummary) => [session.title, session.preview].some((value) => value?.toLocaleLowerCase().includes(query.value))
+/** Pinned Sessions head the sidebar instead of sitting in their workspace. */
+const pinned = computed(() => ui.pinnedSessions
+  .map((sessionId) => sessions.byId.get(sessionId))
+  .filter((session): session is SessionSummary => session !== undefined && (query.value === "" || titled(session) || session.cwd.toLocaleLowerCase().includes(query.value))))
+const pinnedCwds = computed(() => new Set(ui.pinnedSessions.flatMap((sessionId) => sessions.byId.get(sessionId)?.cwd ?? [])))
 /** The filter matches the workspace name or path, or the session preview. */
 const visible = computed(() => sessions.workspaces.flatMap((workspace) => {
-  if (query.value === "") return [workspace]
+  const unpinned = workspace.sessions.filter((session) => !ui.pinnedSessions.includes(session.sessionId))
+  if (query.value === "") return [{ ...workspace, sessions: unpinned }]
   const matched = workspace.name.toLocaleLowerCase().includes(query.value) || workspace.cwd.toLocaleLowerCase().includes(query.value)
-  const matching = matched ? workspace.sessions : workspace.sessions.filter((session) => [session.title, session.preview].some((value) => value?.toLocaleLowerCase().includes(query.value)))
+  const matching = matched ? unpinned : unpinned.filter(titled)
   return !matched && matching.length === 0 ? [] : [{ ...workspace, sessions: matching }]
 }))
 </script>
 
 <template>
   <aside class="app-sidebar" :aria-label="t('a11y.workspaceSessionIndex')">
-    <header class="brand-row">
+    <header class="brand-row" data-tauri-drag-region="deep">
       <BrandMark class="brand-logo" />
       <strong class="brand-copy">{{ t("brand.product") }}</strong>
       <button class="ui-icon-button sidebar-collapse" data-variant="ghost" data-size="sm" type="button" :aria-label="t('sidebar.closeMenu')" @click="ui.sidebarCollapsed = true">
@@ -99,6 +107,22 @@ const visible = computed(() => sessions.workspaces.flatMap((workspace) => {
     </div>
 
     <div class="workspace-scroll app-scroll-viewport">
+      <template v-if="pinned.length">
+        <p class="section-label">{{ t("sidebar.pinned") }}</p>
+        <ul class="session-list pinned-sessions">
+          <SidebarSessionRow
+            v-for="session in pinned"
+            :key="session.sessionId"
+            :session="session"
+            :active-session-id="activeSessionId"
+            :now-ms="nowMs"
+            :busy="busy"
+            @navigate="$emit('navigate')"
+            @action="action"
+            @copy="copyPath"
+          />
+        </ul>
+      </template>
       <p class="section-label">{{ t("sidebar.workspaces") }}</p>
       <p v-if="sessions.error && !sessions.loaded" class="sidebar-empty" role="alert">{{ sessions.error }}</p>
       <p v-else-if="sessions.loaded && visible.length === 0" class="sidebar-empty">{{ t(query ? "sidebar.noMatches" : "sidebar.noWorkspaces") }}</p>
@@ -110,6 +134,7 @@ const visible = computed(() => sessions.workspaces.flatMap((workspace) => {
         :active-session-id="activeSessionId"
         :now-ms="nowMs"
         :busy="busy"
+        :has-pinned="pinnedCwds.has(workspace.cwd)"
         @toggle="ui.toggleWorkspace(workspace.cwd)"
         @navigate="$emit('navigate')"
         @action="action"

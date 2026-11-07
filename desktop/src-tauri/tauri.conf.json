@@ -14,6 +14,13 @@
       "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ5RENFRTNGRDY0MkJGN0YKUldSL3YwTFdQKzdjU1NPYTdsajhzVXUraXU2VWg1TTdWRE9zenNzYzNNa0lVTDBYOG0zSE4yVkQK",
+      "endpoints": ["https://github.com/yq1930/dim/releases/latest/download/latest.json"],
+      "requireSignedVersion": true
+    }
+  },
   "bundle": {
     "active": true,
     "targets": ["app"],

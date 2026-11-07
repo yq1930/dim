@@ -17,7 +17,7 @@ node scripts/build-macos-app.mjs
 
 产物是 `dist/macos/Lacus.app`，可以拖入用户的 `Applications` 目录后双击打开。`--debug` 可生成同样结构的开发包。构建会安装锁定的前端与桌面依赖，编译 Rust 后端，打包 Web 资源、默认插件和应用图标，并验证两个可执行文件的 ARM64 架构及应用签名。
 
-这是使用 ad-hoc 签名的本机构建，不执行公证、不上传安装包，也不发布 npm 包或 GitHub Release。对外分发沿用仓库的正式发布准备流程，并补齐桌面依赖声明、Developer ID 签名和公证。
+这是使用 ad-hoc 签名的本机构建，不执行公证，也不发布 npm 包。构建本身不上传安装包；需要时用下文的发布脚本把它发布为 GitHub Release，供已安装的 Lacus 在应用内更新。正式对外分发仍沿用仓库的发布准备流程，并补齐桌面依赖声明、Developer ID 签名和公证。
 
 桌面壳使用独立 Cargo workspace，锁文件位于 `desktop/src-tauri/Cargo.lock`。它通过现有 CLI 管理本地服务，不改变 Agent 的组装或协议。桌面应用版本与 `npm/package.json` 保持一致。
 
@@ -68,6 +68,30 @@ node scripts/build-macos-app.mjs
 原生选择命令仅授权给当前主窗口的本地服务地址，不向其他网页开放文件或 Shell 权限。
 会话归档使用原生存储 v34；旧格式在启动事务内升级，测试和开发始终使用独立 home。
 
+## 应用内更新
+
+- 启动约 10 秒后和之后每 6 小时，Lacus 读取 `https://github.com/yq1930/dim/releases/latest/download/latest.json`。发现更新的构建（版本号更高，或版本号相同但构建时间更晚）时，在窗口上提示但不把窗口提到前台，可选“稍后”“更新并重启”“跳过此版本”；默认按钮是“稍后”，按回车不会开始更新。窗口隐藏或最小化时不提示，等下一次检查。
+- “Lacus > 检查更新…”随时手动检查，已跳过的版本也会再次提示；没有更新时显示当前构建。
+- 选择“更新并重启”后在后台下载，Dock 图标显示进度。下载完成后先用内置公钥校验签名，通过后才停止本地服务、替换应用并重启，正在运行的任务会中断。下载或校验失败时保持当前版本；替换失败时恢复原应用后重启。
+- 检查和下载使用 macOS 系统代理。跳过的版本记录在数据目录的 `desktop-update.json`。
+- `LACUS_UPDATE_CHECK=0` 关闭定时检查；`LACUS_UPDATE_ENDPOINT` 改用其他清单地址，发布构建只接受 https。开发包（`--debug`）只有设置了 `LACUS_UPDATE_ENDPOINT` 时才定时检查。
+
+## 发布更新
+
+更新包用本机私钥签名，对应的公钥写在 `src-tauri/tauri.conf.json` 的 `plugins.updater.pubkey`。私钥默认位于 `~/.tauri/lacus-updater.key`（可用 `TAURI_SIGNING_PRIVATE_KEY_PATH` 指定，有口令时用 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`），不得提交到仓库。请另行备份私钥：丢失后，已安装的应用无法校验新版本，只能手动重装更换了公钥的版本。
+
+在 master 构建完成后发布：
+
+```sh
+node scripts/build-macos-app.mjs
+node scripts/publish-macos-app.mjs --dry-run
+node scripts/publish-macos-app.mjs
+```
+
+发布脚本先确认 `dist/macos/Lacus.app` 是当前 `origin/master` 的发布构建、应用签名有效，且其中的公钥与私钥匹配；然后打包 `Lacus.app.tar.gz` 并签名（签名绑定版本号），生成 `latest.json`，在 `yq1930/dim` 创建标记为 latest 的 Release `lacus-<构建日期>-<提交>`，并附带首次安装用的 `Lacus-macos-arm64.zip`。版本号是 `npm/package.json` 的版本加构建时间和提交，例如 `0.1.0-alpha.18+20261107071400.42138b5`；同一提交只发布一次。`--dry-run` 只在 `staging/macos-release` 生成文件，不上传。
+
+从 Release 首次安装时，压缩包经浏览器下载，ad-hoc 签名的应用会被 Gatekeeper 拦下，第一次需在 Finder 中右键选择“打开”；之后的应用内更新不经过浏览器下载，不会再被拦。
+
 ## 代码结构
 
 桌面壳的 Rust 代码在 `src-tauri/src`，按职责分为几个模块：
@@ -80,6 +104,7 @@ node scripts/build-macos-app.mjs
 | `window.rs` | 主窗口：导航规则、窗口大小与缩放的保存和恢复、关闭即隐藏 |
 | `menu.rs` | 中文应用菜单及其命令 |
 | `commands.rs` | 工作区页面可调用的原生命令：选择文件夹、提醒与 Dock 计数 |
+| `update.rs` | 应用内更新：定时与菜单检查、提示、下载与签名校验、停止本地服务后替换应用并重启 |
 
 `src-tauri/Info.plist` 声明应用的本地化为简体中文，macOS 自动加入的菜单项（如“表情与符号”）和系统对话框按钮也显示中文。
 

@@ -5,11 +5,15 @@ mod commands;
 mod environment;
 mod menu;
 mod service;
+mod update;
 mod window;
 
 use std::{
     path::PathBuf,
-    sync::{Arc, Mutex, atomic::AtomicI64},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicI64},
+    },
 };
 use tauri::{Manager, RunEvent, WindowEvent};
 
@@ -22,6 +26,8 @@ pub struct Desktop {
     /// Attention requests since the window was last in front, shown on the
     /// Dock badge.
     unread: AtomicI64,
+    /// A check for updates, an open offer or an install is under way.
+    updating: AtomicBool,
 }
 
 fn main() {
@@ -33,6 +39,7 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             commands::choose_workspace,
             commands::notify_attention
@@ -56,11 +63,13 @@ fn main() {
                     std::env::var_os("DIMCODE_MODEL_CONFIG").map(PathBuf::from),
                 )),
                 unread: AtomicI64::new(0),
+                updating: AtomicBool::new(false),
             });
             app.manage(desktop.clone());
             app.set_menu(menu::build(app.handle())?)?;
             window::build(app.handle(), &desktop, store).map_err(|error| error.to_string())?;
             desktop.service.start(app.handle());
+            update::watch(app.handle());
             Ok(())
         })
         .build(tauri::generate_context!())

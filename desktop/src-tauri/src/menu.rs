@@ -3,6 +3,7 @@
 
 use crate::{
     Desktop,
+    update::{self, BuildInfo, Trigger},
     window::{self, Zoom},
 };
 use std::sync::Arc;
@@ -20,6 +21,7 @@ const DEVTOOLS: &str = "devtools";
 const OPEN_DATA: &str = "open-data";
 const SHOW_LOG: &str = "show-log";
 const RESTART_SERVICE: &str = "restart-service";
+const CHECK_UPDATES: &str = "check-updates";
 
 pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let separator = || PredefinedMenuItem::separator(app);
@@ -32,6 +34,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         true,
         &[
             &PredefinedMenuItem::about(app, Some("关于 Lacus"), Some(about(app)))?,
+            &item(CHECK_UPDATES, "检查更新…", None)?,
             &separator()?,
             &PredefinedMenuItem::services(app, Some("服务"))?,
             &separator()?,
@@ -102,18 +105,13 @@ pub fn build(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
 /// The About panel's version, and the commit and date the bundle was built
 /// from when `build-info.json` records them.
 fn about(app: &AppHandle) -> AboutMetadata<'static> {
-    let info = app
-        .path()
-        .resource_dir()
-        .ok()
-        .and_then(|directory| std::fs::read(directory.join("build-info.json")).ok())
-        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
-    let text = |key: &str, length: usize| {
-        info.as_ref()
-            .and_then(|info| info[key].as_str())
+    let info = BuildInfo::read(app);
+    let text = |value: &Option<String>, length: usize| {
+        value
+            .as_deref()
             .map(|value| value.chars().take(length).collect::<String>())
     };
-    let credits = match (text("sourceCommit", 9), text("builtAt", 10)) {
+    let credits = match (text(&info.source_commit, 9), text(&info.built_at, 10)) {
         (Some(commit), Some(built)) => Some(format!("提交 {commit} · 构建于 {built}")),
         (Some(commit), None) => Some(format!("提交 {commit}")),
         _ => None,
@@ -121,7 +119,8 @@ fn about(app: &AppHandle) -> AboutMetadata<'static> {
     AboutMetadata {
         name: Some("Lacus".into()),
         version: Some(
-            text("version", usize::MAX).unwrap_or_else(|| app.package_info().version.to_string()),
+            info.version
+                .unwrap_or_else(|| app.package_info().version.to_string()),
         ),
         credits,
         ..Default::default()
@@ -163,6 +162,10 @@ pub fn handle(app: &AppHandle, event: MenuEvent) {
             };
         }
         RESTART_SERVICE => app.state::<Arc<Desktop>>().service.clone().restart(app),
+        CHECK_UPDATES => {
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move { update::check(&app, Trigger::Menu).await });
+        }
         _ => {}
     }
 }

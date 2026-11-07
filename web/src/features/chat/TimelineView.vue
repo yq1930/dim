@@ -73,13 +73,32 @@ const virtualizer = useVirtualizer(computed(() => ({
 // estimated start, read as below, and its growth pushed the view down. Judge it
 // by its current start against where the viewport actually is.
 virtualizer.value.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) => {
+  instance.getTotalSize()
+  return startsAbove(instance.measurementsCache[item.index]?.start ?? item.start)
+}
+
+/** Whether a row starting at `start` in the list begins above the viewport's top edge. */
+function startsAbove(start: number): boolean {
   const element = viewport.value
   if (element === undefined || list.value === undefined) return false
-  instance.getTotalSize()
-  const start = instance.measurementsCache[item.index]?.start ?? item.start
   // The list sits below the viewport's top padding; offsetTop is relative to the
   // positioned viewport.
   return start < element.scrollTop - list.value.offsetTop
+}
+
+/**
+ * Opens or closes a work group. A group closed from its label, stuck at the top
+ * while its rows scroll past, comes back to the top of the view, so the reader
+ * keeps their place instead of landing wherever the shorter timeline leaves them.
+ */
+async function toggleGroup(key: string, index: number): Promise<void> {
+  const start = virtualizer.value.measurementsCache[index]?.start
+  const scrolledPast = expandedGroups.value[key] === true && start !== undefined && startsAbove(start)
+  expandedGroups.value[key] = !expandedGroups.value[key]
+  if (!scrolledPast) return
+  following.value = false
+  await nextTick()
+  virtualizer.value.scrollToIndex(index, { align: "start" })
 }
 const virtualRows = computed(() => virtualizer.value.getVirtualItems())
 const totalSize = computed(() => virtualizer.value.getTotalSize())
@@ -142,7 +161,7 @@ onMounted(() => void toEnd())
           class="virtual-timeline-row"
           :class="{ 'is-jump-target': item.index === jumpTarget }"
           :data-index="item.index"
-          :style="{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${item.start}px)` }"
+          :style="{ position: 'absolute', top: `${item.start}px`, left: 0, width: '100%' }"
         >
           <template v-for="entry in [display[item.index]!]" :key="entry.key">
             <TimelineWorkRow
@@ -150,7 +169,7 @@ onMounted(() => void toEnd())
               :items="entry.items"
               :expanded="expandedGroups[entry.key] === true"
               :expanded-item-ids="expandedItems"
-              @toggle="expandedGroups[entry.key] = !expandedGroups[entry.key]"
+              @toggle="toggleGroup(entry.key, item.index)"
               @toggle-item="expandedItems[$event] = !expandedItems[$event]"
             />
             <TimelineUserMessage v-else-if="entry.row.kind === 'user'" :text="entry.row.text" :skills="entry.row.skills" :at="entry.row.at" :quotable="quotable" :branchable="branchable === true" @branch="onBranch(entry.row, $event)" @quote="emit('quote', $event)" />

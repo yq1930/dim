@@ -51,7 +51,7 @@
    reader stranded mid-history. */
 .timeline-shell { position: relative; display: flex; min-width: 0; min-height: 0; flex-direction: column; }
 /* isolation keeps sticky/stacked rows inside the timeline under the restore cover that follows it. */
-.timeline { position: relative; isolation: isolate; min-width: 0; min-height: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; overflow-anchor: none; padding: var(--space-7) clamp(var(--space-3), 4vw, var(--space-12)) var(--space-4); }
+.timeline { --timeline-inset-top: var(--space-7); position: relative; isolation: isolate; min-width: 0; min-height: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; overflow-anchor: none; padding: var(--timeline-inset-top) clamp(var(--space-3), 4vw, var(--space-12)) var(--space-4); }
 .timeline-restore-cover { position: absolute; background: var(--background); inset: 0; }
 /* :not(.sr-only): same specificity and later, so it overrode the live region's 1px
    width; absolutely positioned from the left padding, it ran past the right edge. */
@@ -103,6 +103,10 @@
    text edge; hover and the expanded row take the --hover fill. */
 .timeline-work-group-toggle, .timeline-work-item-toggle { display: flex; width: calc(100% + var(--space-2)); min-width: 0; height: var(--control-sm); align-items: center; justify-content: flex-start; gap: var(--space-2); margin-left: calc(-1 * var(--space-2)); padding: 0 var(--space-2); border: 0; border-radius: var(--control-sm-radius); background: transparent; color: var(--muted-foreground); font-size: var(--text-md); font-weight: var(--weight-regular); text-align: left; cursor: pointer; transition: background-color var(--duration-hover) ease, color var(--duration-hover) ease; }
 .timeline-work-group-toggle:is(:hover, [aria-expanded="true"]), .timeline-work-item-toggle:is(:hover, [aria-expanded="true"]):not(.is-static) { background: var(--hover); color: var(--foreground); }
+/* An open group's label stays at the top while its rows scroll past, so it can be
+   closed from anywhere; the same fill laid on the page colour hides the rows under it.
+   Sticky offsets start below the scroller's padding, so the label rises over it. */
+.timeline-work-group-toggle[aria-expanded="true"] { position: sticky; top: calc(-1 * var(--timeline-inset-top)); z-index: 1; background: linear-gradient(var(--hover), var(--hover)), var(--background); }
 .timeline-work-group-toggle > span, .timeline-work-item-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .timeline-work-item-summary { display: inline-flex; max-width: 100%; align-items: center; gap: var(--space-1); }
 .timeline-work-item-summary > span { flex: 0 0 auto; }

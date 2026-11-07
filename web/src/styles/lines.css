@@ -3,7 +3,7 @@
 .app-shell[data-mode="compact"] .content-region[data-has-detail="true"] { grid-template-columns: minmax(0, 1fr); }
 .app-shell[data-mode="compact"] .detail-resizer { display: none; }
 .app-shell[data-mode="compact"] .detail-region { position: fixed; inset: 0; z-index: var(--z-dialog); width: 100%; border-left: 0; }
-.timeline-shell[data-variant="panel"] .timeline { padding: var(--space-4) var(--space-3) var(--space-3); }
+.timeline-shell[data-variant="panel"] .timeline { --timeline-inset-top: var(--space-4); padding: var(--timeline-inset-top) var(--space-3) var(--space-3); }
 .timeline-shell[data-variant="panel"] .timeline > :not(.sr-only) { width: 100%; }
 .timeline-line-marker { display: flex; width: 100%; min-width: 0; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--card); color: var(--foreground); font: inherit; font-size: var(--text-md); text-align: left; cursor: pointer; }
 .timeline-line-marker:hover:not(:disabled) { background: var(--hover); }

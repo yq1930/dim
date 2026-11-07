@@ -34,7 +34,8 @@ export type TimelineRow =
   | { kind: "source-ended"; key: string; branch: string }
   | { kind: "error"; key: string; text: string }
   | { kind: "stopped"; key: string }
-  | { kind: "turn-files"; key: string; turnId: string; count: number }
+  /** A turn that completed, or that wrote files: how long it took and how many files it wrote. */
+  | { kind: "turn-summary"; key: string; turnId: string; outcome: "completed" | "failed" | "cancelled"; files: number; durationMs?: number }
   | { kind: "files-rewound"; key: string; count: number }
 
 /** A request's reasoning or answer while it is still arriving. */
@@ -64,6 +65,8 @@ export class Projection {
   private tools = new Map<string, number>()
   /** The files `write` and `edit` changed in the turn under way. */
   private turnWrites = new Set<string>()
+  /** When the turn under way took its first input or model step. */
+  private turnStartedAt: number | undefined
   private lines = new Map<string, number>()
   /** `ask_user` calls whose batch has no `step/tool-result` yet, oldest first. */
   private asks: Array<{ requestId: string; callId: string; questions: AskQuestion[] }> = []
@@ -103,6 +106,7 @@ export class Projection {
     this.goalFold.apply(event)
     this.planningFold.apply(event)
     const content = event.content
+    if (content.kind === "input" || content.kind === "source-input" || content.kind === "model-start") this.turnStartedAt ??= event.createAt
     switch (content.kind) {
       case "exec-started": {
         const row = this.rows.find((item) => item.kind === "tool" && item.callId === content.callId)
@@ -218,8 +222,18 @@ export class Projection {
         this.requestStarts.clear()
         if (content.outcome === "failed") this.push({ kind: "error", key: `error-${event.sequence}`, text: content.error ?? "" })
         if (content.outcome === "cancelled") this.push({ kind: "stopped", key: `stopped-${event.sequence}` })
-        if (this.turnWrites.size > 0) this.push({ kind: "turn-files", key: `turn-files-${event.sequence}`, turnId: content.turnId, count: this.turnWrites.size })
+        if (content.outcome === "completed" || this.turnWrites.size > 0) {
+          this.push({
+            kind: "turn-summary",
+            key: `turn-summary-${event.sequence}`,
+            turnId: content.turnId,
+            outcome: content.outcome,
+            files: this.turnWrites.size,
+            ...(this.turnStartedAt === undefined ? {} : { durationMs: event.createAt - this.turnStartedAt }),
+          })
+        }
         this.turnWrites.clear()
+        this.turnStartedAt = undefined
         break
       case "context-configured":
         this.model = content.model

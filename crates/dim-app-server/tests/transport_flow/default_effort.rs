@@ -1,4 +1,5 @@
-//! #896: an adoption starts at the model's catalog default effort.
+//! #896: an adoption without a preference starts at the model's highest
+//! advertised effort.
 //!
 //! Each test runs the App Server binary with a product home and a fake
 //! Anthropic-compatible endpoint that records the request body, so the adopted
@@ -269,10 +270,11 @@ fn sent_effort(capture: &Capture) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// 1. A model with a declared default carries it in the creation reply, the
-/// attach reply and the configured view, and the request sends it.
+/// 1. The highest advertised effort reaches the creation reply, the attach
+/// reply, the configured view and the request. The declared default and the
+/// options' order do not decide it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_declared_default_reaches_every_read_and_the_request() {
+async fn the_highest_advertised_effort_reaches_every_read_and_the_request() {
     tokio::time::timeout(Duration::from_secs(120), async {
         let capture = Arc::new(Capture::default());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -290,7 +292,7 @@ async fn a_declared_default_reaches_every_read_and_the_request() {
             provider,
             "anthropic",
             &format!("http://{endpoint}"),
-            vec![model("defaulted", Some("high"), &["low", "high", "max"])],
+            vec![model("defaulted", Some("high"), &["high", "max", "low"])],
         )
         .await;
 
@@ -299,6 +301,69 @@ async fn a_declared_default_reaches_every_read_and_the_request() {
                 "session.create",
                 json!({"cwd":directory,"tools":[],
                     "model":{"provider":provider,"modelId":"defaulted"}}),
+            )
+            .await;
+        assert_ok(&created);
+        assert_eq!(
+            created["result"]["modelPreferences"],
+            json!({"reasoningEffort":"max"}),
+            "{created}"
+        );
+        let session_id = created["result"]["sessionId"].clone();
+        let attached = client
+            .rpc("session.attach", json!({"sessionId":session_id}))
+            .await;
+        assert_eq!(
+            attached["result"]["modelPreferences"],
+            json!({"reasoningEffort":"max"}),
+            "{attached}"
+        );
+
+        turn(&mut client, &session_id, "hello").await;
+        assert_eq!(
+            configured(&mut client, &session_id).await["model_preferences"],
+            json!({"reasoningEffort":"max"})
+        );
+        assert_eq!(sent_effort(&capture).as_deref(), Some("max"));
+
+        server.child.kill().await.unwrap();
+        http.abort();
+        std::fs::remove_dir_all(directory).unwrap();
+    })
+    .await
+    .unwrap();
+}
+
+/// 2. A model that declares no default still takes its highest advertised
+/// effort in the reads and on the wire.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_model_with_no_declared_default_still_takes_its_highest_effort() {
+    tokio::time::timeout(Duration::from_secs(120), async {
+        let capture = Arc::new(Capture::default());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = listener.local_addr().unwrap();
+        let app = Router::new()
+            .route("/v1/messages", post(messages))
+            .with_state(capture.clone());
+        let http = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let directory = directory("no-default-effort");
+        let mut server = launch_product(&directory).await;
+        let mut client = connect(&server).await;
+        let provider = "018ec73f-0000-7000-8000-000000000102";
+        create_provider(
+            &mut client,
+            provider,
+            "anthropic",
+            &format!("http://{endpoint}"),
+            vec![model("open", None, &["low", "high"])],
+        )
+        .await;
+
+        let created = client
+            .rpc(
+                "session.create",
+                json!({"cwd":directory,"tools":[],
+                    "model":{"provider":provider,"modelId":"open"}}),
             )
             .await;
         assert_ok(&created);
@@ -332,67 +397,8 @@ async fn a_declared_default_reaches_every_read_and_the_request() {
     .unwrap();
 }
 
-/// 2. A model that declares no default sends nothing and reads back nothing.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_model_with_no_declared_default_carries_none() {
-    tokio::time::timeout(Duration::from_secs(120), async {
-        let capture = Arc::new(Capture::default());
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let endpoint = listener.local_addr().unwrap();
-        let app = Router::new()
-            .route("/v1/messages", post(messages))
-            .with_state(capture.clone());
-        let http = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        let directory = directory("no-default-effort");
-        let mut server = launch_product(&directory).await;
-        let mut client = connect(&server).await;
-        let provider = "018ec73f-0000-7000-8000-000000000102";
-        create_provider(
-            &mut client,
-            provider,
-            "anthropic",
-            &format!("http://{endpoint}"),
-            vec![model("open", None, &["low", "high"])],
-        )
-        .await;
-
-        let created = client
-            .rpc(
-                "session.create",
-                json!({"cwd":directory,"tools":[],
-                    "model":{"provider":provider,"modelId":"open"}}),
-            )
-            .await;
-        assert_ok(&created);
-        assert!(
-            created["result"].get("modelPreferences").is_none(),
-            "{created}"
-        );
-        let session_id = created["result"]["sessionId"].clone();
-        let attached = client
-            .rpc("session.attach", json!({"sessionId":session_id}))
-            .await;
-        assert!(
-            attached["result"].get("modelPreferences").is_none(),
-            "{attached}"
-        );
-
-        turn(&mut client, &session_id, "hello").await;
-        let data = configured(&mut client, &session_id).await;
-        assert!(data.get("model_preferences").is_none(), "{data}");
-        assert_eq!(sent_effort(&capture), None);
-
-        server.child.kill().await.unwrap();
-        http.abort();
-        std::fs::remove_dir_all(directory).unwrap();
-    })
-    .await
-    .unwrap();
-}
-
-/// 3. A default outside the offered efforts, a model whose capabilities deny
-/// reasoning, and a protocol that cannot express an effort all adopt
-/// successfully with no effort.
+/// 3. A model whose capabilities deny reasoning and a protocol that cannot
+/// express an effort both adopt successfully with no effort.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn an_inexpressible_default_never_fails_an_adoption() {
     tokio::time::timeout(Duration::from_secs(120), async {
@@ -412,31 +418,15 @@ async fn an_inexpressible_default_never_fails_an_adoption() {
             provider,
             "anthropic",
             &format!("http://{endpoint}"),
-            vec![
-                model("outside", Some("high"), &["low"]),
-                model_with_off(
-                    "unsupported-reasoning",
-                    Some("high"),
-                    &["low", "high"],
-                    None,
-                    false,
-                ),
-            ],
+            vec![model_with_off(
+                "unsupported-reasoning",
+                Some("high"),
+                &["low", "high"],
+                None,
+                false,
+            )],
         )
         .await;
-
-        let created = client
-            .rpc(
-                "session.create",
-                json!({"cwd":directory,"tools":[],
-                    "model":{"provider":provider,"modelId":"outside"}}),
-            )
-            .await;
-        assert_ok(&created);
-        assert!(
-            created["result"].get("modelPreferences").is_none(),
-            "{created}"
-        );
 
         let created = client
             .rpc(
@@ -463,8 +453,8 @@ async fn an_inexpressible_default_never_fails_an_adoption() {
         assert!(data.get("model_preferences").is_none(), "{data}");
         assert_eq!(sent_effort(&capture), None);
 
-        // Bedrock rejects every reasoning preference; the declared default is
-        // not applied and the adoption still succeeds.
+        // Bedrock rejects every reasoning preference; the default is not
+        // applied and the adoption still succeeds.
         let bedrock = "018ec73f-0000-7000-8000-000000000104";
         assert_ok(
             &client
@@ -502,9 +492,9 @@ async fn an_inexpressible_default_never_fails_an_adoption() {
     .unwrap();
 }
 
-/// 4. An explicit preference wins over the declared default everywhere.
+/// 4. An explicit preference wins over the default everywhere.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn an_explicit_preference_wins_over_the_declared_default() {
+async fn an_explicit_preference_wins_over_the_default() {
     tokio::time::timeout(Duration::from_secs(120), async {
         let capture = Arc::new(Capture::default());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -557,10 +547,10 @@ async fn an_explicit_preference_wins_over_the_declared_default() {
     .unwrap();
 }
 
-/// 5. A clear removes the Session's value and returns to the declared
-/// default, in the reads and on the wire.
+/// 5. A clear removes the Session's value and returns to the highest
+/// advertised effort, in the reads and on the wire.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_clear_returns_to_the_declared_default() {
+async fn a_clear_returns_to_the_highest_advertised_effort() {
     tokio::time::timeout(Duration::from_secs(120), async {
         let capture = Arc::new(Capture::default());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -649,7 +639,7 @@ async fn a_stored_effortless_configuration_is_unchanged_on_reopen() {
             provider,
             "anthropic",
             &format!("http://{endpoint}"),
-            vec![model("open", None, &["low", "high"])],
+            vec![model_with_off("open", None, &[], None, true)],
         )
         .await;
 
@@ -657,25 +647,19 @@ async fn a_stored_effortless_configuration_is_unchanged_on_reopen() {
             .rpc(
                 "session.create",
                 json!({"cwd":directory,"tools":[],
-                    "model":{"provider":provider,"modelId":"open"},
-                    "modelPreferences":{"reasoningEffort":"high"}}),
+                    "model":{"provider":provider,"modelId":"open"}}),
             )
             .await;
         assert_ok(&created);
-        let session_id = created["result"]["sessionId"].clone();
-        // A clear on a model that declares no default leaves the stored
-        // configuration without an effort.
-        assert_ok(
-            &client
-                .rpc(
-                    "session.model.update",
-                    json!({"sessionId":session_id,"branchId":"main",
-                        "modelPreferences":{"reasoningEffort":{"action":"clear"}}}),
-                )
-                .await,
+        assert!(
+            created["result"].get("modelPreferences").is_none(),
+            "{created}"
         );
+        let session_id = created["result"]["sessionId"].clone();
+        turn(&mut client, &session_id, "hello").await;
         let data = configured(&mut client, &session_id).await;
         assert!(data.get("model_preferences").is_none(), "{data}");
+        assert_eq!(sent_effort(&capture), None);
 
         let mut reopened = connect(&server).await;
         let attached = reopened
@@ -696,12 +680,12 @@ async fn a_stored_effortless_configuration_is_unchanged_on_reopen() {
     .unwrap();
 }
 
-/// 7. A default `none` adopts the form the model declares: a native `none`
-/// reaches the request as the effort, an off declaration as the protocol's
-/// off field, and a declaration the protocol cannot express adopts with
-/// no effort.
+/// 7. A highest advertised effort of `none` adopts the form the model
+/// declares: a native `none` reaches the request as the effort, an off
+/// declaration as the protocol's off field, and a declaration the protocol
+/// cannot express adopts with no effort.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_declared_default_none_needs_an_expressible_off_declaration() {
+async fn a_default_none_needs_an_expressible_off_declaration() {
     tokio::time::timeout(Duration::from_secs(120), async {
         let capture = Arc::new(Capture::default());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -720,12 +704,18 @@ async fn a_declared_default_none_needs_an_expressible_off_declaration() {
             "openai-compatible",
             &format!("http://{endpoint}/v1"),
             vec![
-                model_with_off("native", Some("none"), &["low", "none"], None, true),
-                model("off", Some("none"), &["low"]),
+                model_with_off("native", None, &["none"], None, true),
+                model_with_off(
+                    "off",
+                    None,
+                    &[],
+                    Some(json!({"kind":"thinking_type","value":"disabled"})),
+                    true,
+                ),
                 model_with_off(
                     "unexpressible",
-                    Some("none"),
-                    &["low"],
+                    None,
+                    &[],
                     Some(json!({"kind":"chat_template_kwargs","keys":["thinking"]})),
                     true,
                 ),
@@ -814,7 +804,7 @@ async fn a_declared_default_service_tier_is_applied() {
         let mut server = launch_product(&directory).await;
         let mut client = connect(&server).await;
         let provider = "018ec73f-0000-7000-8000-000000000109";
-        let mut tiered = model("tiered", None, &["low"]);
+        let mut tiered = model_with_off("tiered", None, &[], None, true);
         tiered["metadata"]["serviceTier"] = json!({"supported":true,
             "default":"priority","options":["priority","default"]});
         create_provider(

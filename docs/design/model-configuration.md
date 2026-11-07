@@ -158,9 +158,10 @@ without requiring a saved Provider catalog. Other internal model settings remain
 private. Advertised choices are display data; Provider validates each update.
 An adoption starts from the model's declared configuration with the model's own
 catalog defaults applied: when no preference names an effort and that
-configuration carries none, Provider applies the declared `reasoning.effort`
-through the same mapping an explicit value uses, and likewise for a declared
-default service tier. A declared default applies only when the model advertises
+configuration carries none, Provider applies the model's highest advertised
+effort — `none` below `minimal`, `low`, `medium`, `high`, `xhigh`, `max` and
+`ultra` — through the same mapping an explicit value uses, and likewise for a
+declared default service tier. A default applies only when the model advertises
 the value (one of `effortOptions`, or `none` beside a reasoning-off declaration)
 and the protocol can express it; otherwise the adoption starts unchanged, and a
 default never fails an adoption.

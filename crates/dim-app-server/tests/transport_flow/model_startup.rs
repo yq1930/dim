@@ -349,9 +349,10 @@ async fn temporary_startup_connections_execute_all_formats_without_sharing_or_pe
         assert_ok(&cleared);
         submit(&mut client, &sid, "main").await;
         let body = seen.lock().unwrap().last().unwrap().2.clone();
+        let default_effort = if model == "gpt-5.4" { "xhigh" } else { "max" };
         assert_eq!(
             body.pointer(effort_pointer),
-            (format == "openai-chat").then_some(&json!("none")),
+            Some(&json!(default_effort)),
             "{body}"
         );
         assert!(body.get("service_tier").is_none(), "{body}");
@@ -369,9 +370,10 @@ async fn temporary_startup_connections_execute_all_formats_without_sharing_or_pe
         let sid = created["result"]["sessionId"].as_str().unwrap().to_owned();
         submit(&mut client, &sid, "main").await;
         let body = seen.lock().unwrap().last().unwrap().2.clone();
+        let default_effort = if model == "gpt-5.4" { "xhigh" } else { "max" };
         assert_eq!(
             body.pointer(effort_pointer),
-            (format == "openai-chat").then_some(&json!("none")),
+            Some(&json!(default_effort)),
             "{body}"
         );
         sessions.push((sid, credential));

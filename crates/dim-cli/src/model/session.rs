@@ -907,7 +907,7 @@ pub struct ModelItem {
     /// Advertised reasoning efforts, in cycle order. Empty when the model
     /// offers no choice.
     pub efforts: Vec<String>,
-    /// Catalog default, when it is one of `efforts`.
+    /// The model's highest advertised effort, when it has one.
     pub default_effort: Option<String>,
     /// Saved `reasoningEffort`, when it is one of `efforts`.
     pub saved_effort: Option<String>,

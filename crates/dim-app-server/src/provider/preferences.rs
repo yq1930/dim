@@ -8,16 +8,17 @@ use dim_agent_types::*;
 /// preferences "still start at catalog defaults", and
 /// `docs/design/model-configuration.md` says a cleared field carries "the
 /// value an explicit adoption of the same model with no preference for that
-/// field would carry". The declared reasoning effort and service tier are
+/// field would carry". The model's default reasoning effort — the highest
+/// level its declaration advertises — and its declared service tier are
 /// therefore part of that base, applied through the same mapping an explicit
 /// preference uses, so the adopted configuration, every read and every
 /// request agree on the value.
 ///
-/// A declared default applies only when the model declares the control: the
-/// effort is one of the picker's `effortOptions` (or `none` beside a
-/// reasoning-off declaration), the tier is supported and listed, and the
-/// protocol can express the value. Otherwise the base comes back unchanged.
-/// Unlike an explicit preference, a default never makes an adoption fail.
+/// A default applies only when the model advertises the control: the effort is
+/// one of the picker's `effortOptions` (or `none` beside a reasoning-off
+/// declaration), the tier is supported and listed, and the protocol can
+/// express the value. Otherwise the base comes back unchanged. Unlike an
+/// explicit preference, a default never makes an adoption fail.
 pub(super) fn catalog_defaults(
     base: &ModelConfig,
     snapshot: &ModelCapabilitySnapshot,
@@ -28,7 +29,7 @@ pub(super) fn catalog_defaults(
     if adopted
         .as_ref()
         .is_none_or(|adopted| adopted.reasoning_effort.is_none())
-        && let Some(effort) = declared_effort(snapshot)
+        && let Some(effort) = default_effort(snapshot)
         && let Ok(applied) = reasoning_config(&config, snapshot, protocol, &effort)
     {
         config = applied;
@@ -49,21 +50,13 @@ pub(super) fn catalog_defaults(
     config
 }
 
-/// The model's declared default effort, when the picker would offer it.
-fn declared_effort(snapshot: &ModelCapabilitySnapshot) -> Option<String> {
+/// The model's default effort: the highest level its declaration advertises.
+fn default_effort(snapshot: &ModelCapabilitySnapshot) -> Option<String> {
     let reasoning = snapshot.reasoning.as_ref()?;
     if !reasoning.supported || !snapshot.capabilities.reasoning {
         return None;
     }
-    let effort = reasoning.effort.as_ref()?;
-    let mut options = reasoning.effort_options.clone().unwrap_or_default();
-    if reasoning.off.is_some() && !options.iter().any(|option| option == "none") {
-        options.push("none".into());
-    }
-    options
-        .iter()
-        .any(|option| option == effort)
-        .then(|| effort.clone())
+    reasoning.highest_effort().map(str::to_owned)
 }
 
 /// The model's declared default service tier, when its declaration lists it.

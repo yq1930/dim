@@ -2224,7 +2224,11 @@ async fn the_configured_view_reads_back_the_adopted_model_preferences() {
     );
     let data = configured(&mut client, &session_id).await;
     assert_eq!(data["model_id"], "reasoning");
-    assert!(data.get("model_preferences").is_none(), "{data}");
+    assert_eq!(
+        data["model_preferences"],
+        json!({"reasoningEffort":"high"}),
+        "{data}"
+    );
 
     // `/effort high` reports the value the configuration will send.
     assert_ok(
@@ -2285,16 +2289,16 @@ async fn the_configured_view_reads_back_the_adopted_model_preferences() {
             )
             .await,
     );
-    let tier_only = json!({"serviceTier":"priority"});
+    let default_effort_with_tier = json!({"reasoningEffort":"high","serviceTier":"priority"});
     assert_eq!(
         configured(&mut client, &session_id).await["model_preferences"],
-        tier_only
+        default_effort_with_tier
     );
     let attached = client
         .rpc("session.attach", json!({"sessionId":session_id}))
         .await;
     assert_eq!(
-        attached["result"]["modelPreferences"], tier_only,
+        attached["result"]["modelPreferences"], default_effort_with_tier,
         "{attached}"
     );
 
@@ -2310,7 +2314,7 @@ async fn the_configured_view_reads_back_the_adopted_model_preferences() {
     assert_eq!(repeated["result"]["outcome"], "unchanged", "{repeated}");
     let data = configured(&mut client, &session_id).await;
     assert_eq!(data["revision"], revision);
-    assert_eq!(data["model_preferences"], tier_only);
+    assert_eq!(data["model_preferences"], default_effort_with_tier);
 
     // A set beside a clear in one request applies both.
     assert_ok(
@@ -2328,7 +2332,8 @@ async fn the_configured_view_reads_back_the_adopted_model_preferences() {
         json!({"reasoningEffort":"low"})
     );
 
-    // Clearing the other field leaves no value, and the attach reply agrees.
+    // Clearing the other field returns to the model's default effort, and
+    // the attach reply agrees.
     assert_ok(
         &client
             .rpc(
@@ -2339,12 +2344,17 @@ async fn the_configured_view_reads_back_the_adopted_model_preferences() {
             .await,
     );
     let data = configured(&mut client, &session_id).await;
-    assert!(data.get("model_preferences").is_none(), "{data}");
+    assert_eq!(
+        data["model_preferences"],
+        json!({"reasoningEffort":"high"}),
+        "{data}"
+    );
     let attached = client
         .rpc("session.attach", json!({"sessionId":session_id}))
         .await;
-    assert!(
-        attached["result"].get("modelPreferences").is_none(),
+    assert_eq!(
+        attached["result"]["modelPreferences"],
+        json!({"reasoningEffort":"high"}),
         "{attached}"
     );
     assert_eq!(attached["result"]["model"]["modelId"], "reasoning");
@@ -2404,6 +2414,8 @@ async fn the_creation_replies_name_the_adopted_model_preferences() {
         },
         "metadata":{"reasoning":{"supported":true,"effortOptions":["low","high"],
             "off":{"kind":"thinking_type","value":"disabled"}}}});
+    let plain_entry = json!({"modelId":"plain","displayName":"plain","status":"active",
+        "capabilities":dim_agent_types::CatalogCapabilities::with_limits(32_000, 4_096)});
     assert_ok(
         &client
             .rpc(
@@ -2411,7 +2423,7 @@ async fn the_creation_replies_name_the_adopted_model_preferences() {
                 json!({"providerId":provider,"displayName":"Fixture",
                     "connection":{"driverKind":"openai-compatible","baseUrl":"https://model.example/v1",
                         "auth":{"type":"bearer"},"credential":{"action":"set","value":"fixture-access"}},
-                    "models":[entry],"enabled":true}),
+                    "models":[entry, plain_entry],"enabled":true}),
             )
             .await,
     );
@@ -2450,7 +2462,7 @@ async fn the_creation_replies_name_the_adopted_model_preferences() {
     let plain = client
         .rpc(
             "session.create",
-            json!({"cwd":home,"model":{"provider":provider,"modelId":"reasoning"}}),
+            json!({"cwd":home,"model":{"provider":provider,"modelId":"plain"}}),
         )
         .await;
     assert_ok(&plain);

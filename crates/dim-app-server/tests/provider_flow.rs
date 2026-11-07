@@ -4411,7 +4411,7 @@ async fn public_static_provider_selection_resolution_execution_and_lifecycle_flo
         "the dropped model is a user model now"
     );
     let preferred = provider.update_preferences(managed_id.into(), 5, "editable".into(), serde_json::from_value(json!({
-        "reasoningEffort":{"action":"set","value":"high"},"serviceTier":{"action":"set","value":"priority"}
+        "reasoningEffort":{"action":"set","value":"low"},"serviceTier":{"action":"set","value":"priority"}
     })).unwrap(), &cancel).await.unwrap();
     assert_eq!(preferred.version, Some(6));
     let preference_target = ModelId {
@@ -4427,7 +4427,16 @@ async fn public_static_provider_selection_resolution_execution_and_lifecycle_flo
         )
         .await
         .unwrap();
-    assert_eq!(implicit.config.unwrap().reasoning, None);
+    assert_eq!(
+        implicit
+            .config
+            .unwrap()
+            .reasoning
+            .unwrap()
+            .effort
+            .as_deref(),
+        Some("high")
+    );
     let adopted = provider
         .configuration(
             Some(preference_target),
@@ -4439,7 +4448,7 @@ async fn public_static_provider_selection_resolution_execution_and_lifecycle_flo
         .unwrap();
     assert_eq!(
         adopted.config.unwrap().reasoning.unwrap().effort.as_deref(),
-        Some("high")
+        Some("low")
     );
     let preferred = provider
         .update_preferences(

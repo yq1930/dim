@@ -207,6 +207,37 @@ pub struct ModelReasoning {
     pub off: Option<ReasoningOff>,
 }
 
+impl ModelReasoning {
+    /// The highest effort this declaration offers, which a model adopts when
+    /// no preference names one. An unsupported declaration offers none.
+    ///
+    /// Known levels rank `none` below `minimal`, `low`, `medium`, `high`,
+    /// `xhigh`, `max` and `ultra`; an effort outside that scale is not a
+    /// default candidate. A declaration that offers no ranked effort but turns
+    /// reasoning off through `off` offers `none` alone.
+    pub fn highest_effort(&self) -> Option<&str> {
+        if !self.supported {
+            return None;
+        }
+        const LEVELS: [&str; 8] = [
+            "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
+        ];
+        self.effort_options
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .filter_map(|effort| {
+                LEVELS
+                    .iter()
+                    .position(|level| *level == effort.as_str())
+                    .map(|rank| (rank, effort.as_str()))
+            })
+            .max_by_key(|(rank, _)| *rank)
+            .map(|(_, effort)| effort)
+            .or_else(|| self.off.as_ref().map(|_| "none"))
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ReasoningBudget {
     pub min: Option<f64>,

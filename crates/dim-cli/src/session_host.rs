@@ -4228,10 +4228,7 @@ fn effort_choices(
     if reasoning.off.is_some() && !efforts.iter().any(|effort| effort == "none") {
         efforts.push("none".into());
     }
-    let default = reasoning
-        .effort
-        .clone()
-        .filter(|effort| efforts.iter().any(|option| option == effort));
+    let default = reasoning.highest_effort().map(str::to_owned);
     (efforts, default)
 }
 

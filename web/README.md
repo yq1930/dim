@@ -33,6 +33,13 @@ npm run typecheck  # type check only
 
 ## Layout
 
+The Session header's **Background tasks** button and `/tasks` list background
+commands across the Session's lines. Select a running command to see its live
+output tail; **Stop command** asks for confirmation before stopping that command.
+Closing the dialog leaves commands running. Reopening the Session rebuilds the
+list from recorded history. Failed history reads and unavailable live output are
+shown explicitly, and output is rendered as text.
+
 | Path | Purpose |
 | --- | --- |
 | `src/rpc/client.ts` | WebSocket JSON-RPC client: `hello` v3, timeouts, `daemon.ping` heartbeat, reconnect with backoff, bootstrap exchange |

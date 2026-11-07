@@ -13,7 +13,14 @@
  */
 import { GoalFold, type Goal } from "./goal"
 import { PlanningFold } from "./planning"
-import type { AskQuestion, ModelId, ModelProgress, QueuedInput, SessionEvent, ToolResult } from "./rpc/protocol"
+import type { AskQuestion, ExecStatus, ModelId, ModelProgress, QueuedInput, SessionEvent, ToolResult } from "./rpc/protocol"
+
+export type BackgroundTask = {
+  taskId: string
+  label: string
+  startedAt: number
+  finish?: { at: number; status: ExecStatus; result: ToolResult }
+}
 
 export type TimelineRow =
   | { kind: "user"; key: string; text: string; skills?: string[]; at: number; sequence: number; cut: number }
@@ -43,6 +50,7 @@ type Stream = {
 
 export class Projection {
   rows: TimelineRow[] = []
+  readonly backgroundTasks = new Map<string, BackgroundTask>()
   /** Highest event sequence applied. */
   cursor = 0
   /** The newest turn end on this line, the cut `/branch` and `+` use. */
@@ -96,6 +104,21 @@ export class Projection {
     this.planningFold.apply(event)
     const content = event.content
     switch (content.kind) {
+      case "exec-started": {
+        const row = this.rows.find((item) => item.kind === "tool" && item.callId === content.callId)
+        const command = row?.kind === "tool" ? row.input.command : undefined
+        this.backgroundTasks.set(content.taskId, {
+          taskId: content.taskId,
+          label: typeof command === "string" && command !== "" ? command : content.description,
+          startedAt: event.createAt,
+        })
+        break
+      }
+      case "exec-ended": {
+        const task = this.backgroundTasks.get(content.taskId)
+        if (task) this.backgroundTasks.set(content.taskId, { ...task, finish: { at: event.createAt, status: content.status, result: content.result } })
+        break
+      }
       case "input":
         if (content.user !== undefined) this.held.set(event.id, { id: event.id, text: content.text ?? "", skills: content.skills, user: content.user })
         if (content.text !== undefined) {

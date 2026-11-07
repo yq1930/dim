@@ -1,6 +1,6 @@
 import { shallowReactive } from "vue"
 import { defineStore } from "pinia"
-import { Projection, type TimelineRow } from "../projection"
+import { Projection, type BackgroundTask, type TimelineRow } from "../projection"
 import { Lines, type LineView } from "../lines"
 import { ConnectionLost, RpcError } from "../rpc/client"
 import type { Goal } from "../goal"
@@ -15,6 +15,8 @@ import { useUiStore } from "./ui"
 
 /** What a permission change did: written, already in place, or refused because `main` changed first. */
 export type PermissionOutcome = "updated" | "unchanged" | "conflict"
+
+export type SessionTask = BackgroundTask & { branchId: string }
 
 /** One line's transcript and history state. */
 export type BranchView = {
@@ -49,6 +51,7 @@ export type SessionView = {
   planning: boolean
   /** The main line's task list. */
   todos: TodoItem[]
+  backgroundTasks: SessionTask[]
   /** The method names this Session serves (`session.methods`); empty when the daemon offers no table. */
   methods: readonly string[]
   /** The policy of `main`: read after history loads, then kept current by `permission/changed`. */
@@ -150,6 +153,7 @@ export const useChatStore = defineStore("chat", () => {
       reviews: [],
       planning: false,
       todos: [],
+      backgroundTasks: [],
       methods: [],
       permission: undefined,
       goal: undefined,
@@ -495,6 +499,10 @@ export const useChatStore = defineStore("chat", () => {
     if (reviewed.length > 0) alertUser(channel, "desktop.needsPlanReview")
     view.planning = channel.main.projection.planningFold.planning
     view.todos = channel.main.projection.planningFold.todos()
+    view.backgroundTasks = [
+      ...[...channel.main.projection.backgroundTasks.values()].map((task) => ({ ...task, branchId: MAIN_BRANCH })),
+      ...[...channel.branches].flatMap(([branchId, branch]) => [...branch.projection.backgroundTasks.values()].map((task) => ({ ...task, branchId }))),
+    ].sort((left, right) => Number(!!left.finish) - Number(!!right.finish) || right.startedAt - left.startedAt || left.branchId.localeCompare(right.branchId) || left.taskId.localeCompare(right.taskId))
     const branches: Record<string, BranchView> = {}
     for (const [id, branch] of channel.branches) {
       const state = stateOf(channel, id)
@@ -526,5 +534,5 @@ export const useChatStore = defineStore("chat", () => {
 
 
   const { submit, stop, createLine, endLine, respond, allowAlways, allowForSession, answerQuestion, setPlanning, reviewPlan, compact, usage, fork, writeGoal, setEffort, setPermission, withdrawInput, searchFiles, turnChanges, rewindTurn, memberApproval, setModel } = calls
-  return { views, open, resync, receive, ensureLine, retryLine, submit, stop, createLine, endLine, respond, allowAlways, allowForSession, answerQuestion, setPlanning, reviewPlan, compact, usage, fork, writeGoal, setEffort, setPermission, withdrawInput, searchFiles, turnChanges, rewindTurn, memberApproval, setModel }
+  return { views, open, resync, receive, ensureLine, retryLine, submit, stop, createLine, endLine, respond, allowAlways, allowForSession, answerQuestion, setPlanning, reviewPlan, compact, usage, fork, writeGoal, setEffort, setPermission, withdrawInput, searchFiles, turnChanges, rewindTurn, memberApproval, setModel, taskOutput: calls.taskOutput, stopTask: calls.stopTask }
 })

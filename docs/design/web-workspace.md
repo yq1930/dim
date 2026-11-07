@@ -200,6 +200,40 @@ A line is a Timeline of the same Session ([Timeline branches](timeline-branches.
 
 **Not in this phase:** session fork, a drawn DAG, compare/adopt, per-line model selection and questions (`ask_user`). Each needs its own client design.
 
+### Background commands
+
+The Session header and `/tasks` open background command management. The existing
+per-line history queue discovers every branch and folds `exec/started` and
+`exec/ended` into the same Session projection. Identity is `(branchId, taskId)`;
+the command label comes from its originating tool call, with the recorded
+description as fallback. Running commands appear first, followed by completed
+commands. A failed branch-history read leaves the list explicitly incomplete
+and offers retry; reconnect and replay do not duplicate tasks.
+
+Selecting a running command reads `session.exec.output` using its Session,
+branch and task IDs. While the dialog is visible and connected, it refreshes
+one second after the preceding read settles, with at most one output request
+outstanding. Selection changes and close/unmount invalidate replies and timers.
+The preview follows the [background output contract](background-task-output.md):
+plain text, the last 2,000 lines within 50 KiB. An empty preview, unavailable
+capture, disconnected client and failed read are distinct states. A failed read
+keeps the last preview and offers manual retry; it never invents a terminal
+task state. Only `exec/ended` supplies the final status and result.
+
+Stopping a command requires confirmation and calls the existing
+`session.exec.stop` with the captured target. The action is disabled while
+disconnected or pending. Closing the dialog only stops output polling. Member
+agents and workflows keep their existing controls; this panel lists background
+commands, separately from the model's to-do checklist.
+
+```text
+Session header: [Changes] [Lines] [Background tasks 2]
+Background tasks
+  build / main          Running  | Live output
+  tests / test line     Running  | ...
+  previous build        Stopped  | [Refresh] [Stop command]
+```
+
 ### 4.2 Model discovery and slash commands
 
 Model discovery uses `account.providers`. Its

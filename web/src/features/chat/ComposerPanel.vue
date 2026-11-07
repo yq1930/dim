@@ -32,6 +32,7 @@ type SessionCommands = {
   status?: () => void
   copy?: () => Promise<void>
   diff?: () => void
+  tasks?: () => void
 }
 
 /**
@@ -132,6 +133,7 @@ const { matches, commandMode, open: menuOpen, active: activeIndex, move: moveCom
     { category: "session", name: "goal", available: props.sessionCommands?.goal !== undefined },
     { category: "session", name: "review", available: props.sessionCommands?.review !== undefined },
     { category: "session", name: "diff", available: props.sessionCommands?.diff !== undefined },
+    { category: "session", name: "tasks", available: props.sessionCommands?.tasks !== undefined },
     { category: "session", name: "status", available: props.sessionCommands?.status !== undefined },
     { category: "session", name: "copy", available: props.sessionCommands?.copy !== undefined },
     { category: "model", name: "effort", available: props.sessionCommands?.effort !== undefined },
@@ -322,7 +324,7 @@ async function runCommand(name: string): Promise<void> {
   } else if (name === "permissions") modeMenu.value?.open()
   else if (name === "copy") await copying
   else if (name === "compact" || name === "usage" || name === "fork") await props.sessionCommands?.[name]?.()
-  else if (name === "status" || name === "diff") props.sessionCommands?.[name]?.()
+  else if (name === "status" || name === "diff" || name === "tasks") props.sessionCommands?.[name]?.()
 }
 
 function onKeydown(event: KeyboardEvent): void {

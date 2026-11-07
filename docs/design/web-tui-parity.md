@@ -18,7 +18,7 @@ The TUI registers 36 commands and several interaction flows that the web workspa
 | P2 | Reasoning effort in chat | `/effort` | Only in provider preferences | `session.model.update` (`modelPreferences`), `provider.catalog` | Implemented: command menu, main Session composer |
 | P2 | Steer the run and withdraw queued input | `/steer`, Ctrl+S | Queued messages not shown; only Stop | `session.input.withdraw` | Implemented: queued strip above the main composer (Steer for the oldest, Remove for any) |
 | — | Fast: service tier | `/fast` | Not offered | — | Dropped: no model advertises a service tier yet |
-| P3 | Background task output and stop | `/tasks` | Not offered | `session.exec.output`, `session.exec.stop` | Planned |
+| P3 | Background command output and stop | `/tasks` | Session header and `/tasks` dialog | `session.exec.output`, `session.exec.stop` | Implemented: all-line history, live tail, confirmed command stop and recorded terminal results |
 | P3 | Workflow status and stop | Workflow view | Not offered | `workflow.status`, `workflow.stop` | Planned |
 | P3 | Session agent switch | `/agent` | Default agent in Settings only | `agent.list`, `session.agent.update` | Planned |
 | P3 | Session permission controls | `/permissions` | Permission preset picker, with process isolation linked to its existing settings; see [Web workspace §4](web-workspace.md#4-frontend) | `session.permission.get`, `session.permission.update`, `permission/changed` | Implemented |
@@ -49,7 +49,7 @@ The web prompt saves only the exact rule. The TUI also accepts a prefix rule typ
 
 ## 3. Decisions still open
 
-All P2 items are implemented or dropped (`/fast`). The P3 items remain planned; see §1.
+All P2 items are implemented or dropped (`/fast`). Remaining P3 items are listed in §1.
 
 ## 4. Protocol checks
 
@@ -70,7 +70,7 @@ All P2 items are implemented or dropped (`/fast`). The P3 items remain planned; 
 
 ## 7. Remaining
 
-- P3, not started: background task output and stop (`/tasks`), workflow status and stop, session agent switch (`/agent`), session MCP state (`/mcp`), and Hooks settings (needs a Settings allowlist change in `web-workspace.md` §4.3 first).
+- P3, not started: member-agent task controls, workflow status and stop, session agent switch (`/agent`), session MCP state (`/mcp`), and Hooks settings (needs a Settings allowlist change in `web-workspace.md` §4.3 first).
 - The sidebar offers renaming; a `/rename` shortcut is not implemented.
 - Known gaps inside the done items: images are sent without the TUI's scaling; `@` links are matched by their text, so a user who edits a mention's text loses the link; the queue strip covers the main line only, and Steer applies to the oldest message only.
 - The approval prompt's member panel still has English-only strings from before this plan ("Retry", "Subagent tool approval", "Loading member action...").

@@ -103,6 +103,13 @@ function branchCut(value: unknown, at: string): number | undefined {
 
 function content(type: string, name: string, data: Json, at: string): EventContent {
   switch (`${type}/${name}`) {
+    case "exec/started":
+      return { kind: "exec-started", taskId: str(data, "task_id", at), callId: str(data, "call_id", at), description: str(data, "description", at) }
+    case "exec/ended": {
+      const status = str(data, "status", at)
+      if (status !== "completed" && status !== "failed" && status !== "cancelled") fail(`${at}.status`, "an exec outcome")
+      return { kind: "exec-ended", taskId: str(data, "task_id", at), status, result: toolResult(data.result, `${at}.result`) }
+    }
     case "input/message": {
       const blocks = rawBlocks(data.blocks, `${at}.blocks`)
       if (data.user === undefined || data.user === null) {

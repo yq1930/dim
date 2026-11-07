@@ -3,7 +3,7 @@ import { RpcError } from "../rpc/client"
 import type { GoalCall } from "../goal"
 import { MAIN_BRANCH, type ApprovalDecision, type ApprovalRequest, type DraftAttachments, type FileCandidate, type ModelId, type PendingPlan, type PendingQuestion, type PermissionPolicy, type PermissionPreset, type QuestionAnswer, type RewindResult, type TurnChanges, type UserInput, type WithdrawResult } from "../rpc/protocol"
 import { readRevision, readRules } from "../rpc/general-settings"
-import { readAck, readAttachmentPath, readBranchCreate, readCompactResult, readConfigurationOutcome, readContextUsage, readFileCandidates, readForkedSessionId, readMemberApproval, readModelUpdate, readPermissionState, readPermissionVersion, readRewindResult, readSessionMethods, readTurnChanges, readWithdrawResult } from "../rpc/read"
+import { readAck, readAttachmentPath, readBranchCreate, readCompactResult, readConfigurationOutcome, readContextUsage, readExecOutput, readFileCandidates, readForkedSessionId, readMemberApproval, readModelUpdate, readPermissionState, readPermissionVersion, readRewindResult, readSessionMethods, readTurnChanges, readWithdrawResult } from "../rpc/read"
 import type { PermissionOutcome, SessionView } from "./chat"
 
 /** The part of the connection's client the calls use. */
@@ -49,6 +49,14 @@ export function sessionCalls(deps: {
 
   async function stop(sessionId: string, branchId: string): Promise<void> {
     await client().call("session.stop", { sessionId, branchId, reason: "Stopped from the web workspace" }, readAck)
+  }
+
+  function taskOutput(sessionId: string, branchId: string, taskId: string): Promise<string> {
+    return client().call("session.exec.output", { sessionId, branchId, taskId }, readExecOutput)
+  }
+
+  async function stopTask(sessionId: string, branchId: string, taskId: string): Promise<void> {
+    await client().call("session.exec.stop", { sessionId, branchId, taskId }, readAck)
   }
 
   async function createLine(sessionId: string, parentBranchId: string, at: number, prompt: string): Promise<string> {
@@ -220,5 +228,5 @@ export function sessionCalls(deps: {
     adoptModel(sessionId, result.model)
   }
 
-  return { submit, stop, createLine, endLine, memberApproval, respond, allowAlways, allowForSession, answerQuestion, setPlanning, reviewPlan, sessionMethods, compact, writeGoal, usage, fork, searchFiles, turnChanges, rewindTurn, withdrawInput, sessionPermission, setPermission, setEffort, setModel }
+  return { submit, stop, createLine, endLine, memberApproval, respond, allowAlways, allowForSession, answerQuestion, setPlanning, reviewPlan, sessionMethods, compact, writeGoal, usage, fork, searchFiles, turnChanges, rewindTurn, withdrawInput, sessionPermission, setPermission, setEffort, setModel, taskOutput, stopTask }
 }

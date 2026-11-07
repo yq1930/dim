@@ -87,6 +87,8 @@ export type ToolResult = {
   filesWritten?: string[]
 }
 
+export type ExecStatus = "completed" | "failed" | "cancelled"
+
 /** The Timeline facts the projection folds; every other kind is `other`. */
 export type RawBlock = { text: string; key?: string; retire: boolean }
 
@@ -145,6 +147,8 @@ export type EventContent =
   | { kind: "tool-result"; requestId: string; results: Array<{ callId: string; result: ToolResult }> }
   | { kind: "model-end"; requestId: string; error?: string }
   | { kind: "context-configured"; model: ModelId; reasoningEffort?: string }
+  | { kind: "exec-started"; taskId: string; callId: string; description: string }
+  | { kind: "exec-ended"; taskId: string; status: ExecStatus; result: ToolResult }
   | { kind: "other" }
 
 export type SessionEvent = {

@@ -2,7 +2,7 @@
 import { computed, ref, watch } from "vue"
 import { RouterLink } from "vue-router"
 import { useI18n } from "vue-i18n"
-import { FileDiff, GitBranch, Menu } from "lucide-vue-next"
+import { FileDiff, GitBranch, Menu, Terminal } from "lucide-vue-next"
 import BrandMark from "../../components/BrandMark.vue"
 import ConfirmDialog from "../../components/ConfirmDialog.vue"
 import ApprovalPrompt from "./ApprovalPrompt.vue"
@@ -13,6 +13,7 @@ import QuestionPrompt from "./QuestionPrompt.vue"
 import TimelineView from "./TimelineView.vue"
 import TodoPanel from "./TodoPanel.vue"
 import TurnChangesDialog from "./TurnChangesDialog.vue"
+import BackgroundTasksDialog from "./BackgroundTasksDialog.vue"
 import { useComposerDrafts } from "./composer-drafts"
 import { useSessionCommands } from "./session-commands"
 import { changedFileCount } from "./session-changes"
@@ -69,6 +70,9 @@ const permissionControl = computed(() => {
 const approvalKeyboard = computed(() => ui.approvalKeyboard(props.sessionId, MAIN_BRANCH, view.value?.approvals ?? []))
 const composer = ref<InstanceType<typeof ComposerPanel>>()
 const contextUsage = ref<ContextUsage>()
+const tasksDialog = ref<InstanceType<typeof BackgroundTasksDialog>>()
+const backgroundTasks = computed(() => view.value?.backgroundTasks ?? [])
+const activeTasks = computed(() => backgroundTasks.value.filter((task) => !task.finish).length)
 const lineCount = computed(() => view.value?.lines.filter((line) => line.id !== MAIN_BRANCH).length ?? 0)
 const linesBusy = computed(() => {
   const approvals = view.value?.approvals ?? []
@@ -77,13 +81,14 @@ const linesBusy = computed(() => {
 const branchable = computed(() => connection.supports("session.branch_end") && view.value?.status === "ready")
 const canNewLine = computed(() => connection.supports("session.branch_create") && view.value?.status === "ready")
 watch(() => view.value?.status, (status) => { if (status === "ready") void models.load() }, { immediate: true })
-const { commands: sessionCommands, failure } = useSessionCommands({
+const { commands, failure } = useSessionCommands({
   sessionId: () => props.sessionId,
   view,
   summary,
   contextUsage,
   confirm: (message, options) => forkConfirm.value?.open(message, options) ?? Promise.resolve(false),
 })
+const sessionCommands = computed(() => commands.value ? { ...commands.value, tasks: () => tasksDialog.value?.open() } : undefined)
 
 // Text a panel puts into this Session's composer (the review comments of the changes panel).
 watch(() => ui.composerInsert, (request) => {
@@ -177,6 +182,7 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
 
   <section v-else class="chat-page">
     <ConfirmDialog ref="forkConfirm" />
+    <BackgroundTasksDialog ref="tasksDialog" :session-id="sessionId" />
     <TurnChangesDialog
       v-if="fileChanges"
       ref="changesDialog"
@@ -221,6 +227,9 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
           <GitBranch aria-hidden="true" />
           <span>{{ t("lines.title") }}</span>
           <span v-if="lineCount > 0" class="ui-badge" data-size="sm" :data-tone="linesBusy ? 'warning' : undefined">{{ lineCount }}</span>
+        </button>
+        <button type="button" class="ui-button session-lines" data-variant="ghost" data-size="sm" :aria-label="t('tasks.title')" @click="tasksDialog?.open()">
+          <Terminal aria-hidden="true" /><span>{{ t("tasks.title") }}</span><span v-if="activeTasks" class="ui-badge" data-tone="primary">{{ activeTasks }}</span>
         </button>
         <span v-if="view.sessionRunning" class="ui-badge session-running" data-tone="primary"><span class="status-dot" data-state="running" aria-hidden="true" />{{ t(view.stopping ? "status.stopping" : "status.running") }}</span>
       </header>

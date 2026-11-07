@@ -26,6 +26,10 @@ export function readAck(value: unknown): void {
   obj(value, "reply")
 }
 
+export function readExecOutput(value: unknown): string {
+  return str(obj(value, "session.exec.output"), "text", "session.exec.output")
+}
+
 /** `session.methods` of one Session: the method names it serves. */
 export function readSessionMethods(value: unknown): string[] {
   const at = "session.methods"

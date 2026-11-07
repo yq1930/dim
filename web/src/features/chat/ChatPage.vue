@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue"
-import { RouterLink, useRouter } from "vue-router"
+import { RouterLink } from "vue-router"
 import { useI18n } from "vue-i18n"
 import { FileDiff, GitBranch, Menu } from "lucide-vue-next"
 import BrandMark from "../../components/BrandMark.vue"
@@ -14,12 +14,10 @@ import TimelineView from "./TimelineView.vue"
 import TodoPanel from "./TodoPanel.vue"
 import TurnChangesDialog from "./TurnChangesDialog.vue"
 import { useComposerDrafts } from "./composer-drafts"
+import { useSessionCommands } from "./session-commands"
 import { changedFileCount } from "./session-changes"
-import { formatTokens } from "./usage-format"
-import { copyText } from "../../clipboard"
 import { MAIN_BRANCH, type ContextUsage, type DraftAttachments, type ModelId, type PermissionPreset } from "../../rpc/protocol"
 import { readSkills } from "../../rpc/general-settings"
-import { goalCall, goalObjective, parseGoalRequest, type Goal, type GoalStatus } from "../../goal"
 import { useChatStore } from "../../stores/chat"
 import { useConnectionStore } from "../../stores/connection"
 import { useModelsStore } from "../../stores/models"
@@ -35,7 +33,6 @@ const connection = useConnectionStore()
 const sessions = useSessionsStore()
 const ui = useUiStore()
 const toast = useToastStore()
-const router = useRouter()
 const forkConfirm = ref<InstanceType<typeof ConfirmDialog>>()
 const drafts = useComposerDrafts()
 
@@ -71,6 +68,7 @@ const permissionControl = computed(() => {
 })
 const approvalKeyboard = computed(() => ui.approvalKeyboard(props.sessionId, MAIN_BRANCH, view.value?.approvals ?? []))
 const composer = ref<InstanceType<typeof ComposerPanel>>()
+const contextUsage = ref<ContextUsage>()
 const lineCount = computed(() => view.value?.lines.filter((line) => line.id !== MAIN_BRANCH).length ?? 0)
 const linesBusy = computed(() => {
   const approvals = view.value?.approvals ?? []
@@ -78,28 +76,13 @@ const linesBusy = computed(() => {
 })
 const branchable = computed(() => connection.supports("session.branch_end") && view.value?.status === "ready")
 const canNewLine = computed(() => connection.supports("session.branch_create") && view.value?.status === "ready")
-/** The reasoning effort values the main line's model accepts; undefined until the models are read or when it has none. */
-const effortChoices = computed(() => {
-  const model = view.value?.model
-  if (model === undefined) return undefined
-  const entry = models.providers?.find((provider) => provider.providerId === model.providerId)?.models.find((candidate) => candidate.id === model.modelId)
-  return entry?.reasoningEfforts
-})
 watch(() => view.value?.status, (status) => { if (status === "ready") void models.load() }, { immediate: true })
-const sessionCommands = computed(() => {
-  const session = view.value
-  if (session?.status !== "ready") return undefined
-  return {
-    compact: session.methods.includes("session.context.compact") ? compact : undefined,
-    usage: session.methods.includes("session.context.usage") ? usage : undefined,
-    fork: connection.supports("session.fork") && session.lastTurnEnd !== undefined ? fork : undefined,
-    goal: session.methods.includes("session.goal.set") ? goal : undefined,
-    effort: effortChoices.value !== undefined && effortChoices.value.length > 0 ? effort : undefined,
-    review,
-    status,
-    copy: copyLastReply,
-    diff: () => ui.openChanges(),
-  }
+const { commands: sessionCommands, failure } = useSessionCommands({
+  sessionId: () => props.sessionId,
+  view,
+  summary,
+  contextUsage,
+  confirm: (message, options) => forkConfirm.value?.open(message, options) ?? Promise.resolve(false),
 })
 
 // Text a panel puts into this Session's composer (the review comments of the changes panel).
@@ -119,7 +102,6 @@ const listSkills = computed(() => {
   if (cwd === undefined || !connection.supports("skills.catalog")) return undefined
   return async () => (await connection.client.call("skills.catalog", { cwd }, readSkills)).entries.filter((skill) => skill.enabled && skill.shadowedBy === undefined)
 })
-const contextUsage = ref<ContextUsage>()
 watch(() => props.sessionId, () => { contextUsage.value = undefined })
 watch(() => [props.sessionId, view.value?.status, view.value?.running] as const, async ([sessionId, status, running]) => {
   if (status !== "ready" || running || !view.value?.methods.includes("session.context.usage")) return
@@ -165,177 +147,10 @@ async function createBranch(prompt: string): Promise<void> {
   ui.openLine(props.sessionId, branchId)
 }
 
-function failure(cause: unknown): void {
-  toast.push({ tone: "danger", title: t("command.failed"), description: cause instanceof Error ? cause.message : String(cause) })
-}
-
-async function compact(): Promise<void> {
-  try {
-    const result = await chat.compact(props.sessionId)
-    if (result.status === "completed") {
-      toast.push({ tone: "success", title: t("command.compacted") })
-      contextUsage.value = await chat.usage(props.sessionId)
-    }
-    else toast.push({ tone: "info", title: t("command.compactSkipped"), description: result.reason })
-  } catch (cause) {
-    failure(cause)
-  }
-}
-
-/** `/usage`'s one line, as the TUI words it. */
-function usageLine(reading: ContextUsage): string {
-  const input = Math.round(reading.estimatedInputTokens)
-  const window = Math.round(reading.contextWindow)
-  return t("command.usage", {
-    input: input.toLocaleString(),
-    window: window.toLocaleString(),
-    percent: window > 0 ? Math.floor((input * 100) / window) : 0,
-    basis: reading.baselineSource === "provider_baseline" ? t("command.basisProvider") : t("command.basisEstimated"),
-    output: Math.round(reading.outputTokens).toLocaleString(),
-    threshold: Math.round(reading.thresholdTokens).toLocaleString(),
-  })
-}
-
-async function usage(): Promise<void> {
-  try {
-    toast.push({ tone: "info", title: t("command.usageTitle"), description: usageLine(await chat.usage(props.sessionId)) })
-  } catch (cause) {
-    failure(cause)
-  }
-}
-
-function statusWords(status: GoalStatus): string {
-  switch (status.kind) {
-    case "active": return t("goal.status.active")
-    case "paused": return t("goal.status.paused", { reason: status.reason.replaceAll("_", " ") })
-    case "completed": return t("goal.status.completed")
-    case "blocked": return t("goal.status.blocked")
-    case "none": return t("goal.status.none")
-  }
-}
-
-/** `/goal` with no words: the goal in force on main. */
-function showGoal(current: Goal | undefined): void {
-  if (current === undefined) {
-    toast.push({ tone: "info", title: t("goal.none") })
-    return
-  }
-  toast.push({
-    tone: "info",
-    title: `${t("goal.line", { status: statusWords(current.status) })}${current.evaluator ? ` · ${t("goal.evaluator")}` : ""}`,
-    description: current.objective,
-  })
-}
-
-async function goal(words: string): Promise<void> {
-  const request = parseGoalRequest(words)
-  if (request === undefined) {
-    toast.push({ tone: "info", title: t("goal.usage") })
-    return
-  }
-  const current = view.value?.goal
-  const call = goalCall(request, current)
-  if (call === undefined) {
-    showGoal(current)
-    return
-  }
-  try {
-    await chat.writeGoal(props.sessionId, call, goalObjective(request))
-    toast.push({ tone: "success", title: t("goal.sent", { action: t(`goal.action.${call}`) }) })
-  } catch (cause) {
-    failure(cause)
-  }
-}
-
-/** `/effort` with no words lists the choices; `/effort VALUE` sets the main line's reasoning effort. */
-async function effort(words: string): Promise<void> {
-  const choices = effortChoices.value
-  const value = words.trim()
-  if (choices === undefined) {
-    toast.push({ tone: "info", title: t("command.effortUnavailable") })
-    return
-  }
-  if (value === "") {
-    toast.push({ tone: "info", title: t("command.effortChoices", { choices: choices.join(", ") }) })
-    return
-  }
-  if (/\s/.test(value)) {
-    toast.push({ tone: "info", title: t("command.effortUsage") })
-    return
-  }
-  if (!choices.includes(value)) {
-    toast.push({ tone: "danger", title: t("command.effortUnknown") })
-    return
-  }
-  try {
-    const outcome = await chat.setEffort(props.sessionId, value)
-    toast.push({ tone: "success", title: t("command.effortSet", { outcome, value }) })
-  } catch (cause) {
-    failure(cause)
-  }
-}
-
 async function setPermission(preset: PermissionPreset): Promise<void> {
   try {
     const outcome = await chat.setPermission(props.sessionId, preset)
     if (outcome === "conflict") toast.push({ tone: "info", title: t("permission.conflict") })
-  } catch (cause) {
-    failure(cause)
-  }
-}
-
-/** `/review [focus]`: asks the main line to review the workspace's uncommitted changes, as Codex's /review does. */
-async function review(focus: string): Promise<void> {
-  const prompt = focus === "" ? t("review.prompt") : `${t("review.prompt")}\n\n${t("review.focus", { focus })}`
-  try {
-    await chat.submit(props.sessionId, MAIN_BRANCH, prompt)
-  } catch (cause) {
-    failure(cause)
-  }
-}
-
-/** `/status`: the main line's model, mode, context and workspace in one notice. */
-function status(): void {
-  const session = view.value
-  if (session === undefined) return
-  const model = session.model
-  const provider = models.providers?.find((candidate) => candidate.providerId === model?.providerId)
-  const modelName = provider?.models.find((candidate) => candidate.id === model?.modelId)?.name ?? model?.modelId
-  const mode = session.planning ? t("composer.mode.plan") : session.permission ? t(`composer.mode.${session.permission.preset}`) : undefined
-  const reading = contextUsage.value
-  const lines = [
-    t("status.model", { model: [provider?.name, modelName].filter(Boolean).join(" / ") || "—", effort: session.reasoningEffort ?? t("status.defaultEffort") }),
-    ...(mode === undefined ? [] : [t("status.mode", { mode })]),
-    ...(reading === undefined || reading.contextWindow <= 0 ? [] : [t("status.context", { input: formatTokens(reading.estimatedInputTokens), window: formatTokens(reading.contextWindow), percent: Math.floor((reading.estimatedInputTokens * 100) / reading.contextWindow) })]),
-    ...(summary.value ? [t("status.workspace", { cwd: summary.value.cwd })] : []),
-    t("status.session", { id: props.sessionId.slice(0, 8), version: connection.hello?.serverVersion ?? "" }),
-  ]
-  toast.push({ tone: "info", title: t("status.title"), description: lines.join("\n") })
-}
-
-/** `/copy`: the main line's last reply, as its Markdown. */
-async function copyLastReply(): Promise<void> {
-  const reply = [...(view.value?.rows ?? [])].reverse().find((row) => row.kind === "assistant" && row.text.trim() !== "")
-  if (reply?.kind !== "assistant") {
-    toast.push({ tone: "info", title: t("copy.none") })
-    return
-  }
-  try {
-    await copyText(reply.text)
-    toast.push({ tone: "success", title: t("copy.done") })
-  } catch (cause) {
-    failure(cause)
-  }
-}
-
-async function fork(): Promise<void> {
-  const at = view.value?.lastTurnEnd
-  if (at === undefined) return
-  if (!await forkConfirm.value?.open(t("fork.confirm"), { confirmLabel: t("fork.confirmLabel") })) return
-  try {
-    const forked = await chat.fork(props.sessionId, at)
-    void sessions.refresh()
-    await router.push({ name: "chat-session", params: { sessionId: forked } })
   } catch (cause) {
     failure(cause)
   }

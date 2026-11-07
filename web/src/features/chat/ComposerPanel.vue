@@ -1,17 +1,20 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from "vue"
+import { computed, nextTick, onMounted, ref, useId, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import { useI18n } from "vue-i18n"
 import { ArrowUp, FileSearch, FileText, Paperclip, Square, X } from "lucide-vue-next"
-import type { ContextUsage, DraftAttachments, FileCandidate, ImageBlock, ModelId, PermissionPreset, PermissionPolicy } from "../../rpc/protocol"
+import type { ContextUsage, DraftAttachments, FileCandidate, ModelId, PermissionPreset, PermissionPolicy } from "../../rpc/protocol"
 import { formatTokens } from "./usage-format"
-import { linkMentions, mentionTrigger, unlinkMentions, type FileMention, type MentionTrigger } from "../../mentions"
+import { linkMentions } from "../../mentions"
 import { useModelsStore } from "../../stores/models"
 import { useSessionsStore } from "../../stores/sessions"
 import ComposerModeMenu, { type WorkMode } from "./ComposerModeMenu.vue"
 import ComposerModelMenu from "./ComposerModelMenu.vue"
 import WorkspaceFileDialog from "./WorkspaceFileDialog.vue"
-import { createComposerDraft, useComposerDrafts, type ComposerDraft } from "./composer-drafts"
+import { FILE_ACCEPT, useComposerAttachments } from "./composer-attachments"
+import { createComposerDraft, useComposerDrafts } from "./composer-drafts"
+import { useHistoryRecall } from "./composer-history"
+import { useMentionPicker } from "./composer-mentions"
 import { quoteInto } from "./quote"
 
 /** The Session commands the menu lists, each only when given. Errors are reported by the callee. */
@@ -104,35 +107,16 @@ const workMode = computed<WorkMode | undefined>(() => props.planMode?.active ? "
 const cycleModes = computed<WorkMode[]>(() => workModes.value.filter((mode) => mode === "ask" || mode === "workspace-write" || mode === "plan"))
 /** Read out once a mode changes by keyboard. */
 const announcement = ref("")
-/** The `history` entry the draft holds while ↑/↓ walk it. */
-const recalled = ref<number>()
 const error = computed({ get: () => draft.value.error, set: (value) => { draft.value.error = value } })
 const composing = ref(false)
 const focused = ref(false)
 const dismissed = ref(false)
-/** The files inserted into the draft; each sends as a Markdown link to its path. */
-const fileMentions = computed({ get: () => draft.value.mentions, set: (value: FileMention[]) => { draft.value.mentions = value } })
-const mention = ref<MentionTrigger | undefined>()
-const mentionDismissed = ref<string | undefined>()
-const candidates = ref<FileCandidate[]>([])
-const candidateActive = ref(0)
-let searchSeq = 0
-let searchTimer: ReturnType<typeof setTimeout> | undefined
-const mentionKey = computed(() => mention.value === undefined ? undefined : `${mention.value.start}:${mention.value.query}`)
-const mentionOpen = computed(() => focused.value && props.searchFiles !== undefined && mention.value !== undefined && mentionKey.value !== mentionDismissed.value)
-const mentionShown = computed(() => mentionOpen.value && candidates.value.length > 0)
+const { images, pastes, files, empty: noAttachments, onPaste, onDrop, choose: chooseFiles, removeImage, removePaste, removeFile } = useComposerAttachments(draft, { enabled: () => props.attachments, storesPastes: () => props.storesPastes === true })
+const { candidates, active: candidateActive, open: mentionOpen, shown: mentionShown, update: updateMention, accept: acceptCandidate, insert: insertFile, move: moveCandidate, dismiss: dismissMention, reset: resetMention } = useMentionPicker({ field, draft, focused, search: () => props.searchFiles, resize })
+const { recall, forget: forgetRecall } = useHistoryRecall({ field, draft, history: () => props.history ?? [], resize })
 const mentionMenuId = useId()
 const activeIndex = ref(0)
-/** The limits of `crates/dim-cli/src/attachments.rs`: a paste longer than this is stored as a Session attachment. */
-const INLINE_PASTE = 16 * 1024
-const MAX_PASTE = 10 * 1024 * 1024
-const MAX_ATTACHMENTS = 20
-const images = computed({ get: () => draft.value.images, set: (value) => { draft.value.images = value } })
-const pastes = computed({ get: () => draft.value.pastes, set: (value) => { draft.value.pastes = value } })
-const files = computed({ get: () => draft.value.files, set: (value) => { draft.value.files = value } })
-const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"])
-const FILE_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,application/pdf,.pdf,text/*,application/json,application/javascript,application/xml,.ts,.tsx,.jsx,.vue,.rs,.go,.py,.php,.sql,.md,.yaml,.yml,.toml,.ini,.sh,.css,.scss,.jsonc,.log,.diff,.patch,.svg"
-watch(() => props.draftKey, () => { mention.value = undefined; candidates.value = []; recalled.value = undefined; fileDialog.value?.close(); void nextTick(resize) })
+watch(() => props.draftKey, () => { resetMention(); forgetRecall(); fileDialog.value?.close(); void nextTick(resize) })
 
 const availableCommands = computed(() => ([
   { category: "model", name: "models", available: props.modelSelectable && models.available && !changingModel.value },
@@ -180,174 +164,14 @@ watch(text, () => {
 }, { flush: "sync" })
 watch(matches, () => { activeIndex.value = 0 }, { flush: "sync" })
 
-const showStop = computed(() => props.running && props.stop !== undefined && text.value.trim() === "" && images.value.length === 0 && pastes.value.length === 0 && files.value.length === 0)
-const canSend = computed(() => (text.value.trim() !== "" || images.value.length > 0 || pastes.value.length > 0 || files.value.length > 0) && !sending.value && !draft.value.reading && !changingModel.value && !changingEffort.value && !changingMode.value)
+const showStop = computed(() => props.running && props.stop !== undefined && text.value.trim() === "" && noAttachments.value)
+const canSend = computed(() => (text.value.trim() !== "" || !noAttachments.value) && !sending.value && !draft.value.reading && !changingModel.value && !changingEffort.value && !changingMode.value)
 
 function resize(): void {
   const element = field.value
   if (!element) return
   element.style.height = "auto"
   element.style.height = `${Math.min(element.scrollHeight, 300)}px`
-}
-
-function readImage(file: File): Promise<{ url: string; block: ImageBlock }> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const url = String(reader.result)
-      resolve({ url, block: { type: "image", source: { type: "base64", mediaType: file.type, data: url.slice(url.indexOf(",") + 1) } } })
-    }
-    reader.onerror = () => reject(reader.error ?? new Error(t("composer.imageReadFailed")))
-    reader.readAsDataURL(file)
-  })
-}
-
-async function readPdf(file: File): Promise<string> {
-  const head = new TextDecoder("latin1").decode(await file.slice(0, 5).arrayBuffer())
-  if (head !== "%PDF-") throw new Error(t("composer.unsupportedFile", { name: file.name }))
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const url = String(reader.result)
-      resolve(url.slice(url.indexOf(",") + 1))
-    }
-    reader.onerror = () => reject(reader.error ?? new Error(t("composer.unsupportedFile", { name: file.name })))
-    reader.readAsDataURL(file)
-  })
-}
-
-function attachmentCount(target: ComposerDraft): number { return target.images.length + target.pastes.length + target.files.length }
-
-async function addFiles(selected: File[]): Promise<void> {
-  const target = draft.value
-  const textAllowed = props.storesPastes
-  target.reading++
-  target.error = ""
-  try {
-    for (const file of selected) {
-      if (attachmentCount(target) >= MAX_ATTACHMENTS) { target.error = t("composer.attachmentLimit"); break }
-      if (file.size > MAX_PASTE) { target.error = t("composer.fileTooLarge", { name: file.name }); continue }
-      try {
-        if (IMAGE_TYPES.has(file.type)) {
-          const image = await readImage(file)
-          if (target.images.reduce((size, item) => size + item.block.source.data.length, 0) + image.block.source.data.length > MAX_PASTE) { target.error = t("composer.imagesTooLarge"); continue }
-          if (attachmentCount(target) < MAX_ATTACHMENTS) target.images = [...target.images, { id: ++target.nextId, ...image }]
-        } else if (textAllowed && (file.type === "application/pdf" || /\.pdf$/i.test(file.name))) {
-          const pdfBase64 = await readPdf(file)
-          if (attachmentCount(target) < MAX_ATTACHMENTS) target.files = [...target.files, { id: ++target.nextId, name: file.name, text: "", pdfBase64 }]
-        } else {
-          if (!textAllowed || /\.(pdf|docx?|xlsx?|pptx?|zip|gz|7z|rar|exe|dmg|mp[34]|mov|wav|bin)$/i.test(file.name) || (file.type.startsWith("image/") && file.type !== "image/svg+xml")) throw new Error(t("composer.unsupportedFile", { name: file.name }))
-          const bytes = await file.arrayBuffer()
-          const value = new TextDecoder("utf-8", { fatal: true }).decode(bytes)
-          if (value.includes("\0")) throw new Error(t("composer.unsupportedFile", { name: file.name }))
-          if (new TextEncoder().encode(JSON.stringify(value)).length > 12 * 1024 * 1024) { target.error = t("composer.fileTooLarge", { name: file.name }); continue }
-          if (attachmentCount(target) < MAX_ATTACHMENTS) target.files = [...target.files, { id: ++target.nextId, name: file.name, text: value }]
-        }
-      } catch (cause) { target.error = cause instanceof TypeError ? t("composer.unsupportedFile", { name: file.name }) : cause instanceof Error ? cause.message : t("composer.imageReadFailed") }
-    }
-  } finally { target.reading-- }
-}
-
-function addPaste(value: string): void {
-  if (new TextEncoder().encode(value).length > MAX_PASTE) {
-    error.value = t("composer.pasteTooLarge")
-    return
-  }
-  if (new TextEncoder().encode(JSON.stringify(value)).length > 12 * 1024 * 1024) { error.value = t("composer.messageTooLarge"); return }
-  if (attachmentCount(draft.value) >= MAX_ATTACHMENTS) { error.value = t("composer.attachmentLimit"); return }
-  pastes.value = [...pastes.value, { id: ++draft.value.nextId, text: value }]
-}
-
-function onPaste(event: ClipboardEvent): void {
-  if (!props.attachments) return
-  const pictures = [...(event.clipboardData?.files ?? [])].filter((file) => file.type.startsWith("image/"))
-  if (pictures.length > 0) {
-    event.preventDefault()
-    void addFiles(pictures)
-    return
-  }
-  const value = event.clipboardData?.getData("text/plain") ?? ""
-  if (props.storesPastes && new TextEncoder().encode(value).length > INLINE_PASTE) {
-    event.preventDefault()
-    addPaste(value)
-  }
-}
-
-function onDrop(event: DragEvent): void {
-  event.preventDefault()
-  if (!props.attachments) return
-  void addFiles([...(event.dataTransfer?.files ?? [])])
-}
-
-function chooseFiles(event: Event): void {
-  const input = event.target as HTMLInputElement
-  void addFiles([...(input.files ?? [])])
-  input.value = ""
-}
-
-function removeImage(id: number): void {
-  images.value = images.value.filter((image) => image.id !== id)
-}
-
-function removePaste(id: number): void {
-  pastes.value = pastes.value.filter((paste) => paste.id !== id)
-}
-
-/** The `@` mention the caret is in, read from the field's own value (the field is the source of truth for the caret). */
-function updateMention(): void {
-  const element = field.value
-  mention.value = element === undefined || props.searchFiles === undefined ? undefined : mentionTrigger(element.value, element.selectionStart)
-}
-
-watch(() => mention.value?.query, (query) => {
-  const seq = ++searchSeq
-  clearTimeout(searchTimer)
-  candidateActive.value = 0
-  const search = props.searchFiles
-  if (query === undefined || search === undefined) {
-    candidates.value = []
-    return
-  }
-  const target = draft.value
-  searchTimer = setTimeout(() => {
-    search(query).then((found) => {
-      if (seq === searchSeq) candidates.value = found
-    }, (cause: unknown) => {
-      if (seq !== searchSeq) return
-      candidates.value = []
-      target.error = cause instanceof Error ? cause.message : String(cause)
-    })
-  }, 80)
-})
-
-/** Inserts the chosen file as `@path` (a space after it) or steps into a directory as `@dir/`, as the TUI picker does. */
-function acceptCandidate(candidate: FileCandidate): void {
-  const element = field.value
-  const trigger = mention.value
-  if (element === undefined || trigger === undefined) return
-  const cursor = element.selectionStart
-  const label = `@${candidate.relativePath}${candidate.dir ? "/" : ""}`
-  const separator = candidate.dir ? "" : " "
-  text.value = `${text.value.slice(0, trigger.start)}${label}${separator}${text.value.slice(cursor)}`
-  if (!candidate.dir) fileMentions.value = [...fileMentions.value, { label: `@${candidate.relativePath}`, path: candidate.absolutePath }]
-  const caret = trigger.start + label.length + separator.length
-  void nextTick(() => {
-    element.setSelectionRange(caret, caret)
-    resize()
-    updateMention()
-  })
-}
-
-function insertFile(candidate: FileCandidate): void {
-  const element = field.value
-  if (!element) return
-  const start = element.selectionStart
-  const end = element.selectionEnd
-  const label = `@${candidate.relativePath}`
-  const prefix = start > 0 && !/\s/.test(text.value[start - 1]!) ? " " : ""
-  text.value = `${text.value.slice(0, start)}${prefix}${label} ${text.value.slice(end)}`
-  fileMentions.value = [...fileMentions.value, { label, path: candidate.absolutePath }]
-  void nextTick(() => { element.focus(); element.setSelectionRange(start + prefix.length + label.length + 1, start + prefix.length + label.length + 1); resize() })
 }
 
 async function submit(): Promise<void> {
@@ -410,7 +234,7 @@ async function submit(): Promise<void> {
       target.files = target.files.filter((file) => !sentFiles.includes(file))
     }
     if (target.text === message) target.text = ""
-    recalled.value = undefined
+    forgetRecall()
     await nextTick()
     resize()
   } catch (cause) {
@@ -496,41 +320,6 @@ async function cycleMode(): Promise<void> {
   if (error.value === "") announcement.value = t("composer.mode.switched", { mode: t(`composer.mode.${next}`) })
 }
 
-/**
- * ↑ on the first line of an empty draft, or of one still holding a recalled
- * message, steps back through `history`; ↓ on its last line steps forward and
- * past the newest back to an empty draft. A draft the operator wrote is never
- * replaced.
- */
-function recall(step: -1 | 1): boolean {
-  const element = field.value
-  const history = props.history ?? []
-  if (element === undefined || history.length === 0) return false
-  const shown = recalled.value === undefined ? undefined : history[recalled.value]
-  const browsing = shown !== undefined && text.value === unlinkMentions(shown).text
-  if (!browsing && text.value !== "") return false
-  if (step < 0 && text.value.slice(0, element.selectionStart).includes("\n")) return false
-  if (step > 0 && (!browsing || text.value.slice(element.selectionEnd).includes("\n"))) return false
-  const next = (browsing ? recalled.value! : history.length) + step
-  if (next < 0) return true
-  if (next >= history.length) {
-    recalled.value = undefined
-    text.value = ""
-    fileMentions.value = []
-  } else {
-    const { text: plain, mentions } = unlinkMentions(history[next]!)
-    recalled.value = next
-    text.value = plain
-    fileMentions.value = mentions
-  }
-  void nextTick(() => {
-    const end = text.value.length
-    element.setSelectionRange(end, end)
-    resize()
-  })
-  return true
-}
-
 async function runMenuEntry(entry: MenuEntry): Promise<void> {
   if (entry.category !== "skill") return runCommand(entry.name)
   if (composing.value) return
@@ -572,7 +361,7 @@ function onKeydown(event: KeyboardEvent): void {
   if (mentionOpen.value && candidates.value.length > 0) {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault()
-      candidateActive.value = (candidateActive.value + (event.key === "ArrowDown" ? 1 : -1) + candidates.value.length) % candidates.value.length
+      moveCandidate(event.key === "ArrowDown" ? 1 : -1)
       return
     }
     if ((event.key === "Enter" && !event.shiftKey && !event.altKey) || event.key === "Tab") {
@@ -584,7 +373,7 @@ function onKeydown(event: KeyboardEvent): void {
   if (mentionOpen.value && event.key === "Escape") {
     event.preventDefault()
     event.stopPropagation()
-    mentionDismissed.value = mentionKey.value
+    dismissMention()
     return
   }
   if (event.key === "Escape" && text.value.startsWith("/") && !dismissed.value) {
@@ -624,7 +413,7 @@ function onKeydown(event: KeyboardEvent): void {
 async function insert(block: string): Promise<void> {
   const gap = text.value === "" || text.value.endsWith("\n\n") ? "" : text.value.endsWith("\n") ? "\n" : "\n\n"
   text.value = `${text.value}${gap}${block}`
-  recalled.value = undefined
+  forgetRecall()
   await nextTick()
   resize()
   const element = field.value
@@ -643,7 +432,6 @@ async function quote(message: string): Promise<void> {
 }
 
 onMounted(() => { resize(); field.value?.focus() })
-onBeforeUnmount(() => { ++searchSeq; clearTimeout(searchTimer) })
 defineExpose({ focus: () => field.value?.focus(), quote, insert })
 </script>
 
@@ -660,7 +448,7 @@ defineExpose({ focus: () => field.value?.focus(), quote, insert })
           <span>{{ t("composer.pastedText", { lines: paste.text.split("\n").length }) }}</span>
           <button type="button" class="ui-icon-button" data-variant="ghost" data-size="xs" :aria-label="t('composer.removeAttachment')" @click="removePaste(paste.id)"><X aria-hidden="true" /></button>
         </span>
-        <span v-for="file in files" :key="file.id" class="draft-chip" :title="file.name"><FileText :size="14" aria-hidden="true" /><span class="draft-file-name">{{ file.name }}</span><button type="button" class="ui-icon-button" data-variant="ghost" data-size="xs" :aria-label="t('composer.removeFile', { name: file.name })" @click="files = files.filter((item) => item.id !== file.id)"><X aria-hidden="true" /></button></span>
+        <span v-for="file in files" :key="file.id" class="draft-chip" :title="file.name"><FileText :size="14" aria-hidden="true" /><span class="draft-file-name">{{ file.name }}</span><button type="button" class="ui-icon-button" data-variant="ghost" data-size="xs" :aria-label="t('composer.removeFile', { name: file.name })" @click="removeFile(file.id)"><X aria-hidden="true" /></button></span>
       </div>
       <p v-if="draft.reading" role="status" class="attachment-status">{{ t("composer.readingFiles") }}</p>
       <div v-if="menuOpen" :id="menuId" class="command-menu ui-popover" role="listbox" :aria-label="t('composer.commands')">

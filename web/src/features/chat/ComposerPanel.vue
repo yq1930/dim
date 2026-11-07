@@ -12,6 +12,7 @@ import ComposerModeMenu, { type WorkMode } from "./ComposerModeMenu.vue"
 import ComposerModelMenu from "./ComposerModelMenu.vue"
 import WorkspaceFileDialog from "./WorkspaceFileDialog.vue"
 import { FILE_ACCEPT, useComposerAttachments } from "./composer-attachments"
+import { ARGUMENT_COMMANDS, commandWords, useCommandMenu, type MenuEntry } from "./composer-commands"
 import { createComposerDraft, useComposerDrafts } from "./composer-drafts"
 import { useHistoryRecall } from "./composer-history"
 import { useMentionPicker } from "./composer-mentions"
@@ -115,38 +116,31 @@ const { images, pastes, files, empty: noAttachments, onPaste, onDrop, choose: ch
 const { candidates, active: candidateActive, open: mentionOpen, shown: mentionShown, update: updateMention, accept: acceptCandidate, insert: insertFile, move: moveCandidate, dismiss: dismissMention, reset: resetMention } = useMentionPicker({ field, draft, focused, search: () => props.searchFiles, resize })
 const { recall, forget: forgetRecall } = useHistoryRecall({ field, draft, history: () => props.history ?? [], resize })
 const mentionMenuId = useId()
-const activeIndex = ref(0)
 watch(() => props.draftKey, () => { resetMention(); forgetRecall(); fileDialog.value?.close(); void nextTick(resize) })
 
-const availableCommands = computed(() => ([
-  { category: "model", name: "models", available: props.modelSelectable && models.available && !changingModel.value },
-  { category: "session", name: "branch", available: props.createBranch !== undefined },
-  { category: "session", name: "compact", available: props.sessionCommands?.compact !== undefined },
-  { category: "session", name: "usage", available: props.sessionCommands?.usage !== undefined },
-  { category: "session", name: "fork", available: props.sessionCommands?.fork !== undefined },
-  { category: "session", name: "goal", available: props.sessionCommands?.goal !== undefined },
-  { category: "session", name: "review", available: props.sessionCommands?.review !== undefined },
-  { category: "session", name: "diff", available: props.sessionCommands?.diff !== undefined },
-  { category: "session", name: "status", available: props.sessionCommands?.status !== undefined },
-  { category: "session", name: "copy", available: props.sessionCommands?.copy !== undefined },
-  { category: "model", name: "effort", available: props.sessionCommands?.effort !== undefined },
-  { category: "model", name: "permissions", available: props.permission !== undefined && props.variant !== "panel" },
-  { category: "session", name: "lines", available: props.openLines !== undefined },
-  { category: "session", name: "plan", available: props.planMode !== undefined },
-  { category: "session", name: "new", available: true },
-] as const).filter((command) => command.available))
-const commandPrefix = computed(() => /^\/[\w-]*$/.test(text.value) ? text.value.slice(1).toLowerCase() : undefined)
-const skills = ref<Array<{ name: string; description: string }>>([])
-watch(() => commandPrefix.value !== undefined, async (typing) => {
-  if (!typing || props.listSkills === undefined) return
-  try { skills.value = await props.listSkills() } catch { skills.value = [] }
-})
-type MenuEntry = { category: string; name: string; description?: string }
-const matches = computed<MenuEntry[]>(() => {
-  const prefix = commandPrefix.value
-  if (prefix === undefined) return []
-  const skillEntries = skills.value.map((skill) => ({ category: "skill", name: skill.name, description: skill.description }))
-  return [...availableCommands.value, ...skillEntries].filter((entry) => entry.name.toLowerCase().startsWith(prefix))
+const { matches, commandMode, open: menuOpen, active: activeIndex, move: moveCommand } = useCommandMenu({
+  text,
+  focused,
+  composing,
+  dismissed,
+  commands: () => [
+    { category: "model", name: "models", available: props.modelSelectable && models.available && !changingModel.value },
+    { category: "session", name: "branch", available: props.createBranch !== undefined },
+    { category: "session", name: "compact", available: props.sessionCommands?.compact !== undefined },
+    { category: "session", name: "usage", available: props.sessionCommands?.usage !== undefined },
+    { category: "session", name: "fork", available: props.sessionCommands?.fork !== undefined },
+    { category: "session", name: "goal", available: props.sessionCommands?.goal !== undefined },
+    { category: "session", name: "review", available: props.sessionCommands?.review !== undefined },
+    { category: "session", name: "diff", available: props.sessionCommands?.diff !== undefined },
+    { category: "session", name: "status", available: props.sessionCommands?.status !== undefined },
+    { category: "session", name: "copy", available: props.sessionCommands?.copy !== undefined },
+    { category: "model", name: "effort", available: props.sessionCommands?.effort !== undefined },
+    { category: "model", name: "permissions", available: props.permission !== undefined && props.variant !== "panel" },
+    { category: "session", name: "lines", available: props.openLines !== undefined },
+    { category: "session", name: "plan", available: props.planMode !== undefined },
+    { category: "session", name: "new", available: true },
+  ],
+  listSkills: () => props.listSkills,
 })
 const contextLabel = computed(() => {
   const reading = props.contextUsage
@@ -156,14 +150,6 @@ const contextNearLimit = computed(() => {
   const reading = props.contextUsage
   return reading !== undefined && reading.thresholdTokens > 0 && reading.estimatedInputTokens >= reading.thresholdTokens * 0.9
 })
-const commandMode = computed(() => !composing.value && !dismissed.value && matches.value.length > 0)
-const menuOpen = computed(() => focused.value && commandMode.value)
-
-watch(text, () => {
-  if (!text.value.startsWith("/")) dismissed.value = false
-}, { flush: "sync" })
-watch(matches, () => { activeIndex.value = 0 }, { flush: "sync" })
-
 const showStop = computed(() => props.running && props.stop !== undefined && text.value.trim() === "" && noAttachments.value)
 const canSend = computed(() => (text.value.trim() !== "" || !noAttachments.value) && !sending.value && !draft.value.reading && !changingModel.value && !changingEffort.value && !changingMode.value)
 
@@ -183,44 +169,27 @@ async function submit(): Promise<void> {
     return
   }
   const message = text.value
-  const branchCommand = !dismissed.value && /^\/branch(?:\s+([\s\S]*))?$/i.exec(message)
-  if (branchCommand && !branchCommand[1]?.trim()) {
+  const branchWords = dismissed.value ? undefined : commandWords(message, "branch")
+  if (branchWords === "") {
     await runCommand("branch")
     return
   }
-  const goal = props.sessionCommands?.goal
-  const goalCommand = !dismissed.value && goal !== undefined ? /^\/goal(?:\s+([\s\S]*))?$/i.exec(message) : null
-  if (goal && goalCommand) {
+  for (const name of ["goal", "review", "effort"] as const) {
+    const handler = props.sessionCommands?.[name]
+    const words = dismissed.value || handler === undefined ? undefined : commandWords(message, name)
+    if (handler === undefined || words === undefined) continue
     text.value = ""
     await nextTick()
     resize()
-    await goal(goalCommand[1]?.trim() ?? "")
-    return
-  }
-  const review = props.sessionCommands?.review
-  const reviewCommand = !dismissed.value && review !== undefined ? /^\/review(?:\s+([\s\S]*))?$/i.exec(message) : null
-  if (review && reviewCommand) {
-    text.value = ""
-    await nextTick()
-    resize()
-    await review(reviewCommand[1]?.trim() ?? "")
-    return
-  }
-  const effort = props.sessionCommands?.effort
-  const effortCommand = !dismissed.value && effort !== undefined ? /^\/effort(?:\s+([\s\S]*))?$/i.exec(message) : null
-  if (effort && effortCommand) {
-    text.value = ""
-    await nextTick()
-    resize()
-    await effort(effortCommand[1]?.trim() ?? "")
+    await handler(words)
     return
   }
   sending.value = true
   error.value = ""
   try {
-    if (branchCommand) {
+    if (branchWords !== undefined) {
       if (!props.createBranch) throw new Error(t("composer.branchUnavailable"))
-      await props.createBranch(branchCommand[1]!.trim())
+      await props.createBranch(branchWords)
     } else {
       const sentMentions = target.mentions
       const sentImages = target.images
@@ -335,7 +304,7 @@ async function runCommand(name: string): Promise<void> {
   error.value = ""
   // WebKit takes a clipboard write only within the key press or click that asked for it.
   const copying = name === "copy" ? props.sessionCommands?.copy?.() : undefined
-  const argument = name === "branch" || name === "goal" || name === "effort" || name === "review"
+  const argument = ARGUMENT_COMMANDS.includes(name)
   text.value = argument ? `/${name} ` : ""
   await nextTick()
   resize()
@@ -384,7 +353,7 @@ function onKeydown(event: KeyboardEvent): void {
   }
   if (menuOpen.value && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
     event.preventDefault()
-    activeIndex.value = (activeIndex.value + (event.key === "ArrowDown" ? 1 : -1) + matches.value.length) % matches.value.length
+    moveCommand(event.key === "ArrowDown" ? 1 : -1)
     return
   }
   const plain = !event.altKey && !event.ctrlKey && !event.metaKey

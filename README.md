@@ -112,7 +112,7 @@ The CLI also accepts redirected stdin for a single turn. Ctrl+C during a turn re
 
 ### Workspace
 
-For an Apple Silicon macOS desktop application, run `node scripts/build-macos-app.mjs` on macOS 14 or later. It builds `dist/macos/Lacus.app` (野塘漫水, shown as Lacus on an English system), which carries the local backend and opens the Web workspace in a native window. See the [desktop build and data-directory guide](desktop/README.md).
+For an Apple Silicon macOS desktop application, run `node scripts/build-macos-app.mjs` on macOS 14 or later. It builds `dist/macos/Lacus.app`, which carries the local backend and opens the Web workspace in a native window. See the [desktop build and data-directory guide](desktop/README.md).
 
 | Code | Responsibility |
 | --- | --- |

@@ -301,7 +301,7 @@ code { font-family: var(--font-mono); }
 /* Brand row: a 36px (--control-lg) row under the sidebar's 12px top inset; the collapse button is ghost sm. */
 .brand-row { display: flex; height: calc(var(--space-3) + var(--control-lg)); flex: none; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4) 0; }
 /* Desktop's SidebarHeader: a 16px mark, then the wordmark. */
-.brand-logo { width: 16px; height: 16px; flex: none; color: var(--primary); }
+.brand-logo { width: 20px; height: 20px; flex: none; }
 .brand-copy { min-width: 0; flex: 1; }
 .brand-row strong { font-size: var(--text-sm); font-weight: var(--weight-medium); letter-spacing: -.01em; }
 .primary-actions { display: grid; gap: 1px; padding: var(--space-3) var(--space-3) 0; }
@@ -393,7 +393,7 @@ code { font-family: var(--font-mono); }
 .auth-page { display: grid; width: min(680px, calc(100% - 40px)); min-height: 100dvh; margin: auto; align-content: center; justify-items: start; }
 .auth-signal { width: 28px; height: 3px; margin-bottom: var(--space-9); border-radius: var(--radius-pill); background: var(--muted); }
 .boot-page { position: fixed; inset: 0; display: grid; place-items: center; }
-.boot-mark { width: 56px; height: 56px; color: var(--primary); }
+.boot-mark { width: 56px; height: 56px; }
 .boot-issue { position: absolute; top: calc(50% + 52px); width: min(480px, calc(100% - 40px)); margin: 0; color: var(--muted-foreground); font-size: var(--text-sm); line-height: var(--leading-normal); text-align: center; }
 /* Auth/boot page action: a .ui-button (primary lg); only its spacing lives here. */
 .auth-page > .ui-button { margin-top: var(--space-6); }
@@ -739,7 +739,7 @@ button.event-row { width: 100%; border: 0; background: transparent; font: inheri
 
 .new-session-page { display: flex; min-height: 0; flex-direction: column; align-items: center; gap: var(--space-8); overflow-y: auto; padding: var(--space-8) clamp(var(--space-3), 5vw, var(--space-16)); }
 .new-session-hero { display: flex; margin-top: auto; flex-direction: column; align-items: center; gap: var(--space-4); }
-.new-session-mark { width: 56px; height: 56px; color: var(--primary); }
+.new-session-mark { width: 56px; height: 56px; }
 .new-session-page h1 { margin: 0; font-size: var(--text-title); font-weight: var(--weight-semibold); text-align: center; }
 /* Desktop NewThread: the controls row is a drawer tucked under the input, one continuous panel. */
 .new-session-page > .composer-panel { width: min(100%, 42rem); margin-bottom: auto; padding: 0; border-radius: var(--radius-2xl); background: transparent; box-shadow: var(--shadow-sm); }

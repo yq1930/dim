@@ -114,7 +114,7 @@ pub fn build(app: &AppHandle, desktop: &Arc<Desktop>, store: [u8; 16]) -> Result
     let navigation = app.clone();
     let popups = app.clone();
     let window = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
-        .title("野塘漫水")
+        .title("Lacus")
         .inner_size(state.width, state.height)
         .min_inner_size(MIN_SIZE.0, MIN_SIZE.1)
         .center()

@@ -3,7 +3,7 @@ name = "dim-desktop"
 version = "0.1.0-alpha.18"
 edition = "2024"
 license = "MIT"
-description = "Lacus (野塘漫水): the macOS desktop client for the local Dim Web workspace"
+description = "Lacus: the macOS desktop client for the local Dim Web workspace"
 
 [workspace]
 

@@ -1,3 +1,0 @@
-/* The app's name in the Dock, Finder and the menu bar for this language. */
-CFBundleDisplayName = "Lacus";
-CFBundleName = "Lacus";

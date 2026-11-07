@@ -266,8 +266,8 @@ impl Service {
     /// appear, and its silent answer would quit.
     fn report(self: &Arc<Self>, app: &AppHandle, failure: Failure) {
         let (title, message) = match failure {
-            Failure::Startup(message) => ("野塘漫水无法启动本地服务", message),
-            Failure::Stopped(message) => ("野塘漫水的本地服务已停止", message),
+            Failure::Startup(message) => ("Lacus 无法启动本地服务", message),
+            Failure::Stopped(message) => ("Lacus 的本地服务已停止", message),
         };
         let Some(main) = app.get_webview_window(window::MAIN) else {
             return app.exit(1);
@@ -281,7 +281,7 @@ impl Service {
             .parent(&main)
             .buttons(MessageDialogButtons::OkCancelCustom(
                 "重启本地服务".into(),
-                "退出野塘漫水".into(),
+                "退出 Lacus".into(),
             ))
             .show(move |restart| {
                 if restart {

@@ -1,4 +1,4 @@
-//! 野塘漫水 (Lacus) for macOS: a Tauri window over the local Web workspace that the
+//! Lacus for macOS: a Tauri window over the local Web workspace that the
 //! bundled `dimcode` serves.
 
 mod commands;

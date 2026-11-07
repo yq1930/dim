@@ -7,11 +7,8 @@
 	<key>CFBundleLocalizations</key>
 	<array>
 		<string>zh_CN</string>
-		<string>en</string>
 	</array>
 	<key>CFBundleDisplayName</key>
 	<string>Lacus</string>
-	<key>LSHasLocalizedDisplayName</key>
-	<true/>
 </dict>
 </plist>

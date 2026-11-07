@@ -63,7 +63,7 @@ run('node', ['scripts/stage-plugins.mjs', path.join(stage, 'plugins-payload')]);
 mkdirSync(path.join(stage, 'boot'));
 writeFileSync(path.join(stage, 'boot/index.html'), readFileSync(path.join(repo, 'web/index.html'), 'utf8')
   .replace(/\s*<script type="module" src="\/src\/main\.ts"><\/script>/, '')
-  .replace('aria-label="Loading"', 'aria-label="正在启动野塘漫水"'));
+  .replace('aria-label="Loading"', 'aria-label="正在启动 Lacus"'));
 run('npm', ['exec', '--', 'tauri', 'icon', path.join(desktop, 'icon.svg'), '--output', path.join(stage, 'icons')], desktop);
 
 mkdirSync(path.join(stage, 'licenses'));

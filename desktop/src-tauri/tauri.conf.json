@@ -18,7 +18,7 @@
     "active": true,
     "targets": ["app"],
     "category": "DeveloperTool",
-    "shortDescription": "Lacus (野塘漫水) local agent workspace",
+    "shortDescription": "Lacus local agent workspace",
     "icon": ["../../staging/macos-app/icons/icon.icns", "../../staging/macos-app/icons/icon.png"],
     "externalBin": ["../../staging/macos-app/dimcode"],
     "resources": {
@@ -30,11 +30,7 @@
     "macOS": {
       "minimumSystemVersion": "14.0",
       "signingIdentity": "-",
-      "hardenedRuntime": true,
-      "files": {
-        "Resources/zh_CN.lproj/InfoPlist.strings": "locales/zh_CN.lproj/InfoPlist.strings",
-        "Resources/en.lproj/InfoPlist.strings": "locales/en.lproj/InfoPlist.strings"
-      }
+      "hardenedRuntime": true
     }
   }
 }

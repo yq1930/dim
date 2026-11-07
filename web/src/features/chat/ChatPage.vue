@@ -11,6 +11,7 @@ import QueuedInputs from "./QueuedInputs.vue"
 import PlanReview from "./PlanReview.vue"
 import QuestionPrompt from "./QuestionPrompt.vue"
 import TimelineView from "./TimelineView.vue"
+import SessionOutline from "./SessionOutline.vue"
 import TodoPanel from "./TodoPanel.vue"
 import TurnChangesDialog from "./TurnChangesDialog.vue"
 import BackgroundTasksDialog from "./BackgroundTasksDialog.vue"
@@ -56,6 +57,8 @@ const storesPastes = computed(() => view.value?.methods.includes("attachment.put
 const searchFiles = computed(() => view.value?.methods.includes("session.files.search") ? (query: string) => chat.searchFiles(props.sessionId, query) : undefined)
 const fileChanges = computed(() => view.value?.methods.includes("session.files.changes") === true && view.value.methods.includes("session.files.rewind"))
 const changesDialog = ref<InstanceType<typeof TurnChangesDialog>>()
+const timeline = ref<InstanceType<typeof TimelineView>>()
+const outline = computed(() => timeline.value?.markers ?? [])
 const changedFiles = computed(() => changedFileCount(view.value?.rows ?? [], summary.value?.cwd))
 const changesShown = computed(() => ui.detailOpen && ui.detailView === "changes")
 /** The main line's messages, oldest first, for the composer's ↑ recall. */
@@ -88,6 +91,14 @@ const { commands, failure } = useSessionCommands({
   contextUsage,
   confirm: (message, options) => forkConfirm.value?.open(message, options) ?? Promise.resolve(false),
 })
+/** Asks the main line to commit the changes of the turn that just ended. */
+async function commit(): Promise<void> {
+  try {
+    await chat.submit(props.sessionId, MAIN_BRANCH, t("timeline.commitPrompt"))
+  } catch (cause) {
+    failure(cause)
+  }
+}
 const sessionCommands = computed(() => commands.value ? { ...commands.value, tasks: () => tasksDialog.value?.open() } : undefined)
 
 // Text a panel puts into this Session's composer (the review comments of the changes panel).
@@ -200,6 +211,7 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
           </template>
           <h1 data-route-heading tabindex="-1" :title="title">{{ title }}</h1>
         </div>
+        <SessionOutline v-if="outline.length > 1" :markers="outline" @jump="timeline?.jumpTo($event)" />
         <button
           v-if="changedFiles > 0 || changesShown"
           class="ui-button session-lines"
@@ -235,12 +247,16 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
       </header>
     </div>
     <TimelineView
+      ref="timeline"
       :rows="view.rows"
       :running="view.running"
       :quotable="!approval && questions.length === 0 && reviews.length === 0"
       :branchable="branchable && !approval && questions.length === 0 && reviews.length === 0"
       :file-changes="fileChanges"
+      :next-steps="commands?.review !== undefined"
       @changes="changesDialog?.open($event)"
+      @review="commands?.review('')"
+      @commit="commit"
       @branch="branch"
       @open-line="openLine"
       @quote="composer?.quote($event)"

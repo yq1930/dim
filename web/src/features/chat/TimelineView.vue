@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type ComponentPublicInstance } from "vue"
 import { useI18n } from "vue-i18n"
 import { useVirtualizer } from "@tanstack/vue-virtual"
-import { ChevronDown, FileDiff, GitBranch, LoaderCircle } from "lucide-vue-next"
+import { ChevronDown, CircleCheck, FileDiff, GitBranch, LoaderCircle } from "lucide-vue-next"
 import type { TimelineRow } from "../../projection"
 import ChatMarkdown from "./ChatMarkdown.vue"
 import TimelineUserMessage from "./TimelineUserMessage.vue"
@@ -16,6 +16,7 @@ import { formatElapsedSeconds } from "./timeline-time"
  * `branchable`: the shown line is open, so a user message can open a child line.
  * `variant`: the main column or the narrower line panel.
  * `fileChanges`: the Session lists and undoes a turn's file changes.
+ * `nextSteps`: the latest turn that changed files offers to review or commit them.
  */
 const props = defineProps<{
   rows: readonly TimelineRow[]
@@ -23,10 +24,11 @@ const props = defineProps<{
   quotable: boolean
   branchable?: boolean
   fileChanges?: boolean
+  nextSteps?: boolean
   empty?: string
   variant?: "main" | "panel"
 }>()
-const emit = defineEmits<{ quote: [text: string]; branch: [text: string, cut: number]; openLine: [branchId: string]; changes: [turnId: string] }>()
+const emit = defineEmits<{ quote: [text: string]; branch: [text: string, cut: number]; openLine: [branchId: string]; changes: [turnId: string]; review: []; commit: [] }>()
 const { t } = useI18n()
 const viewport = ref<HTMLElement>()
 const list = ref<HTMLElement>()
@@ -137,6 +139,9 @@ async function toEnd(): Promise<void> {
   if (element !== undefined) element.scrollTop = element.scrollHeight
 }
 
+/** The Session outline in the page header lists these markers and jumps with this. */
+defineExpose({ markers, jumpTo })
+
 function jumpToLatest(): void {
   following.value = true
   void toEnd()
@@ -201,12 +206,20 @@ onMounted(() => void toEnd())
             <p v-else-if="entry.row.kind === 'source-idle'" class="timeline-line-notice">{{ t("timeline.lineWaiting", { id: entry.row.branch, status: entry.row.status }) }}</p>
             <p v-else-if="entry.row.kind === 'source-ended'" class="timeline-line-notice">{{ t("timeline.lineEnded", { id: entry.row.branch }) }}</p>
             <div v-else-if="entry.row.kind === 'error'" class="notice-row error-row" role="alert"><span>{{ entry.row.text }}</span></div>
-            <template v-else-if="entry.row.kind === 'turn-files'">
-              <button v-if="fileChanges" type="button" class="timeline-work-group-toggle timeline-turn-files" @click="emit('changes', entry.row.turnId)">
+            <div v-else-if="entry.row.kind === 'turn-summary'" class="turn-summary">
+              <span v-if="entry.row.outcome === 'completed'" class="turn-summary-status">
+                <CircleCheck :size="14" aria-hidden="true" />
+                <span>{{ entry.row.durationMs === undefined ? t("timeline.turnDone") : t("timeline.turnDoneIn", { duration: formatElapsedSeconds(entry.row.durationMs) }) }}</span>
+              </span>
+              <button v-if="fileChanges && entry.row.files > 0" type="button" class="timeline-work-group-toggle timeline-turn-files" @click="emit('changes', entry.row.turnId)">
                 <FileDiff :size="14" aria-hidden="true" />
-                <span>{{ t("timeline.turnFiles", { count: entry.row.count }, entry.row.count) }}</span>
+                <span>{{ t("timeline.turnFiles", { count: entry.row.files }, entry.row.files) }}</span>
               </button>
-            </template>
+              <span v-if="nextSteps && !running && entry.row.files > 0 && item.index === display.length - 1" class="turn-next-steps">
+                <button type="button" class="ui-button" data-variant="secondary" data-size="sm" @click="emit('review')">{{ t("timeline.reviewChanges") }}</button>
+                <button type="button" class="ui-button" data-variant="secondary" data-size="sm" @click="emit('commit')">{{ t("timeline.commitChanges") }}</button>
+              </span>
+            </div>
             <p v-else-if="entry.row.kind === 'files-rewound'" class="timeline-notice">{{ t("timeline.filesRewound", { count: entry.row.count }, entry.row.count) }}</p>
             <p v-else class="timeline-notice">{{ t("timeline.noticeStopped") }}</p>
           </template>
@@ -247,6 +260,9 @@ onMounted(() => void toEnd())
 .timeline-marker-prompt { display: -webkit-box; overflow: hidden; -webkit-line-clamp: 3; -webkit-box-orient: vertical; color: var(--foreground); }
 .timeline-marker-reply { display: -webkit-box; overflow: hidden; -webkit-line-clamp: 2; -webkit-box-orient: vertical; color: var(--muted-foreground); }
 .timeline-turn-files { width: auto; }
+.turn-summary { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); color: var(--muted-foreground); font-size: var(--text-sm); }
+.turn-summary-status { display: inline-flex; align-items: center; gap: var(--space-1); }
+.turn-next-steps { display: inline-flex; flex-wrap: wrap; gap: var(--space-2); }
 .virtual-timeline-row.is-jump-target :deep(.user-bubble) { box-shadow: var(--focus-ring); transition: box-shadow var(--duration-popover) var(--ease-out); }
 
 .jump-latest-enter-from { opacity: 0; transform: translateY(4px); }

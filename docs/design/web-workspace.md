@@ -146,6 +146,8 @@ The frontend directory is fixed when the daemon starts (§2.4); a daemon started
 
 `web/` is a Vue 3 + Vite + Pinia + vue-router project built with npm (Node from `.node-version`). It is ported from `packages/cli-web` in the TypeScript repository; components, styles and i18n move with minimal change, while the transport and data model are rewritten. `main.ts` creates the Pinia store before mounting the shell, so `stores/ui.ts` applies the color scheme before the first paint; creating it later flashes the wrong theme on load.
 
+The source follows the window's regions, as Claude Code's does: `app/` holds the shell and what spans it (the shortcut table, keep-awake, auto-archive); `features/sidebar/`; `features/session/` with its `header/`, `transcript/` and `composer/`; `features/panes/` with the right panel and a folder per view; `features/settings/` and `features/schedules/`. `components/` holds what several regions share.
+
 | Layer | Phase 1 |
 | --- | --- |
 | `rpc/client.ts` | JSON-RPC over `/ws`: `hello` v3 (`clientKind: "web"`), request timeout, heartbeat with `daemon.ping`, reconnect with backoff and re-attach. Strict readers at this boundary; the rest of the app uses typed data |

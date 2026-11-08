@@ -12,7 +12,7 @@ const rules=[
   [/^docs\//,[]],
   [/^deny\.toml$|^LICENSE$/,['dependencies']],
   [/^[^/]+\.md$/,[]],
-  [/^web\/src\/features\/chat\/quote-cases\.json$/,['web','rust','windows']],
+  [/^web\/src\/features\/session\/composer\/quote-cases\.json$/,['web','rust','windows']],
   [/^web\//,['web']],
   [/^scripts\/run-rust-test\.mjs$/,groups],
   [/^scripts\//,['scripts','web']],

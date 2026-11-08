@@ -6,7 +6,7 @@ import { readSavedSessions, type SavedSessions } from "../../rpc/general-setting
 import type { SessionSummary } from "../../rpc/protocol"
 import { useConnectionStore } from "../../stores/connection"
 import { useSessionsStore } from "../../stores/sessions"
-import { useComposerDrafts } from "../chat/composer-drafts"
+import { useComposerDrafts } from "../session/composer/composer-drafts"
 import GeneralSettingsStatus from "./GeneralSettingsStatus.vue"
 import { messageFrom, reloadSettingsOnReconnect } from "./context"
 

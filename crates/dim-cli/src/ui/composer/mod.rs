@@ -176,7 +176,7 @@ impl Composer {
     /// Appends `text` to the draft as a Markdown quote and a blank line,
     /// keeping what is already there; the cursor goes to the end. The
     /// format is the one the Web composer writes (member-conversation
-    /// design, cases in `web/src/features/chat/quote-cases.json`). A
+    /// design, cases in `web/src/features/session/composer/quote-cases.json`). A
     /// shell draft takes no quote: it would run as part of the command.
     /// Returns whether the draft changed.
     pub fn quote(&mut self, text: &str) -> bool {
@@ -1321,7 +1321,7 @@ mod tests {
     #[test]
     fn a_quoted_message_joins_the_draft_and_submits_with_it() {
         let cases: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-            "../../../../../web/src/features/chat/quote-cases.json"
+            "../../../../../web/src/features/session/composer/quote-cases.json"
         ))
         .unwrap();
         for case in cases {

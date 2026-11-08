@@ -5,7 +5,7 @@ import { useI18n } from "vue-i18n"
 import { RefreshCw, X } from "lucide-vue-next"
 import { readScheduleRuns, type ScheduleJob, type ScheduleRun } from "../../rpc/schedule"
 import { useConnectionStore } from "../../stores/connection"
-import { formatElapsedSeconds } from "../chat/timeline-time"
+import { formatElapsedSeconds } from "../session/transcript/timeline-time"
 import { formatWhen } from "./schedule-form"
 import { RUN_TONE, runDetail } from "./run-state"
 

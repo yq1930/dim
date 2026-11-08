@@ -16,7 +16,7 @@ registerHooks({
 })
 
 const { Lines } = await import("./lines.ts")
-const { approvalKeyDecision, approvalKeyboardBranch } = await import("./features/lines/line-state.ts")
+const { approvalKeyDecision, approvalKeyboardBranch } = await import("./features/panes/lines/line-state.ts")
 
 function event(sequence, content) {
   return { id: `e${sequence}`, sequence, createAt: 1_000 + sequence, content }

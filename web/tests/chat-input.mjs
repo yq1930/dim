@@ -12,7 +12,7 @@ globalThis.ShadowRoot = class {}
 const components = /\/(ChatPage|LineConversation|ComposerPanel|ComposerModeMenu|ConfirmDialog|QuestionPrompt)\.vue$/
 registerHooks({
   resolve(specifier, context, next) {
-    if (specifier.startsWith("../../stores/") || (context.parentURL?.endsWith("/stores/chat.ts") && ["./connection", "./sessions", "./ui"].includes(specifier))) {
+    if (/^(?:\.\.\/)+stores\//.test(specifier) || (context.parentURL?.endsWith("/stores/chat.ts") && ["./connection", "./sessions", "./ui"].includes(specifier))) {
       const store = specifier.split("/").at(-1)
       const name = `use${store[0].toUpperCase()}${store.slice(1)}Store`
       const source = `export const ${name}=()=>globalThis.chatInputStores.${store}; export const workspaceName=x=>x`
@@ -35,9 +35,9 @@ registerHooks({
   },
 })
 
-const { default: ChatPage } = await import("../src/features/chat/ChatPage.vue")
-const { default: LineConversation } = await import("../src/features/lines/LineConversation.vue")
-const { default: ComposerPanel } = await import("../src/features/chat/ComposerPanel.vue")
+const { default: ChatPage } = await import("../src/features/session/ChatPage.vue")
+const { default: LineConversation } = await import("../src/features/panes/lines/LineConversation.vue")
+const { default: ComposerPanel } = await import("../src/features/session/composer/ComposerPanel.vue")
 const { useChatStore } = await import("../src/stores/chat.ts")
 const { readNotification } = await import("../src/rpc/read.ts")
 const { RpcError } = await import("../src/rpc/client.ts")

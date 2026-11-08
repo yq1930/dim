@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router"
-import ChatPage from "./features/chat/ChatPage.vue"
-import NewSessionPage from "./features/chat/NewSessionPage.vue"
+import ChatPage from "./features/session/ChatPage.vue"
+import NewSessionPage from "./features/session/NewSessionPage.vue"
 import RootRedirect from "./views/RootRedirect.vue"
 import NotFoundView from "./views/NotFoundView.vue"
 import { useUiStore } from "./stores/ui"

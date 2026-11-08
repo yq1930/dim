@@ -31,7 +31,7 @@ test('dependency policy changes select the scan without compiling the workspace'
 
 test('source areas select their groups',()=>{
   assert.deepEqual(classify(['web/src/main.ts']),only('web'));
-  assert.deepEqual(classify(['web/src/features/chat/quote-cases.json']),only('web','rust','windows'));
+  assert.deepEqual(classify(['web/src/features/session/composer/quote-cases.json']),only('web','rust','windows'));
   assert.deepEqual(classify(['scripts/stage-web.mjs']),only('scripts','web'));
   assert.deepEqual(classify(['crates/dim-app-server/src/lib.rs','runtime/fixtures/session-part.json']),only('rust','node'));
   assert.deepEqual(classify(['crates/dim-cli/src/main.rs']),only('rust','windows'));

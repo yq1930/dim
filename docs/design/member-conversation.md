@@ -441,7 +441,7 @@ copied into the composer by either action. `q` does nothing in a shell draft
 
 The Web workspace offers the same quote as an action on a user message, shown
 while its composer is. Both clients write one format, pinned by the cases in
-`web/src/features/chat/quote-cases.json`, and submit the draft as it stands:
+`web/src/features/session/composer/quote-cases.json`, and submit the draft as it stands:
 
 - CRLF becomes LF and one trailing newline is dropped; a message that is then
   empty leaves the draft unchanged.

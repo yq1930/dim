@@ -8,7 +8,7 @@ import { createRenderer, nextTick } from "vue"
 registerHooks({
   resolve(specifier, context, next) {
     if (context.parentURL?.endsWith("ApprovalPrompt.vue")) {
-      if (specifier === "../../stores/chat") return { url: "data:text/javascript,export function useChatStore(){return globalThis.memberApprovalChat}", shortCircuit: true }
+      if (specifier === "../../../stores/chat") return { url: "data:text/javascript,export function useChatStore(){return globalThis.memberApprovalChat}", shortCircuit: true }
       if (specifier === "vue-i18n") return { url: "data:text/javascript,export function useI18n(){return {t:(key)=>key}}", shortCircuit: true }
     }
     try { return next(specifier, context) } catch (error) {
@@ -25,7 +25,7 @@ registerHooks({
   },
 })
 
-const { default: ApprovalPrompt } = await import("../src/features/chat/ApprovalPrompt.vue")
+const { default: ApprovalPrompt } = await import("../src/features/session/composer/ApprovalPrompt.vue")
 const { RpcError } = await import("../src/rpc/client.ts")
 const node = (type, text = "") => ({ type, text, children: [], props: {}, parent: undefined })
 const renderer = createRenderer({

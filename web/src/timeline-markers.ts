@@ -4,7 +4,7 @@
  * user-message rail (`timeline-user-message-rail.ts`); the rail appears from
  * three user messages on, as it does there.
  */
-import type { DisplayRow } from "./features/chat/work"
+import type { DisplayRow } from "./features/session/transcript/work"
 
 export const RAIL_MIN_MARKERS = 3
 const PREVIEW_CHARS = 180

@@ -1,6 +1,6 @@
 import { computed, ref, watch } from "vue"
 import { defineStore } from "pinia"
-import { approvalKeyboardBranch } from "../features/lines/line-state"
+import { approvalKeyboardBranch } from "../features/panes/lines/line-state"
 import { useAppearanceStore } from "./appearance"
 import { usePanesStore } from "./panes"
 

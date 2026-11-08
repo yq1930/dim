@@ -1,5 +1,5 @@
 import { computed, onBeforeUnmount, watch } from "vue"
-import { useSessionState } from "../components/session-state"
+import { useSessionState } from "../features/sidebar/session-state"
 import { canChooseWorkspace, keepAwake } from "../desktop"
 import { useConnectionStore } from "../stores/connection"
 import { usePreferencesStore } from "../stores/preferences"

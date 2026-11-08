@@ -52,8 +52,10 @@ shown explicitly, and output is rendered as text.
 | `src/rpc/protocol.ts`, `src/rpc/read.ts` | Protocol types and the strict readers that decode every reply and notification |
 | `src/projection.ts` | Folds history pages, `session.event` and `session.model.progress` into timeline rows (as `crates/dim-cli/src/projection.rs`) |
 | `src/lines.ts` | Folds branch facts into the Session's line tree, line states and cut message counts |
-| `src/stores/` | Connection, session directory, attached sessions and their per-line streams, models, layout and line tabs |
-| `src/features/chat/` | Chat page, new-session page, timeline, composer, model menu, approval prompt |
-| `src/features/lines/` | Right-side Lines panel, tree, line conversation, new-line and end-line dialogs |
-| `src/features/terminal/` | The detail panel's Terminal tab: xterm.js views of the App Server's terminals |
-| `src/features/git/` | The header's workspace and branch, and the detail panel's Git tab |
+| `src/stores/` | Connection, session directory, attached sessions and their per-line streams, models, layout, each Session's panes and browser preferences |
+| `src/app/` | The shell, the keyboard shortcut table and its dialog, keeping the computer awake and auto-archive |
+| `src/components/` | Controls shared across regions: dialogs, menus, toasts, tooltips, Markdown, diffs and the workspace file finder |
+| `src/features/sidebar/` | Workspaces and sessions, their states and actions |
+| `src/features/session/` | The session and new-session pages; `header/` (pane buttons, open in, transcript view, outline, branch), `transcript/` (the timeline) and `composer/` (the composer, its menus and the prompts that take its place) |
+| `src/features/panes/` | The right panel, one folder per view: changes, files, preview, plan, tasks, terminal (xterm.js views of the App Server's terminals), git and lines |
+| `src/features/settings/`, `src/features/schedules/` | Settings pages with their registry and search, and scheduled tasks |

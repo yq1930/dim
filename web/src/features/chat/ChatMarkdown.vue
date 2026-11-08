@@ -9,10 +9,12 @@ let renderer: Component | undefined
 
 <script setup lang="ts">
 import { copyText } from "../../clipboard"
+import { canChooseWorkspace, openWorkspacePath } from "../../desktop"
 import { loadMarkdownRenderer } from "./markdown-renderer"
-import { onBeforeUnmount, onMounted, ref, shallowRef } from "vue"
+import { inject, onBeforeUnmount, onMounted, ref, shallowRef } from "vue"
 import { useI18n } from "vue-i18n"
 import { useToastStore } from "../../stores/toast"
+import { LINK_BASE } from "./link-base"
 import { markdownLinkPath } from "./markdown-links"
 
 defineProps<{
@@ -23,6 +25,7 @@ defineProps<{
 
 const { t } = useI18n()
 const toast = useToastStore()
+const linkBase = inject(LINK_BASE, undefined)
 /** markstream sizes code from a number, not CSS: 13px on 20px lines, the 14px type scale's code size. */
 const codeBlockOptions = { fontSize: 13, lineHeight: 20 }
 const MarkdownRender = shallowRef(renderer)
@@ -44,12 +47,25 @@ onMounted(async () => {
 
 onBeforeUnmount(() => observer?.disconnect())
 
-/** A workspace path is not a page: copy it instead of letting the click leave the session. */
+/**
+ * A workspace path is not a page. The desktop app opens it (⌘-click shows it
+ * in Finder); a browser copies it instead of letting the click leave the session.
+ */
 async function onLinkClick(event: MouseEvent): Promise<void> {
   const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null
   const path = anchor === null ? undefined : markdownLinkPath(anchor.getAttribute("href") ?? "")
   if (path === undefined) return
   event.preventDefault()
+  const base = linkBase?.value
+  const absolute = path.startsWith("/") ? path : base === undefined ? undefined : `${base.replace(/\/+$/, "")}/${path}`
+  if (canChooseWorkspace && absolute !== undefined) {
+    try {
+      await openWorkspacePath(absolute, event.metaKey)
+    } catch (cause) {
+      toast.push({ tone: "danger", title: t("chat.openFailed"), description: cause instanceof Error ? cause.message : String(cause) })
+    }
+    return
+  }
   try {
     await copyText(path)
     toast.push({ tone: "success", title: t("chat.pathCopied"), description: path })

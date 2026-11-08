@@ -46,6 +46,7 @@ const en = {
   "chat.assistant": "Lacus",
   "chat.composer": "Message composer",
   "chat.copyFailed": "Clipboard access failed.",
+  "chat.openFailed": "Couldn't open the file",
   "chat.emptyTimeline": "Send a message to begin.",
   "chat.pathCopied": "Path copied",
   "chat.removedDescription": "This session is closed or no longer exists on the App Server.",

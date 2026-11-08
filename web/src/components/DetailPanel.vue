@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, ref, useId, type Component } from "vue"
+import { computed, defineAsyncComponent, nextTick, provide, ref, useId, type Component } from "vue"
 import { useI18n } from "vue-i18n"
 import { Activity, FileDiff, GitBranch, GitPullRequest, ListChecks, Maximize2, Minimize2, SquareTerminal, X } from "lucide-vue-next"
 import LinesPanel from "../features/lines/LinesPanel.vue"
@@ -8,6 +8,7 @@ import SessionChangesPanel from "../features/chat/SessionChangesPanel.vue"
 import TasksPanel from "../features/chat/TasksPanel.vue"
 import GitPanel from "../features/git/GitPanel.vue"
 import { changedFileCount } from "../features/chat/session-changes"
+import { LINK_BASE } from "../features/chat/link-base"
 import { MAIN_BRANCH } from "../rpc/protocol"
 import { useChatStore } from "../stores/chat"
 import { useConnectionStore } from "../stores/connection"
@@ -32,6 +33,7 @@ const git = useGitStore()
 const ui = useUiStore()
 const id = useId()
 const tablist = ref<HTMLElement>()
+provide(LINK_BASE, computed(() => sessions.byId.get(props.sessionId)?.cwd))
 
 const tabs = computed<Tab[]>(() => {
   const view = chat.views[props.sessionId]

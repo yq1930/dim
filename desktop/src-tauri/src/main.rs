@@ -42,7 +42,8 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             commands::choose_workspace,
-            commands::notify_attention
+            commands::notify_attention,
+            commands::open_workspace_path
         ])
         .on_menu_event(menu::handle)
         .setup(|app| {

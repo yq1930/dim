@@ -48,6 +48,7 @@ const zhCN: Messages = {
   "chat.assistant": "Lacus",
   "chat.composer": "消息输入框",
   "chat.copyFailed": "无法访问剪贴板。",
+  "chat.openFailed": "打不开这个文件",
   "chat.emptyTimeline": "发送消息以开始会话。",
   "chat.pathCopied": "已复制路径",
   "chat.removedDescription": "此会话已关闭，或在 App Server 上已不存在。",

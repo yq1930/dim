@@ -3,12 +3,34 @@
 
 use crate::{Desktop, window};
 use std::{
-    path::Path,
+    path::{Path, PathBuf},
     sync::{Arc, atomic::Ordering},
 };
 use tauri::{AppHandle, Manager, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_notification::NotificationExt;
+use tauri_plugin_opener::OpenerExt;
+
+/// Kinds macOS runs, installs or follows when opened; these are only shown in Finder.
+const RUNNABLE: [&str; 17] = [
+    "app",
+    "action",
+    "applescript",
+    "command",
+    "dmg",
+    "fileloc",
+    "inetloc",
+    "jar",
+    "mpkg",
+    "pkg",
+    "prefpane",
+    "saver",
+    "scpt",
+    "terminal",
+    "tool",
+    "webloc",
+    "workflow",
+];
 
 fn in_local_workspace(app: &AppHandle, window: &WebviewWindow) -> Result<bool, String> {
     let url = window.url().map_err(|error| error.to_string())?;
@@ -82,4 +104,60 @@ pub async fn choose_workspace(
                 .map_err(|_| "The folder path is not valid UTF-8".into())
         })
         .transpose()
+}
+
+/// Opens a path the workspace page links to with its default application,
+/// or shows it in Finder: when `reveal` is set, for a folder or package, for
+/// anything that could run, and when no application opens it. A `:line` or
+/// `:line:column` suffix that is not part of the name is dropped.
+#[tauri::command]
+pub fn open_workspace_path(
+    app: AppHandle,
+    window: WebviewWindow,
+    path: String,
+    reveal: bool,
+) -> Result<(), String> {
+    if !in_local_workspace(&app, &window)? {
+        return Err("Opening files is only available in the local workspace".into());
+    }
+    let target = existing(&path).ok_or_else(|| format!("{path} does not exist"))?;
+    let opener = app.opener();
+    if reveal || !openable(&target) {
+        return opener
+            .reveal_item_in_dir(&target)
+            .map_err(|error| error.to_string());
+    }
+    opener
+        .open_path(target.to_string_lossy(), None::<&str>)
+        .or_else(|_| opener.reveal_item_in_dir(&target))
+        .map_err(|error| error.to_string())
+}
+
+/// `path` when it exists, else `path` without a trailing `:line[:column]`.
+fn existing(path: &str) -> Option<PathBuf> {
+    let mut candidate = path;
+    for _ in 0..3 {
+        if Path::new(candidate).is_absolute() && Path::new(candidate).exists() {
+            return Some(PathBuf::from(candidate));
+        }
+        let (head, number) = candidate.rsplit_once(':')?;
+        if number.is_empty() || !number.bytes().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
+        candidate = head;
+    }
+    None
+}
+
+/// A regular file that is not executable and not of a kind that runs.
+fn openable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    let Ok(meta) = std::fs::metadata(path) else {
+        return false;
+    };
+    let runnable = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| RUNNABLE.contains(&extension.to_ascii_lowercase().as_str()));
+    meta.is_file() && meta.permissions().mode() & 0o111 == 0 && !runnable
 }

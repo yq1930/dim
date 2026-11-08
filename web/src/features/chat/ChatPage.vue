@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue"
+import { computed, provide, ref, watch } from "vue"
 import { RouterLink, useRoute, useRouter } from "vue-router"
 import { useI18n } from "vue-i18n"
 import { Activity, ArrowLeftRight, FileDiff, GitBranch, ListChecks, Menu, SquareTerminal, X } from "lucide-vue-next"
@@ -16,6 +16,7 @@ import SessionCrumb from "../git/SessionCrumb.vue"
 import TodoPanel from "./TodoPanel.vue"
 import TurnChangesDialog from "./TurnChangesDialog.vue"
 import { useComposerDrafts } from "./composer-drafts"
+import { LINK_BASE } from "./link-base"
 import { useSessionCommands } from "./session-commands"
 import { changedFileCount } from "./session-changes"
 import { MAIN_BRANCH, type ContextUsage, type DraftAttachments, type ModelId, type PermissionPreset } from "../../rpc/protocol"
@@ -45,6 +46,7 @@ watch(() => props.sessionId, (id) => chat.open(id), { immediate: true })
 
 const view = computed(() => chat.views[props.sessionId])
 const summary = computed(() => sessions.byId.get(props.sessionId))
+provide(LINK_BASE, computed(() => summary.value?.cwd))
 const title = computed(() => summary.value?.title ?? summary.value?.preview ?? t("sidebar.untitled"))
 watch(() => summary.value?.cwd, (cwd) => { if (cwd) sessions.rememberWorkspace(cwd) }, { immediate: true })
 const approval = computed(() => view.value?.approvals.find((request) => request.branchId === MAIN_BRANCH))

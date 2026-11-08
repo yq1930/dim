@@ -17,6 +17,15 @@ export async function chooseWorkspace(initialDirectory: string): Promise<string 
   return window.__TAURI__.core.invoke<string | null>("choose_workspace", { initialDirectory: initialDirectory || null })
 }
 
+/**
+ * Opens an absolute path with its default application, or shows it in Finder
+ * (`reveal`, and whatever the shell will not open).
+ */
+export async function openWorkspacePath(path: string, reveal: boolean): Promise<void> {
+  if (!window.__TAURI__) throw new Error("Opening files needs the desktop app")
+  await window.__TAURI__.core.invoke("open_workspace_path", { path, reveal })
+}
+
 /** Alerts the user through the system. The desktop shell drops it while its window is in front. */
 export function notifyDesktop(title: string, body: string): void {
   void window.__TAURI__?.core.invoke("notify_attention", { title, body }).catch(() => undefined)

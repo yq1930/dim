@@ -7,6 +7,7 @@ import type { TextMatch } from "../../../rpc/files"
 import type { FileCandidate } from "../../../rpc/protocol"
 import { useChatStore } from "../../../stores/chat"
 import { useFilesStore, type OpenFile } from "../../../stores/files"
+import { usePanesStore } from "../../../stores/panes"
 import { useSessionsStore } from "../../../stores/sessions"
 import { useToastStore } from "../../../stores/toast"
 import WorkspaceFileDialog from "../../../components/WorkspaceFileDialog.vue"
@@ -22,6 +23,7 @@ const props = defineProps<{ sessionId: string }>()
 const { t } = useI18n()
 const chat = useChatStore()
 const files = useFilesStore()
+const panes = usePanesStore()
 const sessions = useSessionsStore()
 const toast = useToastStore()
 const finder = ref<InstanceType<typeof WorkspaceFileDialog>>()
@@ -88,6 +90,13 @@ async function close(file: OpenFile): Promise<void> {
 }
 
 watch(() => props.sessionId, (sessionId) => { void files.restore(sessionId) }, { immediate: true })
+/** The file view's shortcuts: show or hide the file tree, or go to a file; one sent before the view showed runs once it is mounted. */
+function takeCommand(): void {
+  const command = panes.take(props.sessionId, "files")
+  if (command === "toggleFileList" && listable.value) toggleTree()
+  else if (command === "goToFile" && searchable.value) void finder.value?.open()
+}
+watch(() => panes.request, takeCommand)
 watch(() => current.value?.path, async (path) => {
   if (path === undefined) return
   void files.reload(props.sessionId, path)
@@ -103,6 +112,7 @@ watch(running, (now, before) => {
 onMounted(() => {
   observer = new ResizeObserver(([entry]) => { if (entry !== undefined) wide.value = entry.contentRect.width >= WIDE_PX })
   if (panel.value !== undefined) observer.observe(panel.value)
+  takeCommand()
 })
 onBeforeUnmount(() => observer?.disconnect())
 </script>

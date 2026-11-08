@@ -3,6 +3,7 @@ import { computed, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { Plus, SquareTerminal, X } from "lucide-vue-next"
 import { useConnectionStore } from "../../../stores/connection"
+import { usePanesStore } from "../../../stores/panes"
 import { useSessionsStore } from "../../../stores/sessions"
 import { useTerminalsStore } from "../../../stores/terminals"
 import TerminalView from "./TerminalView.vue"
@@ -13,6 +14,7 @@ const { t } = useI18n()
 const connection = useConnectionStore()
 const sessions = useSessionsStore()
 const terminals = useTerminalsStore()
+const panes = usePanesStore()
 const list = computed(() => terminals.bySession[props.sessionId] ?? [])
 const active = computed(() => terminals.active[props.sessionId])
 const cwd = computed(() => sessions.byId.get(props.sessionId)?.cwd)
@@ -38,6 +40,17 @@ async function openTerminal(): Promise<void> {
     opening.value = false
   }
 }
+
+/** The terminal shortcuts: a new terminal, or the next or previous tab. */
+watch(() => panes.request, () => {
+  const command = panes.take(props.sessionId, "terminal")
+  if (command === "newTerminal") void openTerminal()
+  else if (command === "nextTerminal" || command === "prevTerminal") {
+    const index = list.value.findIndex((terminal) => terminal.terminalId === active.value)
+    const next = list.value[(index + (command === "nextTerminal" ? 1 : -1) + list.value.length) % list.value.length]
+    if (next !== undefined) terminals.activate(props.sessionId, next.terminalId)
+  }
+}, { immediate: true })
 
 async function closeTerminal(terminalId: string): Promise<void> {
   error.value = ""

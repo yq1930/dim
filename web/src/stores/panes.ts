@@ -21,6 +21,10 @@ export type SessionPanes = {
   preview?: { url: string; serverId: string }
 }
 
+/** What the keyboard asks of a view itself: the terminal's tabs, the file view's list and finder. */
+export type PaneCommand = "newTerminal" | "nextTerminal" | "prevTerminal" | "toggleFileList" | "goToFile"
+type PaneRequest = { sessionId: string; view: DetailView; command: PaneCommand }
+
 const STORAGE_KEY = "dim-web.panes.v1"
 /** Sessions whose panes and transcript view are remembered; past this the least recently changed are forgotten. */
 const SESSIONS_MAX = 200
@@ -84,6 +88,8 @@ export const usePanesStore = defineStore("panes", () => {
   const activeLine = ref<Record<string, string | undefined>>({})
   /** Whether the operator last pressed or focused the right panel rather than a transcript. */
   const focused = ref(false)
+  /** A command for a view, waiting until the view shows to take it. */
+  const request = ref<PaneRequest>()
 
   watch([layouts, transcripts], () => {
     try {
@@ -114,6 +120,20 @@ export const usePanesStore = defineStore("panes", () => {
   function close(sessionId: string): void {
     update(sessionId, (panes) => ({ ...panes, open: false, expanded: false }))
     focused.value = false
+  }
+
+  /** Shows `view` and hands it `command`. */
+  function send(sessionId: string, view: DetailView, command: PaneCommand): void {
+    show(sessionId, view)
+    request.value = { sessionId, view, command }
+  }
+
+  /** The command waiting for `view` of the Session, taken so it runs once. */
+  function take(sessionId: string, view: DetailView): PaneCommand | undefined {
+    const pending = request.value
+    if (pending?.sessionId !== sessionId || pending.view !== view) return undefined
+    request.value = undefined
+    return pending.command
   }
 
   function toggleExpanded(sessionId: string): void {
@@ -188,8 +208,8 @@ export const usePanesStore = defineStore("panes", () => {
   }
 
   return {
-    layouts, transcripts, lineTabs, activeLine, focused,
-    of, show, toggle, close, toggleExpanded, openLines, toggleLines, openLine, closeLineTab, reset, setFiles, setPreview,
+    layouts, transcripts, lineTabs, activeLine, focused, request,
+    of, show, send, take, toggle, close, toggleExpanded, openLines, toggleLines, openLine, closeLineTab, reset, setFiles, setPreview,
     transcriptOf, setTranscript, cycleTranscript, makeTranscriptDefault,
   }
 })

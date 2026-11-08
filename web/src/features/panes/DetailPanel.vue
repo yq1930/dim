@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, provide, ref, useId, watch, type Component } from "vue"
+import { computed, defineAsyncComponent, provide, useId, type Component } from "vue"
 import { useI18n } from "vue-i18n"
-import { Activity, AppWindow, FileDiff, Files, GitBranch, GitPullRequest, ListChecks, Maximize2, Minimize2, SquareTerminal, X } from "lucide-vue-next"
+import { Activity, AppWindow, ChevronDown, FileDiff, Files, GitBranch, GitPullRequest, ListChecks, Maximize2, Minimize2, SquareTerminal, X } from "lucide-vue-next"
+import RowActionMenu from "../../components/RowActionMenu.vue"
 import LinesPanel from "./lines/LinesPanel.vue"
 import PlanPanel from "./plan/PlanPanel.vue"
 import SessionChangesPanel from "./changes/SessionChangesPanel.vue"
@@ -17,16 +18,20 @@ import { useGitStore } from "../../stores/git"
 import { useSessionsStore } from "../../stores/sessions"
 import { useTerminalsStore } from "../../stores/terminals"
 import { usePanesStore, type DetailView } from "../../stores/panes"
-import { withKeys } from "../../app/shortcuts"
+import { shortcutText, withKeys, type ShortcutCommand } from "../../app/shortcuts"
 
 /** xterm.js loads only once a terminal is shown, and the file view's highlighter once a file is. */
 const TerminalPanel = defineAsyncComponent(() => import("./terminal/TerminalPanel.vue"))
 const FilesPanel = defineAsyncComponent(() => import("./files/FilesPanel.vue"))
 const PreviewPanel = defineAsyncComponent(() => import("./preview/PreviewPanel.vue"))
 
-type Tab = { view: DetailView; icon: Component; label: string; badge?: string | number; tone?: "primary" | "warning" }
+type Tab = { view: DetailView; icon: Component; label: string; badge?: string | number; tone?: "primary" | "warning"; command?: ShortcutCommand }
 
-/** The right detail panel of the Session on screen: one tab per view of it. */
+/**
+ * The right panel of the Session on screen, as a Claude Code pane: a header naming the view shown,
+ * whose menu switches to another, with expand and close; the session header's buttons and the
+ * shortcuts switch views too.
+ */
 const props = defineProps<{ sessionId: string }>()
 const { t } = useI18n()
 const chat = useChatStore()
@@ -37,7 +42,6 @@ const terminals = useTerminalsStore()
 const git = useGitStore()
 const panes = usePanesStore()
 const id = useId()
-const tablist = ref<HTMLElement>()
 provide(LINK_CONTEXT, computed(() => {
   const cwd = sessions.byId.get(props.sessionId)?.cwd
   return cwd === undefined ? undefined : { sessionId: props.sessionId, base: cwd, filePane: true }
@@ -52,77 +56,40 @@ const tabs = computed<Tab[]>(() => {
   const lines = view?.lines.filter((line) => line.id !== MAIN_BRANCH) ?? []
   const linesBusy = lines.some((line) => line.state.kind === "working" || view?.approvals.some((request) => request.branchId === line.id))
   return [
-    { view: "changes", icon: FileDiff, label: t("sessionChanges.title"), ...(changed > 0 ? { badge: changed } : {}) },
-    ...(files.readable(props.sessionId) ? [{ view: "files" as const, icon: Files, label: t("files.title") }] : []),
-    { view: "preview", icon: AppWindow, label: t("preview.title") },
+    { view: "changes", icon: FileDiff, label: t("sessionChanges.title"), command: "toggleDiff", ...(changed > 0 ? { badge: changed } : {}) },
+    ...(files.readable(props.sessionId) ? [{ view: "files" as const, icon: Files, label: t("files.title"), command: "toggleFiles" as const }] : []),
+    { view: "preview", icon: AppWindow, label: t("preview.title"), command: "togglePreview" },
     { view: "plan", icon: ListChecks, label: t("plan.panel"), ...(todos.length > 0 ? { badge: `${todos.filter((todo) => todo.status === "completed").length}/${todos.length}` } : {}) },
     { view: "tasks", icon: Activity, label: t("tasks.title"), ...(running > 0 ? { badge: running, tone: "primary" as const } : {}) },
-    ...(terminals.available ? [{ view: "terminal" as const, icon: SquareTerminal, label: t("terminal.title") }] : []),
+    ...(terminals.available ? [{ view: "terminal" as const, icon: SquareTerminal, label: t("terminal.title"), command: "toggleTerminal" as const }] : []),
     ...(git.available && cwd !== undefined && git.places[cwd]?.root !== undefined ? [{ view: "git" as const, icon: GitPullRequest, label: t("git.tab") }] : []),
     ...(connection.supports("session.branch_end") ? [{ view: "lines" as const, icon: GitBranch, label: t("lines.title"), ...(lines.length > 0 ? { badge: lines.length, ...(linesBusy ? { tone: "warning" as const } : {}) } : {}) }] : []),
   ]
 })
 const layout = computed(() => panes.of(props.sessionId))
 const current = computed<DetailView>(() => tabs.value.some((tab) => tab.view === layout.value.view) ? layout.value.view : "changes")
-/** Tabs that do not fit with their names show only their icons, except the selected one. */
-const compact = ref(false)
-let fullWidth = 0
-const resize = new ResizeObserver(fit)
-
-function fit(): void {
-  const list = tablist.value
-  if (list === undefined) return
-  if (!compact.value) {
-    fullWidth = list.scrollWidth
-    if (fullWidth > list.clientWidth + 1) compact.value = true
-  } else if (list.clientWidth >= fullWidth) compact.value = false
-}
-
-watch(() => tabs.value.map((tab) => `${tab.view}${tab.label}${tab.badge ?? ""}`).join(), async () => {
-  compact.value = false
-  await nextTick()
-  fit()
-})
-onMounted(() => {
-  if (tablist.value !== undefined) resize.observe(tablist.value)
-  fit()
-})
-onBeforeUnmount(() => resize.disconnect())
-
-function onKeydown(event: KeyboardEvent): void {
-  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return
-  event.preventDefault()
-  const index = tabs.value.findIndex((tab) => tab.view === current.value)
-  const next = tabs.value[(index + (event.key === "ArrowRight" ? 1 : -1) + tabs.value.length) % tabs.value.length]
-  if (next === undefined) return
-  panes.show(props.sessionId, next.view)
-  void nextTick(() => tablist.value?.querySelector<HTMLButtonElement>('[aria-selected="true"]')?.focus())
-}
+const shown = computed(() => tabs.value.find((tab) => tab.view === current.value) ?? tabs.value[0]!)
 </script>
 
 <template>
   <div class="detail-panel">
     <header class="panel-tabs" data-tauri-drag-region="deep">
-      <div ref="tablist" class="panel-tablist" role="tablist" :aria-label="t('detail.views')" @keydown="onKeydown">
-        <button
-          v-for="tab in tabs"
-          :id="`${id}-${tab.view}`"
-          :key="tab.view"
-          type="button"
-          class="panel-tab"
-          role="tab"
-          :aria-selected="tab.view === current"
-          :aria-controls="`${id}-body`"
-          :tabindex="tab.view === current ? 0 : -1"
-          :aria-label="tab.label"
-          v-tooltip="compact && tab.view !== current ? tab.label : undefined"
-          @click="panes.show(sessionId, tab.view)"
-        >
-          <component :is="tab.icon" :size="14" aria-hidden="true" />
-          <span v-if="!compact || tab.view === current">{{ tab.label }}</span>
+      <RowActionMenu :label="t('detail.views')">
+        <template #trigger="{ open, expanded }">
+          <button type="button" class="pane-title" aria-haspopup="dialog" :aria-expanded="expanded" @click.stop="open($event.currentTarget as HTMLElement)">
+            <component :is="shown.icon" :size="14" aria-hidden="true" />
+            <span :id="`${id}-title`">{{ shown.label }}</span>
+            <span v-if="shown.badge !== undefined" class="ui-badge" data-size="sm" :data-tone="shown.tone">{{ shown.badge }}</span>
+            <ChevronDown class="pane-title-chevron" aria-hidden="true" />
+          </button>
+        </template>
+        <button v-for="tab in tabs" :key="tab.view" type="button" role="menuitemradio" class="ui-menu-item" :aria-checked="tab.view === current" @click="panes.show(sessionId, tab.view)">
+          <component :is="tab.icon" aria-hidden="true" />
+          <span>{{ tab.label }}</span>
           <span v-if="tab.badge !== undefined" class="ui-badge" data-size="sm" :data-tone="tab.tone">{{ tab.badge }}</span>
+          <kbd v-if="tab.command && shortcutText(tab.command)" class="ui-menu-meta">{{ shortcutText(tab.command) }}</kbd>
         </button>
-      </div>
+      </RowActionMenu>
       <div class="panel-tab-actions">
         <button type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="layout.expanded ? t('lines.collapse') : t('lines.expand')" v-tooltip="withKeys(layout.expanded ? t('lines.collapse') : t('lines.expand'), 'toggleExpandPane')" @click="panes.toggleExpanded(sessionId)">
           <Minimize2 v-if="layout.expanded" aria-hidden="true" />
@@ -133,7 +100,7 @@ function onKeydown(event: KeyboardEvent): void {
         </button>
       </div>
     </header>
-    <div :id="`${id}-body`" class="detail-panel-body" role="tabpanel" :aria-labelledby="`${id}-${current}`">
+    <div class="detail-panel-body" role="region" :aria-labelledby="`${id}-title`">
       <SessionChangesPanel v-if="current === 'changes'" :session-id="sessionId" />
       <FilesPanel v-else-if="current === 'files'" :session-id="sessionId" />
       <PreviewPanel v-else-if="current === 'preview'" :session-id="sessionId" />
@@ -145,3 +112,13 @@ function onKeydown(event: KeyboardEvent): void {
     </div>
   </div>
 </template>
+
+<style scoped>
+.pane-title { display: flex; min-width: 0; height: var(--control-sm); align-items: center; gap: 6px; padding: 0 var(--space-2); border: 0; border-radius: var(--control-sm-radius); background: transparent; color: var(--foreground); font-size: var(--text-md); font-weight: var(--weight-medium); cursor: pointer; }
+.pane-title > span:not(.ui-badge) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pane-title > svg { flex: none; }
+.pane-title-chevron { width: 14px; height: 14px; color: var(--muted-foreground); transition: transform var(--duration-press) var(--ease-out); }
+.pane-title[aria-expanded="true"] > .pane-title-chevron { transform: rotate(180deg); }
+.pane-title:hover, .pane-title[aria-expanded="true"] { background: var(--hover); }
+.panel-tabs > .panel-tab-actions { margin-left: auto; }
+</style>

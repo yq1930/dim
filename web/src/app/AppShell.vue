@@ -14,7 +14,7 @@ import { overlayTitleBar } from "../desktop"
 import { settingsMessages } from "../i18n/settings"
 import { useConnectionStore } from "../stores/connection"
 import { useFilesStore } from "../stores/files"
-import { usePanesStore, type DetailView } from "../stores/panes"
+import { usePanesStore, type DetailView, type PaneCommand } from "../stores/panes"
 import { useSessionsStore, workspaceName } from "../stores/sessions"
 import { useTerminalsStore } from "../stores/terminals"
 import { useToastStore } from "../stores/toast"
@@ -120,6 +120,16 @@ function closePane(): boolean {
   return true
 }
 
+/** Hands `command` to a view of the routed Session's panel, showing the view, or only where it already shows. */
+function paneCommand(view: DetailView, command: PaneCommand, whereShown = false): boolean {
+  const id = sessionId.value
+  if (route.name !== "chat-session" || id === undefined) return false
+  if ((view === "files" && !files.readable(id)) || (view === "terminal" && !terminals.available)) return false
+  if (whereShown && !(layout.value?.open === true && layout.value.view === view)) return false
+  panes.send(id, view, command)
+  return true
+}
+
 function openComposerMenu(menu: "mode" | "model"): boolean {
   if (route.name !== "chat-new" && route.name !== "chat-session") return false
   ui.requestComposerMenu(activePane.value, menu)
@@ -157,6 +167,11 @@ const commands: Record<ShortcutCommand, () => boolean> = {
     panes.toggleExpanded(sessionId.value)
     return true
   },
+  newTerminal: () => paneCommand("terminal", "newTerminal"),
+  nextTerminal: () => paneCommand("terminal", "nextTerminal", true),
+  prevTerminal: () => paneCommand("terminal", "prevTerminal", true),
+  toggleFileList: () => paneCommand("files", "toggleFileList", true),
+  goToFile: () => paneCommand("files", "goToFile"),
   openModeMenu: () => openComposerMenu("mode"),
   openModelMenu: () => openComposerMenu("model"),
 }

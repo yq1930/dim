@@ -10,6 +10,7 @@ import type { TranslationKey } from "../i18n"
 export type ShortcutCommand =
   | "showShortcuts" | "toggleSidebar" | "newSession" | "openSettings" | "cycleTranscriptMode"
   | "toggleDiff" | "toggleFiles" | "togglePreview" | "toggleTerminal" | "closePane" | "toggleExpandPane"
+  | "newTerminal" | "nextTerminal" | "prevTerminal" | "toggleFileList" | "goToFile"
   | "openModeMenu" | "openModelMenu"
 
 type Binding = {
@@ -42,6 +43,14 @@ export const SHORTCUTS: readonly Binding[] = [
   { command: "toggleTerminal", key: "ctrl+`", code: "Backquote" },
   { command: "closePane", key: "cmd+\\", code: "Backslash" },
   { command: "toggleExpandPane", key: "cmd+shift+\\", code: "Backslash" },
+  { command: "newTerminal", key: "ctrl+shift+`", code: "Backquote" },
+  { command: "nextTerminal", key: "ctrl+shift+]", code: "BracketRight", mac: true },
+  { command: "prevTerminal", key: "ctrl+shift+[", code: "BracketLeft", mac: true },
+  { command: "nextTerminal", key: "ctrl+pagedown", code: "PageDown", mac: false, when: "desktop" },
+  { command: "prevTerminal", key: "ctrl+pageup", code: "PageUp", mac: false, when: "desktop" },
+  { command: "toggleFileList", key: "cmd+shift+y", code: "KeyY", matchBy: "char", when: "desktop" },
+  { command: "toggleFileList", key: "ctrl+shift+y", code: "KeyY", matchBy: "char", when: "browser" },
+  { command: "goToFile", key: "cmd+p", code: "KeyP", matchBy: "char" },
   { command: "openModeMenu", key: "cmd+shift+m", code: "KeyM", matchBy: "char", when: "desktop" },
   { command: "openModeMenu", key: "cmd+alt+m", code: "KeyM", matchBy: "char" },
   { command: "openModelMenu", key: "cmd+shift+i", code: "KeyI", matchBy: "char" },
@@ -87,7 +96,7 @@ export function shortcutKeys(command: ShortcutCommand, context: ShortcutContext)
 }
 
 const MAC_MODIFIERS = [["ctrl", "⌃"], ["alt", "⌥"], ["shift", "⇧"], ["cmd", "⌘"]] as const
-const KEY_NAMES: Record<string, string> = { enter: "Enter", esc: "Esc", tab: "Tab", up: "↑", down: "↓" }
+const KEY_NAMES: Record<string, string> = { enter: "Enter", esc: "Esc", tab: "Tab", up: "↑", down: "↓", pageup: "PgUp", pagedown: "PgDn" }
 
 /** A key combination as the key caps to show, in the platform's order and names. */
 export function keyCaps(key: string, mac: boolean): string[] {
@@ -137,6 +146,11 @@ export const SHORTCUT_HELP: readonly ShortcutHelp[] = [
   { group: "panes", label: "shortcuts.toggleFiles", command: "toggleFiles" },
   { group: "panes", label: "shortcuts.togglePreview", command: "togglePreview" },
   { group: "panes", label: "shortcuts.toggleTerminal", command: "toggleTerminal" },
+  { group: "panes", label: "shortcuts.newTerminal", command: "newTerminal" },
+  { group: "panes", label: "shortcuts.nextTerminal", command: "nextTerminal" },
+  { group: "panes", label: "shortcuts.prevTerminal", command: "prevTerminal" },
+  { group: "panes", label: "shortcuts.toggleFileList", command: "toggleFileList" },
+  { group: "panes", label: "shortcuts.goToFile", command: "goToFile" },
   { group: "panes", label: "shortcuts.closePane", command: "closePane" },
   { group: "panes", label: "shortcuts.expandPane", command: "toggleExpandPane" },
   { group: "panes", label: "shortcuts.saveFile", keys: ["cmd+s"] },

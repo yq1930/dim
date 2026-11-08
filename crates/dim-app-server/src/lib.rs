@@ -9,6 +9,7 @@ mod connection;
 mod control;
 mod exec_shell_settings;
 mod execution_settings;
+mod git_workspace;
 pub mod grok_oauth;
 pub mod hooks_settings;
 mod lsp;
@@ -813,6 +814,17 @@ pub async fn serve(mut builder: AgentBuilder, mut config: ServerConfig) -> Resul
         rows.push(register_part(&mut builtins, builder.catalog(), |names| {
             Ok(Box::new(terminals::TerminalsPlugin::new(names)?))
         })?);
+        let git_home = config.product_home.clone();
+        rows.push(register_part(
+            &mut builtins,
+            builder.catalog(),
+            move |names| {
+                Ok(Box::new(git_workspace::GitWorkspacePlugin::new(
+                    names,
+                    git_home.clone(),
+                )?))
+            },
+        )?);
         rows.push(register_part(&mut builtins, builder.catalog(), |names| {
             Ok(Box::new(execution_settings::ExecutionBackendPlugin::new(
                 names,

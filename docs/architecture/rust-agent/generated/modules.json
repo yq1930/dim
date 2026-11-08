@@ -2107,6 +2107,18 @@
       ]
     },
     {
+      "id": "dim_app_server::git_workspace",
+      "crate": "dim_app_server",
+      "parent": "dim_app_server",
+      "file": "crates/dim-app-server/src/git_workspace.rs",
+      "unexpandedMacros": [
+        "format",
+        "json",
+        "unreachable",
+        "vec"
+      ]
+    },
+    {
       "id": "dim_app_server::grok_oauth",
       "crate": "dim_app_server",
       "parent": "dim_app_server",
@@ -18048,6 +18060,14 @@
     },
     {
       "from": "dim_app_server",
+      "to": "dim_app_server::git_workspace",
+      "references": [
+        "mod git_workspace",
+        "path git_workspace::GitWorkspacePlugin::new"
+      ]
+    },
+    {
+      "from": "dim_app_server",
       "to": "dim_app_server::grok_oauth",
       "references": [
         "mod grok_oauth",
@@ -21302,6 +21322,38 @@
       "references": [
         "path SourceDeclaration",
         "use crate::settings::SourceDeclaration"
+      ]
+    },
+    {
+      "from": "dim_app_server::git_workspace",
+      "to": "dim_agent_capabilities::methods",
+      "references": [
+        "path RpcError",
+        "path RpcError::app",
+        "path RpcError::invalid",
+        "path params",
+        "path reply",
+        "use dim_agent_capabilities::methods::Interruption",
+        "use dim_agent_capabilities::methods::MethodDecl",
+        "use dim_agent_capabilities::methods::RpcError",
+        "use dim_agent_capabilities::methods::params",
+        "use dim_agent_capabilities::methods::reply"
+      ]
+    },
+    {
+      "from": "dim_app_server::git_workspace",
+      "to": "dim_agent_runtime::names",
+      "references": [
+        "path Names",
+        "use dim_agent_runtime::Names"
+      ]
+    },
+    {
+      "from": "dim_app_server::git_workspace",
+      "to": "dim_app_server::methods",
+      "references": [
+        "path ManagementMethods",
+        "use crate::methods::ManagementMethods"
       ]
     },
     {

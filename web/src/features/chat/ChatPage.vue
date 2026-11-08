@@ -12,6 +12,7 @@ import PlanReview from "./PlanReview.vue"
 import QuestionPrompt from "./QuestionPrompt.vue"
 import TimelineView from "./TimelineView.vue"
 import SessionOutline from "./SessionOutline.vue"
+import SessionCrumb from "../git/SessionCrumb.vue"
 import TodoPanel from "./TodoPanel.vue"
 import TurnChangesDialog from "./TurnChangesDialog.vue"
 import { useComposerDrafts } from "./composer-drafts"
@@ -22,7 +23,7 @@ import { readSkills } from "../../rpc/general-settings"
 import { useChatStore } from "../../stores/chat"
 import { useConnectionStore } from "../../stores/connection"
 import { useModelsStore } from "../../stores/models"
-import { useSessionsStore, workspaceName } from "../../stores/sessions"
+import { useSessionsStore } from "../../stores/sessions"
 import { useToastStore } from "../../stores/toast"
 import { useUiStore, type DetailView, type Pane } from "../../stores/ui"
 
@@ -217,10 +218,7 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
       <header class="session-header" data-tauri-drag-region="deep">
         <button v-if="ui.shellMode === 'compact'" class="ui-icon-button session-nav" data-variant="ghost" data-size="md" type="button" :aria-label="t('sidebar.openMenu')" @click="ui.drawerOpen = true"><Menu aria-hidden="true" /></button>
         <div class="session-heading">
-          <template v-if="summary">
-            <span class="workspace-crumb" :title="summary.cwd">{{ workspaceName(summary.cwd) }}</span>
-            <span class="workspace-crumb-separator" aria-hidden="true">/</span>
-          </template>
+          <SessionCrumb v-if="summary" :cwd="summary.cwd" :interactive="!split" />
           <h1 data-route-heading tabindex="-1" :title="title">{{ title }}</h1>
         </div>
         <SessionOutline v-if="outline.length > 1" :markers="outline" @jump="timeline?.jumpTo($event)" />

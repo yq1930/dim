@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, ref, useId, type Component } from "vue"
 import { useI18n } from "vue-i18n"
-import { Activity, FileDiff, GitBranch, ListChecks, Maximize2, Minimize2, SquareTerminal, X } from "lucide-vue-next"
+import { Activity, FileDiff, GitBranch, GitPullRequest, ListChecks, Maximize2, Minimize2, SquareTerminal, X } from "lucide-vue-next"
 import LinesPanel from "../features/lines/LinesPanel.vue"
 import PlanPanel from "../features/chat/PlanPanel.vue"
 import SessionChangesPanel from "../features/chat/SessionChangesPanel.vue"
 import TasksPanel from "../features/chat/TasksPanel.vue"
+import GitPanel from "../features/git/GitPanel.vue"
 import { changedFileCount } from "../features/chat/session-changes"
 import { MAIN_BRANCH } from "../rpc/protocol"
 import { useChatStore } from "../stores/chat"
 import { useConnectionStore } from "../stores/connection"
+import { useGitStore } from "../stores/git"
 import { useSessionsStore } from "../stores/sessions"
 import { useTerminalsStore } from "../stores/terminals"
 import { useUiStore, type DetailView } from "../stores/ui"
@@ -26,13 +28,15 @@ const chat = useChatStore()
 const connection = useConnectionStore()
 const sessions = useSessionsStore()
 const terminals = useTerminalsStore()
+const git = useGitStore()
 const ui = useUiStore()
 const id = useId()
 const tablist = ref<HTMLElement>()
 
 const tabs = computed<Tab[]>(() => {
   const view = chat.views[props.sessionId]
-  const changed = changedFileCount(view?.rows ?? [], sessions.byId.get(props.sessionId)?.cwd)
+  const cwd = sessions.byId.get(props.sessionId)?.cwd
+  const changed = changedFileCount(view?.rows ?? [], cwd)
   const todos = view?.todos ?? []
   const running = view?.backgroundTasks.filter((task) => !task.finish).length ?? 0
   const lines = view?.lines.filter((line) => line.id !== MAIN_BRANCH) ?? []
@@ -42,6 +46,7 @@ const tabs = computed<Tab[]>(() => {
     { view: "plan", icon: ListChecks, label: t("plan.panel"), ...(todos.length > 0 ? { badge: `${todos.filter((todo) => todo.status === "completed").length}/${todos.length}` } : {}) },
     { view: "tasks", icon: Activity, label: t("tasks.title"), ...(running > 0 ? { badge: running, tone: "primary" as const } : {}) },
     ...(terminals.available ? [{ view: "terminal" as const, icon: SquareTerminal, label: t("terminal.title") }] : []),
+    ...(git.available && cwd !== undefined && git.places[cwd]?.root !== undefined ? [{ view: "git" as const, icon: GitPullRequest, label: t("git.tab") }] : []),
     ...(connection.supports("session.branch_end") ? [{ view: "lines" as const, icon: GitBranch, label: t("lines.title"), ...(lines.length > 0 ? { badge: lines.length, ...(linesBusy ? { tone: "warning" as const } : {}) } : {}) }] : []),
   ]
 })
@@ -94,6 +99,7 @@ function onKeydown(event: KeyboardEvent): void {
       <PlanPanel v-else-if="current === 'plan'" :session-id="sessionId" />
       <TasksPanel v-else-if="current === 'tasks'" :session-id="sessionId" />
       <TerminalPanel v-else-if="current === 'terminal'" :session-id="sessionId" />
+      <GitPanel v-else-if="current === 'git'" :session-id="sessionId" />
       <LinesPanel v-else :session-id="sessionId" />
     </div>
   </div>

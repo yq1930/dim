@@ -6,8 +6,8 @@ import { useAppearanceStore } from "./appearance"
 export type ShellMode = "compact" | "regular" | "wide"
 
 /** What the right detail panel shows for the Session on screen. */
-export type DetailView = "changes" | "plan" | "tasks" | "terminal" | "lines"
-const DETAIL_VIEWS: readonly DetailView[] = ["changes", "plan", "tasks", "terminal", "lines"]
+export type DetailView = "changes" | "plan" | "tasks" | "terminal" | "git" | "lines"
+const DETAIL_VIEWS: readonly DetailView[] = ["changes", "plan", "tasks", "terminal", "git", "lines"]
 
 /** The pane a Session shows in: the routed one, or the one beside it in split view. */
 export type Pane = "main" | "split"

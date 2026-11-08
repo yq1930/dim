@@ -39,7 +39,10 @@ tasks, Terminal and Lines; the Session header's buttons open them. The
 Session's lines. Select a running command to see its live output tail; **Stop
 command** asks for confirmation before stopping that command. Leaving the tab
 leaves commands running. The **Terminal** tab runs shells in the Session's
-workspace through the App Server's `terminal.*` methods; Ctrl+` shows or hides it. Reopening the Session rebuilds the
+workspace through the App Server's `terminal.*` methods; Ctrl+` shows or hides it. The
+**Git** tab shows the Session's branch, its pull request and CI checks
+(`git.*` methods, with the GitHub CLI); a new Session in a Git repository can
+start in a worktree of its own. Reopening the Session rebuilds the
 list from recorded history. Failed history reads and unavailable live output are
 shown explicitly, and output is rendered as text.
 
@@ -53,3 +56,4 @@ shown explicitly, and output is rendered as text.
 | `src/features/chat/` | Chat page, new-session page, timeline, composer, model menu, approval prompt |
 | `src/features/lines/` | Right-side Lines panel, tree, line conversation, new-line and end-line dialogs |
 | `src/features/terminal/` | The detail panel's Terminal tab: xterm.js views of the App Server's terminals |
+| `src/features/git/` | The header's workspace and branch, and the detail panel's Git tab |

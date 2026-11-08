@@ -3,8 +3,9 @@ import { defineStore } from "pinia"
 import { readAck, readCreate, readRenamedTitle, readSummaries } from "../rpc/read"
 import type { ModelId, SessionSummary } from "../rpc/protocol"
 import { useConnectionStore } from "./connection"
+import { useGitStore } from "./git"
 
-/** Sessions that share a working directory: the sidebar's workspace groups. */
+/** Sessions that share a working directory, with those in its linked worktrees: the sidebar's workspace groups. */
 export type Workspace = { cwd: string; name: string; sessions: SessionSummary[]; updatedAt: number }
 
 const RECENT_KEY = "dim-web.workspaces.v1"
@@ -29,18 +30,22 @@ export const useSessionsStore = defineStore("sessions", () => {
 
   /** Workspaces by latest activity; sessions in each by latest activity. */
   const workspaces = computed<Workspace[]>(() => {
+    const git = useGitStore()
+    const workspaceOf = (cwd: string) => git.linkedMain(cwd) ?? cwd
     const groups = new Map<string, SessionSummary[]>()
     for (const session of summaries.value) {
-      const group = groups.get(session.cwd)
-      if (group === undefined) groups.set(session.cwd, [session])
+      const cwd = workspaceOf(session.cwd)
+      const group = groups.get(cwd)
+      if (group === undefined) groups.set(cwd, [session])
       else group.push(session)
     }
     const saved = [...groups].map(([cwd, sessions]) => {
       sessions.sort((left, right) => right.updatedAt - left.updatedAt)
       return { cwd, name: workspaceName(cwd), sessions, updatedAt: sessions[0]!.updatedAt }
     }).sort((left, right) => right.updatedAt - left.updatedAt)
-    const recent = recentWorkspaces.value.map((cwd) => saved.find((workspace) => workspace.cwd === cwd) ?? { cwd, name: workspaceName(cwd), sessions: [], updatedAt: 0 })
-    return [...recent, ...saved.filter((workspace) => !recentWorkspaces.value.includes(workspace.cwd))]
+    const recentPaths = [...new Set(recentWorkspaces.value.map(workspaceOf))]
+    const recent = recentPaths.map((cwd) => saved.find((workspace) => workspace.cwd === cwd) ?? { cwd, name: workspaceName(cwd), sessions: [], updatedAt: 0 })
+    return [...recent, ...saved.filter((workspace) => !recentPaths.includes(workspace.cwd))]
   })
 
   /** Reloads the directory; concurrent callers share one request. */
@@ -55,6 +60,7 @@ export const useSessionsStore = defineStore("sessions", () => {
         })
         loaded.value = true
         error.value = ""
+        void useGitStore().inspect([...list.map((session) => session.cwd), ...recentWorkspaces.value])
       })
       .catch((cause: unknown) => {
         error.value = cause instanceof Error ? cause.message : String(cause)

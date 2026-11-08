@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import { useI18n } from "vue-i18n"
-import { Check, ChevronDown, Folder, FolderOpen } from "lucide-vue-next"
+import { Check, ChevronDown, Folder, FolderOpen, GitFork } from "lucide-vue-next"
 import { canChooseWorkspace, chooseWorkspace } from "../../desktop"
 import BrandMark from "../../components/BrandMark.vue"
 import ComposerPanel from "./ComposerPanel.vue"
@@ -10,13 +10,15 @@ import { readSkills } from "../../rpc/general-settings"
 import { MAIN_BRANCH, type DraftAttachments, type ModelId, type PermissionPreset } from "../../rpc/protocol"
 import { useChatStore } from "../../stores/chat"
 import { useConnectionStore } from "../../stores/connection"
+import { useGitStore } from "../../stores/git"
 import { useModelsStore } from "../../stores/models"
 import { useSessionsStore, workspaceName } from "../../stores/sessions"
 
 /**
  * A new session: pick a known workspace or type an absolute directory, write
  * the first message, and send. Sending creates the session there, submits the
- * message and opens it.
+ * message and opens it. In a Git repository the session may start in a new
+ * worktree on its own branch instead.
  */
 const { t } = useI18n()
 const route = useRoute()
@@ -25,6 +27,7 @@ const sessions = useSessionsStore()
 const chat = useChatStore()
 const models = useModelsStore()
 const connection = useConnectionStore()
+const git = useGitStore()
 const planning = ref(false)
 /** Where the preset last chosen here is kept, so the next new Session starts with it. */
 const PRESET_KEY = "dim.newSession.preset"
@@ -38,6 +41,16 @@ onBeforeUnmount(() => { active = false })
 
 /** The directory the session will run in, seeded from `?cwd=` or the latest workspace. */
 const cwd = ref(typeof route.query.cwd === "string" ? route.query.cwd : "")
+const inRepository = computed(() => git.places[cwd.value]?.root !== undefined)
+const worktree = ref(false)
+const branch = ref("")
+/** The branch a new worktree gets when none is typed. */
+const suggestedBranch = (() => {
+  const now = new Date()
+  const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`
+  return `lacus/${date}-${Math.random().toString(16).slice(2, 6)}`
+})()
+watch(cwd, (dir) => { if (dir !== "") void git.inspect([dir]) }, { immediate: true })
 const listSkills = computed(() => {
   if (cwd.value === "" || !connection.supports("skills.catalog")) return undefined
   const dir = cwd.value
@@ -104,7 +117,10 @@ async function browse(): Promise<void> {
 
 async function send(text: string, attachments: DraftAttachments): Promise<void> {
   if (cwd.value === "") throw new Error(t("newThread.workspaceRequired"))
-  const directory = cwd.value
+  const chosen = cwd.value
+  const directory = worktree.value && inRepository.value ? (await git.createWorktree(chosen, branch.value.trim() || suggestedBranch)).path : chosen
+  // A worktree Session is listed under its main repository, which replaces a typed alias of it.
+  if (directory !== chosen) sessions.rememberWorkspace(git.places[chosen]?.main ?? chosen, chosen)
   const selected = picked.value ?? (reasoningEffort.value === undefined ? undefined : model.value)
   const sessionId = await sessions.create(directory, selected, reasoningEffort.value)
   chat.open(sessionId)
@@ -112,7 +128,7 @@ async function send(text: string, attachments: DraftAttachments): Promise<void> 
   if (permissionControl.value !== undefined) await chat.setPermission(sessionId, preset.value)
   if (planning.value) await chat.setPlanning(sessionId, true)
   await chat.submit(sessionId, MAIN_BRANCH, text, attachments)
-  if (active && cwd.value === directory) await router.push({ name: "chat-session", params: { sessionId } })
+  if (active && cwd.value === chosen) await router.push({ name: "chat-session", params: { sessionId } })
 }
 </script>
 
@@ -158,6 +174,12 @@ async function send(text: string, attachments: DraftAttachments): Promise<void> 
             </div>
           </div>
         </details>
+        <template v-if="inRepository">
+          <button type="button" class="ui-button" data-variant="ghost" data-size="xs" :aria-pressed="worktree" v-tooltip="t('git.newWorktreeHint')" @click="worktree = !worktree">
+            <GitFork aria-hidden="true" /><span>{{ t("git.newWorktree") }}</span>
+          </button>
+          <input v-if="worktree" v-model="branch" class="ui-field worktree-branch" data-size="xs" type="text" spellcheck="false" autocapitalize="off" :placeholder="suggestedBranch" :aria-label="t('git.branchName')">
+        </template>
       </template>
     </ComposerPanel>
   </section>
@@ -172,4 +194,6 @@ async function send(text: string, attachments: DraftAttachments): Promise<void> 
 .workspace-path-form > .ui-field { min-width: 0; flex: 1; font-family: var(--font-mono); }
 .workspace-list { min-height: 0; max-height: 240px; overflow-x: hidden; overflow-y: auto; }
 .workspace-path { overflow: hidden; font-family: var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.ui-button[aria-pressed="true"] { background: var(--hover); color: var(--foreground); }
+.worktree-branch { width: 180px; font-family: var(--font-mono); }
 </style>

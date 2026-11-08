@@ -14,11 +14,11 @@ import { overlayTitleBar } from "../desktop"
 import { settingsMessages } from "../i18n/settings"
 import { useConnectionStore } from "../stores/connection"
 import { useFilesStore } from "../stores/files"
-import { usePreferencesStore } from "../stores/preferences"
+import { usePanesStore, type DetailView } from "../stores/panes"
 import { useSessionsStore, workspaceName } from "../stores/sessions"
 import { useTerminalsStore } from "../stores/terminals"
 import { useToastStore } from "../stores/toast"
-import { useUiStore, type DetailView, type Pane } from "../stores/ui"
+import { useUiStore, type Pane } from "../stores/ui"
 import { useKeepAwake } from "./keep-awake"
 import ShortcutsDialog from "./ShortcutsDialog.vue"
 import { matchShortcut, shortcutContext, withKeys, type ShortcutCommand } from "./shortcuts"
@@ -32,6 +32,7 @@ const sessions = useSessionsStore()
 const ui = useUiStore()
 const terminals = useTerminalsStore()
 const files = useFilesStore()
+const panes = usePanesStore()
 const root = ref<HTMLElement>()
 const drawer = ref<HTMLDialogElement>()
 let observer: ResizeObserver | undefined
@@ -42,7 +43,9 @@ const chatRoute = computed(() => route.name === "chat-new" || route.name === "ch
 /** Pages without a top bar of their own get an empty one to drag the window by. */
 const titleBarStrip = computed(() => overlayTitleBar && (settingsRoute.value || route.name === "chat-new"))
 const sessionId = computed(() => typeof route.params.sessionId === "string" ? route.params.sessionId : undefined)
-const detailOpen = computed(() => ui.detailOpen && route.name === "chat-session" && sessionId.value !== undefined)
+/** The routed Session's panes; the right panel shows only them. */
+const layout = computed(() => route.name === "chat-session" && sessionId.value !== undefined ? panes.of(sessionId.value) : undefined)
+const detailOpen = computed(() => layout.value?.open === true)
 const splitId = computed(() => {
   const id = ui.splitSessionId
   return route.name === "chat-session" && id !== undefined && id !== sessionId.value && ui.splitAvailable && sessions.byId.has(id) ? id : undefined
@@ -93,7 +96,7 @@ const activePane = computed<Pane>(() => ui.activePane === "split" && splitId.val
 function cycleTranscript(): boolean {
   const target = route.name !== "chat-session" ? undefined : activePane.value === "split" ? splitId.value : sessionId.value
   if (target === undefined) return false
-  const view = usePreferencesStore().cycleView(target)
+  const view = panes.cycleTranscript(target)
   const toast = useToastStore()
   if (viewToast !== undefined) toast.dismiss(viewToast)
   viewToast = toast.push({ tone: "info", title: t("transcript.switched", { view: t(`transcript.${view}`) }) })
@@ -105,13 +108,13 @@ function togglePane(view: DetailView): boolean {
   const id = sessionId.value
   if (route.name !== "chat-session" || id === undefined) return false
   if ((view === "files" && !files.readable(id)) || (view === "terminal" && !terminals.available)) return false
-  ui.toggleDetail(view)
+  panes.toggle(id, view)
   return true
 }
 
 /** Closes the right panel, or the pane beside the routed Session. */
 function closePane(): boolean {
-  if (detailOpen.value) ui.closeDetail()
+  if (detailOpen.value && sessionId.value !== undefined) panes.close(sessionId.value)
   else if (splitId.value !== undefined) ui.closeSplit()
   else return false
   return true
@@ -150,8 +153,8 @@ const commands: Record<ShortcutCommand, () => boolean> = {
   toggleTerminal: () => togglePane("terminal"),
   closePane,
   toggleExpandPane: () => {
-    if (!detailOpen.value) return false
-    ui.detailExpanded = !ui.detailExpanded
+    if (!detailOpen.value || sessionId.value === undefined) return false
+    panes.toggleExpanded(sessionId.value)
     return true
   },
   openModeMenu: () => openComposerMenu("mode"),
@@ -221,7 +224,7 @@ function resizeBy(delta: number): void {
 }
 
 function focusMain(): void {
-  ui.detailFocused = false
+  panes.focused = false
   ui.activePane = "main"
 }
 </script>
@@ -258,7 +261,7 @@ function focusMain(): void {
     <div
       class="content-region"
       :data-has-detail="detailOpen"
-      :data-detail-expanded="ui.detailExpanded"
+      :data-detail-expanded="layout?.expanded === true"
       :data-split="splitId !== undefined"
       :style="{ '--detail-width': `${ui.detailWidth}px` }"
     >
@@ -292,7 +295,7 @@ function focusMain(): void {
         @keydown.left.prevent="resizeBy(-16)"
         @keydown.right.prevent="resizeBy(16)"
       />
-      <aside v-if="detailOpen && sessionId" class="detail-region" data-active="true" :aria-label="t('detail.panel')" @pointerdown="ui.detailFocused = true" @focusin="ui.detailFocused = true">
+      <aside v-if="detailOpen && sessionId" class="detail-region" data-active="true" :aria-label="t('detail.panel')" @pointerdown="panes.focused = true" @focusin="panes.focused = true">
         <DetailPanel :session-id="sessionId" />
       </aside>
     </div>

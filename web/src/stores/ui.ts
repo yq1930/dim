@@ -2,12 +2,9 @@ import { computed, ref, watch } from "vue"
 import { defineStore } from "pinia"
 import { approvalKeyboardBranch } from "../features/lines/line-state"
 import { useAppearanceStore } from "./appearance"
+import { usePanesStore } from "./panes"
 
 export type ShellMode = "compact" | "regular" | "wide"
-
-/** What the right detail panel shows for the Session on screen. */
-export type DetailView = "changes" | "files" | "preview" | "plan" | "tasks" | "terminal" | "git" | "lines"
-const DETAIL_VIEWS: readonly DetailView[] = ["changes", "files", "preview", "plan", "tasks", "terminal", "git", "lines"]
 
 /** The pane a Session shows in: the routed one, or the one beside it in split view. */
 export type Pane = "main" | "split"
@@ -55,8 +52,6 @@ type Persisted = {
   sidebarCollapsed: boolean
   collapsedWorkspaces: string[]
   lastSessionId: string | undefined
-  detailOpen: boolean
-  detailView: DetailView
   detailWidth: number
   /** Sessions shown first in the sidebar, in the order they were pinned. */
   pinnedSessions: string[]
@@ -65,7 +60,7 @@ type Persisted = {
 
 /** localStorage is outside the app: read it once, keeping only well-formed fields. */
 function readPersisted(): Persisted {
-  const fallback: Persisted = { sidebarCollapsed: false, collapsedWorkspaces: [], lastSessionId: undefined, detailOpen: false, detailView: "lines", detailWidth: 420, pinnedSessions: [], splitSessionId: undefined }
+  const fallback: Persisted = { sidebarCollapsed: false, collapsedWorkspaces: [], lastSessionId: undefined, detailWidth: 420, pinnedSessions: [], splitSessionId: undefined }
   try {
     const value: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")
     if (value === null || typeof value !== "object") return fallback
@@ -77,8 +72,6 @@ function readPersisted(): Persisted {
       sidebarCollapsed: stored.sidebarCollapsed === true,
       collapsedWorkspaces: Array.isArray(stored.collapsedWorkspaces) ? stored.collapsedWorkspaces.filter((item): item is string => typeof item === "string") : [],
       lastSessionId: typeof stored.lastSessionId === "string" ? stored.lastSessionId : undefined,
-      detailOpen: stored.detailOpen === true,
-      detailView: DETAIL_VIEWS.find((view) => view === stored.detailView) ?? "lines",
       detailWidth: width,
       pinnedSessions: Array.isArray(stored.pinnedSessions) ? stored.pinnedSessions.filter((item): item is string => typeof item === "string") : [],
       splitSessionId: typeof stored.splitSessionId === "string" ? stored.splitSessionId : undefined,
@@ -97,14 +90,8 @@ export const useUiStore = defineStore("ui", () => {
   const drawerOpen = ref(false)
   const shellWidth = ref(typeof window !== "undefined" && window.innerWidth > 0 ? window.innerWidth : 1200)
   const shellMode = computed<ShellMode>(() => shellWidth.value < 720 ? "compact" : shellWidth.value < 960 ? "regular" : "wide")
-  const detailOpen = ref(persisted.detailOpen)
-  const detailView = ref<DetailView>(persisted.detailView)
   const detailWidth = ref(persisted.detailWidth)
   const pinnedSessions = ref(persisted.pinnedSessions)
-  const detailExpanded = ref(false)
-  const detailFocused = ref(false)
-  const lineTabs = ref<Record<string, string[]>>({})
-  const activeLineTab = ref<Record<string, string | undefined>>({})
   const newLine = ref<NewLineRequest | undefined>()
   const endingLine = ref<EndLineRequest | undefined>()
   /** The Session on screen, if any; a run that ends elsewhere leaves its Session unread. */
@@ -124,14 +111,12 @@ export const useUiStore = defineStore("ui", () => {
   /** The pane the operator last pressed or focused; it takes the keyboard's approvals. */
   const activePane = ref<Pane>("main")
 
-  watch([sidebarCollapsed, collapsedWorkspaces, lastSessionId, detailOpen, detailView, detailWidth, pinnedSessions, splitSessionId], () => {
+  watch([sidebarCollapsed, collapsedWorkspaces, lastSessionId, detailWidth, pinnedSessions, splitSessionId], () => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         sidebarCollapsed: sidebarCollapsed.value,
         collapsedWorkspaces: collapsedWorkspaces.value,
         lastSessionId: lastSessionId.value,
-        detailOpen: detailOpen.value,
-        detailView: detailView.value,
         detailWidth: detailWidth.value,
         pinnedSessions: pinnedSessions.value,
         splitSessionId: splitSessionId.value,
@@ -212,68 +197,19 @@ export const useUiStore = defineStore("ui", () => {
     composerMenu.value = { pane, menu, id: ++insertSeq }
   }
 
-  function openDetail(view: DetailView): void {
-    detailView.value = view
-    detailOpen.value = true
-    detailFocused.value = true
-  }
-
-  function toggleDetail(view: DetailView): void {
-    if (detailOpen.value && detailView.value === view) {
-      detailOpen.value = false
-      detailFocused.value = false
-    } else openDetail(view)
-  }
-
-  function openLines(sessionId: string): void {
-    openDetail("lines")
-    activeLineTab.value = { ...activeLineTab.value, [sessionId]: undefined }
-  }
-
-  function toggleLines(sessionId: string): void {
-    if (detailOpen.value && detailView.value === "lines" && activeLineTab.value[sessionId] === undefined) {
-      detailOpen.value = false
-      detailFocused.value = false
-    } else openLines(sessionId)
-  }
-
-  function openLine(sessionId: string, branchId: string): void {
-    const tabs = lineTabs.value[sessionId] ?? []
-    if (!tabs.includes(branchId)) lineTabs.value = { ...lineTabs.value, [sessionId]: [...tabs, branchId] }
-    activeLineTab.value = { ...activeLineTab.value, [sessionId]: branchId }
-    openDetail("lines")
-  }
-
-  function activateLine(sessionId: string, branchId: string): void {
-    if (!(lineTabs.value[sessionId] ?? []).includes(branchId)) {
-      openLine(sessionId, branchId)
-      return
-    }
-    activeLineTab.value = { ...activeLineTab.value, [sessionId]: branchId }
-    openDetail("lines")
-  }
-
-  function closeLineTab(sessionId: string, branchId: string): void {
-    const tabs = (lineTabs.value[sessionId] ?? []).filter((id) => id !== branchId)
-    lineTabs.value = { ...lineTabs.value, [sessionId]: tabs }
-    if (activeLineTab.value[sessionId] === branchId) {
-      activeLineTab.value = { ...activeLineTab.value, [sessionId]: tabs.at(-1) }
-    }
-  }
-
-  function closeDetail(): void {
-    detailOpen.value = false
-    detailExpanded.value = false
-    detailFocused.value = false
-  }
-
+  /**
+   * Whether the keyboard answers `branchId`'s approval: the right panel counts
+   * only for the routed Session, whose panes it shows.
+   */
   function approvalKeyboard(sessionId: string, branchId: string, approvals: readonly { branchId: string }[]): boolean {
+    const panes = usePanesStore()
+    const layout = sessionId === viewingSessionId.value ? panes.of(sessionId) : undefined
     return approvalKeyboardBranch(approvals, {
-      detailOpen: detailOpen.value,
-      detailExpanded: detailExpanded.value,
+      detailOpen: layout?.open === true,
+      detailExpanded: layout?.expanded === true,
       shellWidth: shellWidth.value,
-      activeLine: detailView.value === "lines" ? activeLineTab.value[sessionId] : undefined,
-      detailFocused: detailFocused.value,
+      activeLine: layout?.view === "lines" ? panes.activeLine[sessionId] : undefined,
+      detailFocused: panes.focused,
     }) === branchId
   }
 
@@ -293,20 +229,17 @@ export const useUiStore = defineStore("ui", () => {
     endingLine.value = undefined
   }
 
+  /** A closed Session keeps no line dialogs, line tabs or open panel. */
   function resetSessionTabs(sessionId: string): void {
-    lineTabs.value = { ...lineTabs.value, [sessionId]: [] }
-    activeLineTab.value = { ...activeLineTab.value, [sessionId]: undefined }
     if (newLine.value?.sessionId === sessionId) newLine.value = undefined
     if (endingLine.value?.sessionId === sessionId) endingLine.value = undefined
-    if (detailOpen.value) detailOpen.value = false
-    detailFocused.value = false
+    usePanesStore().reset(sessionId)
   }
 
   return {
     sidebarCollapsed, lastSessionId, drawerOpen, shellWidth, shellMode, setShellWidth,
     isWorkspaceExpanded, toggleWorkspace, pinnedSessions, togglePinned, unpin,
-    detailOpen, detailView, detailWidth, detailExpanded, detailFocused, lineTabs, activeLineTab, newLine, endingLine,
-    setDetailWidth, openDetail, toggleDetail, openLines, toggleLines, openLine, activateLine, closeLineTab, closeDetail,
+    detailWidth, newLine, endingLine, setDetailWidth,
     viewingSessionId, unread, viewSession, markUnread, splitSessionId, splitAvailable, activePane, openSplit, closeSplit,
     reviewNotes, addReviewNote, removeReviewNote, clearReviewNotes, composerInsert, requestComposerInsert, composerMenu, requestComposerMenu, shortcutsOpen,
     approvalKeyboard,

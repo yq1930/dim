@@ -5,6 +5,7 @@ import { GitBranch, ListTree, Plus, X } from "lucide-vue-next"
 import { MAIN_BRANCH } from "../../rpc/protocol"
 import { useChatStore } from "../../stores/chat"
 import { useToastStore } from "../../stores/toast"
+import { usePanesStore } from "../../stores/panes"
 import { useUiStore } from "../../stores/ui"
 import LineConversation from "./LineConversation.vue"
 import LinesTree from "./LinesTree.vue"
@@ -14,11 +15,12 @@ const props = defineProps<{ sessionId: string }>()
 const { t } = useI18n()
 const chat = useChatStore()
 const ui = useUiStore()
+const panes = usePanesStore()
 const toast = useToastStore()
 
 const view = computed(() => chat.views[props.sessionId])
-const tabs = computed(() => ui.lineTabs[props.sessionId] ?? [])
-const active = computed(() => ui.activeLineTab[props.sessionId])
+const tabs = computed(() => panes.lineTabs[props.sessionId] ?? [])
+const active = computed(() => panes.activeLine[props.sessionId])
 const lineCount = computed(() => view.value?.lines.filter((line) => line.id !== MAIN_BRANCH).length ?? 0)
 
 function line(branchId: string) {
@@ -46,16 +48,16 @@ function showDot(branchId: string): boolean {
 }
 
 function openLines(): void {
-  ui.openLines(props.sessionId)
+  panes.openLines(props.sessionId)
 }
 
 function activate(branchId: string): void {
   chat.ensureLine(props.sessionId, branchId)
-  ui.activateLine(props.sessionId, branchId)
+  panes.openLine(props.sessionId, branchId)
 }
 
 function closeTab(branchId: string): void {
-  ui.closeLineTab(props.sessionId, branchId)
+  panes.closeLineTab(props.sessionId, branchId)
 }
 
 function newLine(): void {

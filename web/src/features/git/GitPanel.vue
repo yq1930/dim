@@ -12,6 +12,7 @@ import { useConnectionStore } from "../../stores/connection"
 import { useGitStore } from "../../stores/git"
 import { useSessionsStore } from "../../stores/sessions"
 import { useToastStore } from "../../stores/toast"
+import { usePanesStore } from "../../stores/panes"
 import { useUiStore } from "../../stores/ui"
 import { notePullRequest } from "./auto-archive"
 
@@ -115,7 +116,7 @@ async function removeWorktree(): Promise<void> {
     sessions.forgetWorkspace(found.root)
     if (connection.supports("session.archive")) await sessions.setArchived(props.sessionId, true)
     if (ui.lastSessionId === props.sessionId) ui.lastSessionId = undefined
-    ui.closeDetail()
+    usePanesStore().close(props.sessionId)
     await router.replace({ name: "chat-new", query: { cwd: found.main } })
   } catch (cause) {
     error.value = message(cause)

@@ -87,6 +87,7 @@ async function close(file: OpenFile): Promise<void> {
   files.close(props.sessionId, file.path)
 }
 
+watch(() => props.sessionId, (sessionId) => { void files.restore(sessionId) }, { immediate: true })
 watch(() => current.value?.path, async (path) => {
   if (path === undefined) return
   void files.reload(props.sessionId, path)

@@ -6,7 +6,7 @@ import { readOpenedTerminal, readTerminalChunk, readTerminals } from "../rpc/ter
 import { showPreview } from "../desktop"
 import { useChatStore } from "./chat"
 import { useConnectionStore } from "./connection"
-import { useUiStore } from "./ui"
+import { usePanesStore } from "./panes"
 
 /** A dev server of the project's `.claude/launch.json`, the file Claude Code reads its dev servers from. */
 export type LaunchConfig = { name: string; command: string[]; port?: number; url?: string; cwd?: string }
@@ -82,11 +82,15 @@ function message(cause: unknown): string {
   return cause instanceof Error && cause.message ? cause.message : String(cause)
 }
 
-/** Each Session's dev servers and what its preview shows, for this page load; the servers' terminals outlive it. */
+/**
+ * Each Session's dev servers and what its preview shows. The servers' terminals
+ * outlive the page, and the Session's panes remember the server its preview
+ * showed, shown again while that server still runs.
+ */
 export const usePreviewsStore = defineStore("previews", () => {
   const chat = useChatStore()
   const connection = useConnectionStore()
-  const ui = useUiStore()
+  const panes = usePanesStore()
   const configs = ref<Record<string, { list?: LaunchConfig[]; error?: string }>>({})
   const servers = ref<Record<string, PreviewServer[]>>({})
   const previews = ref<Record<string, Preview>>({})
@@ -138,7 +142,17 @@ export const usePreviewsStore = defineStore("previews", () => {
     const origin = new URL(url).origin
     const owner = serverId ?? servers.value[sessionId]?.find((server) => !server.exited && server.url !== undefined && new URL(server.url).origin === origin)?.terminalId
     previews.value = { ...previews.value, [sessionId]: { url, ...(owner === undefined ? {} : { serverId: owner }), reload: (previews.value[sessionId]?.reload ?? 0) + 1 } }
-    ui.openDetail("preview")
+    panes.setPreview(sessionId, owner === undefined ? undefined : { url, serverId: owner })
+    panes.show(sessionId, "preview")
+  }
+
+  /** Shows the server the Session's panes remember, once its servers are found, where it still runs and nothing else was shown. */
+  async function restore(sessionId: string): Promise<void> {
+    const saved = panes.of(sessionId).preview
+    if (saved === undefined || previews.value[sessionId] !== undefined) return
+    const server = find(sessionId, saved.serverId)
+    if (server === undefined || server.exited) panes.setPreview(sessionId, undefined)
+    else await show(sessionId, saved.url, saved.serverId)
   }
 
   function reload(sessionId: string): void {
@@ -149,6 +163,7 @@ export const usePreviewsStore = defineStore("previews", () => {
   /** Back to the server list; running servers keep running. */
   function leave(sessionId: string): void {
     previews.value = { ...previews.value, [sessionId]: { reload: (previews.value[sessionId]?.reload ?? 0) + 1 } }
+    panes.setPreview(sessionId, undefined)
   }
 
   /** Starts a launch file's server in a terminal of the Session and shows it once it serves. */
@@ -211,5 +226,5 @@ export const usePreviewsStore = defineStore("previews", () => {
     }
   }
 
-  return { configs, servers, previews, logsOpen, loadConfigs, discover, show, reload, leave, start, stop, dismiss }
+  return { configs, servers, previews, logsOpen, loadConfigs, discover, show, restore, reload, leave, start, stop, dismiss }
 })

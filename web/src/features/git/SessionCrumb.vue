@@ -4,16 +4,16 @@ import { useI18n } from "vue-i18n"
 import { GitFork } from "lucide-vue-next"
 import { useGitStore } from "../../stores/git"
 import { workspaceName } from "../../stores/sessions"
-import { useUiStore } from "../../stores/ui"
+import { usePanesStore } from "../../stores/panes"
 
 /**
  * Where a Session runs, before its title: the workspace (the main repository
  * of a worktree) and the Git branch, which opens the Git tab.
  */
-const props = defineProps<{ cwd: string; interactive: boolean }>()
+const props = defineProps<{ sessionId: string; cwd: string; interactive: boolean }>()
 const { t } = useI18n()
 const git = useGitStore()
-const ui = useUiStore()
+const panes = usePanesStore()
 watch(() => props.cwd, (cwd) => { void git.inspect([cwd]) }, { immediate: true })
 const place = computed(() => git.places[props.cwd])
 const workspace = computed(() => git.linkedMain(props.cwd) ?? props.cwd)
@@ -22,7 +22,7 @@ const branch = computed(() => place.value?.root === undefined ? undefined : plac
 
 <template>
   <span class="workspace-crumb" :title="cwd">{{ workspaceName(workspace) }}</span>
-  <button v-if="branch !== undefined && interactive" type="button" class="branch-chip" :aria-pressed="ui.detailOpen && ui.detailView === 'git'" :title="branch" @click="ui.toggleDetail('git')">
+  <button v-if="branch !== undefined && interactive" type="button" class="branch-chip" :aria-pressed="panes.of(sessionId).open && panes.of(sessionId).view === 'git'" :title="branch" @click="panes.toggle(sessionId, 'git')">
     <GitFork :size="12" aria-hidden="true" /><span>{{ branch }}</span>
   </button>
   <span v-else-if="branch !== undefined" class="branch-chip" :title="branch"><GitFork :size="12" aria-hidden="true" /><span>{{ branch }}</span></span>

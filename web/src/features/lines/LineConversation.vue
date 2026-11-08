@@ -6,6 +6,7 @@ import { MAIN_BRANCH, type DraftAttachments } from "../../rpc/protocol"
 import { useChatStore } from "../../stores/chat"
 import { useConnectionStore } from "../../stores/connection"
 import { useSessionsStore } from "../../stores/sessions"
+import { usePanesStore } from "../../stores/panes"
 import { useUiStore } from "../../stores/ui"
 import ApprovalPrompt from "../chat/ApprovalPrompt.vue"
 import ComposerPanel from "../chat/ComposerPanel.vue"
@@ -19,6 +20,7 @@ const { t } = useI18n()
 const chat = useChatStore()
 const connection = useConnectionStore()
 const ui = useUiStore()
+const panes = usePanesStore()
 const composer = ref<InstanceType<typeof ComposerPanel>>()
 
 const view = computed(() => chat.views[props.sessionId])
@@ -71,7 +73,7 @@ function branchHere(text: string, at: number): void {
 
 function openLine(branchId: string): void {
   chat.ensureLine(props.sessionId, branchId)
-  ui.openLine(props.sessionId, branchId)
+  panes.openLine(props.sessionId, branchId)
 }
 
 function end(): void {
@@ -88,7 +90,7 @@ async function createBranch(prompt: string): Promise<void> {
   const at = branch.value?.lastTurnEnd
   if (at === undefined) throw new Error(t("lines.noFinishedTurn"))
   const branchId = await chat.createLine(props.sessionId, props.branchId, at, prompt)
-  ui.openLine(props.sessionId, branchId)
+  panes.openLine(props.sessionId, branchId)
 }
 
 function retry(): void {
@@ -169,7 +171,7 @@ function noModel(): void {
         :select-model="noModel"
         :placeholder="t('lines.placeholder')"
         :create-branch="connection.supports('session.branch_create') ? createBranch : undefined"
-        :open-lines="() => ui.openLines(sessionId)"
+        :open-lines="() => panes.openLines(sessionId)"
         variant="panel"
       >
         <template #status>

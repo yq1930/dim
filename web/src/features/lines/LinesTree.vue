@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n"
 import { GitBranch } from "lucide-vue-next"
 import type { LineView } from "../../lines"
 import { useChatStore } from "../../stores/chat"
+import { usePanesStore } from "../../stores/panes"
 import { useUiStore } from "../../stores/ui"
 import { lineName, lineStateLabel, lineStateTone, shortId } from "./line-state"
 
@@ -11,6 +12,7 @@ const props = defineProps<{ sessionId: string }>()
 const { t } = useI18n()
 const chat = useChatStore()
 const ui = useUiStore()
+const panes = usePanesStore()
 
 const view = computed(() => chat.views[props.sessionId])
 const lines = computed(() => view.value?.lines ?? [])
@@ -19,7 +21,7 @@ const hasLines = computed(() => lines.value.some((line) => line.id !== "main"))
 function open(line: LineView): void {
   if (line.id === "main" || line.state.kind === "creation-failed") return
   chat.ensureLine(props.sessionId, line.id)
-  ui.openLine(props.sessionId, line.id)
+  panes.openLine(props.sessionId, line.id)
 }
 
 function canEnd(line: LineView): boolean {
@@ -63,7 +65,7 @@ function parent(line: LineView): string {
         :key="line.id"
         class="lines-row"
         :data-depth="line.depth"
-        :data-active="line.id !== 'main' && ui.activeLineTab[sessionId] === line.id"
+        :data-active="line.id !== 'main' && panes.activeLine[sessionId] === line.id"
       >
         <template v-if="line.id === 'main'">
           <span class="lines-state" :data-tone="tone(line)" aria-hidden="true" />

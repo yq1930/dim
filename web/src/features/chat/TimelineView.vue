@@ -8,7 +8,7 @@ import ChatMarkdown from "./ChatMarkdown.vue"
 import TimelineUserMessage from "./TimelineUserMessage.vue"
 import TimelineWorkRow from "./TimelineWorkRow.vue"
 import { groupRows, type WorkItem } from "./work"
-import { usePreferencesStore } from "../../stores/preferences"
+import { usePanesStore } from "../../stores/panes"
 import { RAIL_MIN_MARKERS, timelineMarkers } from "../../timeline-markers"
 import { formatElapsedSeconds } from "./timeline-time"
 
@@ -43,8 +43,8 @@ const following = ref(true)
 const expandedGroups = ref<Record<string, boolean>>({})
 /** Items the reader opened or closed; the others follow the view. */
 const expandedItems = ref<Record<string, boolean>>({})
-const preferences = usePreferencesStore()
-const view = computed(() => props.sessionId === undefined ? "normal" : preferences.viewOf(props.sessionId))
+const panes = usePanesStore()
+const view = computed(() => props.sessionId === undefined ? "normal" : panes.transcriptOf(props.sessionId))
 
 const display = computed(() => groupRows(props.rows, view.value !== "normal"))
 watch(view, () => { expandedItems.value = {} })

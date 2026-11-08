@@ -102,7 +102,7 @@ function openExternal(): void {
 
 watch(() => props.sessionId, (sessionId) => {
   if (previews.configs[sessionId] === undefined) void previews.loadConfigs(sessionId)
-  void previews.discover(sessionId).catch(() => undefined)
+  void previews.discover(sessionId).then(() => previews.restore(sessionId)).catch(() => undefined)
 }, { immediate: true })
 watch(() => preview.value.url, (url) => { address.value = url ?? "" }, { immediate: true })
 // The logs follow the end of the output while the reader is there.

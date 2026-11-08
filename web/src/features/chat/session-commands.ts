@@ -9,7 +9,7 @@ import { useConnectionStore } from "../../stores/connection"
 import { useModelsStore } from "../../stores/models"
 import { useSessionsStore } from "../../stores/sessions"
 import { useToastStore } from "../../stores/toast"
-import { useUiStore } from "../../stores/ui"
+import { usePanesStore } from "../../stores/panes"
 import { formatTokens } from "./usage-format"
 
 /**
@@ -33,7 +33,7 @@ export function useSessionCommands(options: {
   const models = useModelsStore()
   const sessions = useSessionsStore()
   const toast = useToastStore()
-  const ui = useUiStore()
+  const panes = usePanesStore()
   const router = useRouter()
 
   /** The reasoning effort values the main line's model accepts; undefined until the models are read or when it has none. */
@@ -55,7 +55,7 @@ export function useSessionCommands(options: {
       review,
       status,
       copy: copyLastReply,
-      diff: () => ui.openDetail("changes"),
+      diff: () => panes.show(sessionId(), "changes"),
     }
   })
 

@@ -2,7 +2,7 @@
 import { computed, provide, ref, watch } from "vue"
 import { RouterLink, useRoute, useRouter } from "vue-router"
 import { useI18n } from "vue-i18n"
-import { Activity, ArrowLeftRight, FileDiff, GitBranch, ListChecks, Menu, SquareTerminal, X } from "lucide-vue-next"
+import { ArrowLeftRight, Menu, X } from "lucide-vue-next"
 import BrandMark from "../../components/BrandMark.vue"
 import ConfirmDialog from "../../components/ConfirmDialog.vue"
 import ApprovalPrompt from "./ApprovalPrompt.vue"
@@ -11,6 +11,7 @@ import OpenInMenu from "./OpenInMenu.vue"
 import QueuedInputs from "./QueuedInputs.vue"
 import PlanReview from "./PlanReview.vue"
 import QuestionPrompt from "./QuestionPrompt.vue"
+import SessionPaneButtons from "./SessionPaneButtons.vue"
 import TimelineView from "./TimelineView.vue"
 import TranscriptViewMenu from "./TranscriptViewMenu.vue"
 import SessionOutline from "./SessionOutline.vue"
@@ -20,7 +21,6 @@ import TurnChangesDialog from "./TurnChangesDialog.vue"
 import { useComposerDrafts } from "./composer-drafts"
 import { LINK_CONTEXT } from "./link-context"
 import { useSessionCommands } from "./session-commands"
-import { changedFileCount } from "./session-changes"
 import { MAIN_BRANCH, type ContextUsage, type DraftAttachments, type ModelId, type PermissionPreset } from "../../rpc/protocol"
 import { readSkills } from "../../rpc/general-settings"
 import { useChatStore } from "../../stores/chat"
@@ -28,8 +28,8 @@ import { useConnectionStore } from "../../stores/connection"
 import { useModelsStore } from "../../stores/models"
 import { useSessionsStore } from "../../stores/sessions"
 import { useToastStore } from "../../stores/toast"
-import { useUiStore, type DetailView, type Pane } from "../../stores/ui"
-import { withKeys } from "../../app/shortcuts"
+import { usePanesStore } from "../../stores/panes"
+import { useUiStore, type Pane } from "../../stores/ui"
 
 /** A Session's transcript and composer; `pane` is "split" for the one shown beside the routed Session. */
 const props = defineProps<{ sessionId: string; pane?: Pane }>()
@@ -39,6 +39,8 @@ const chat = useChatStore()
 const connection = useConnectionStore()
 const sessions = useSessionsStore()
 const ui = useUiStore()
+/** Used only in handlers: the chat-input test stubs the stores ChatPage reads while rendering. */
+const panes = usePanesStore()
 const toast = useToastStore()
 const route = useRoute()
 const router = useRouter()
@@ -67,10 +69,7 @@ const fileChanges = computed(() => view.value?.methods.includes("session.files.c
 const changesDialog = ref<InstanceType<typeof TurnChangesDialog>>()
 const timeline = ref<InstanceType<typeof TimelineView>>()
 const outline = computed(() => timeline.value?.markers ?? [])
-const changedFiles = computed(() => changedFileCount(view.value?.rows ?? [], summary.value?.cwd))
 const split = computed(() => props.pane === "split")
-const shown = (detail: DetailView) => ui.detailOpen && ui.detailView === detail
-const hasPlan = computed(() => view.value?.planning === true || (view.value?.todos.length ?? 0) > 0 || view.value?.rows.some((row) => row.kind === "tool" && row.name === "exit_plan_mode") === true)
 /** The main line's messages, oldest first, for the composer's ↑ recall. */
 const sentMessages = computed(() => (view.value?.rows ?? []).flatMap((row) => row.kind === "user" && row.text.trim() !== "" ? [row.text] : []))
 /** The App Server serves the permission methods on the connection; a Session may also list them. */
@@ -84,13 +83,6 @@ const permissionControl = computed(() => {
 const approvalKeyboard = computed(() => split.value === (ui.activePane === "split") && ui.approvalKeyboard(props.sessionId, MAIN_BRANCH, view.value?.approvals ?? []))
 const composer = ref<InstanceType<typeof ComposerPanel>>()
 const contextUsage = ref<ContextUsage>()
-const backgroundTasks = computed(() => view.value?.backgroundTasks ?? [])
-const activeTasks = computed(() => backgroundTasks.value.filter((task) => !task.finish).length)
-const lineCount = computed(() => view.value?.lines.filter((line) => line.id !== MAIN_BRANCH).length ?? 0)
-const linesBusy = computed(() => {
-  const approvals = view.value?.approvals ?? []
-  return view.value?.lines.some((line) => line.id !== MAIN_BRANCH && (line.state.kind === "working" || approvals.some((request) => request.branchId === line.id))) ?? false
-})
 const branchable = computed(() => connection.supports("session.branch_end") && view.value?.status === "ready")
 const canNewLine = computed(() => connection.supports("session.branch_create") && view.value?.status === "ready")
 watch(() => view.value?.status, (status) => { if (status === "ready") void models.load() }, { immediate: true })
@@ -109,7 +101,7 @@ async function commit(): Promise<void> {
     failure(cause)
   }
 }
-const sessionCommands = computed(() => commands.value ? { ...commands.value, tasks: () => ui.openDetail("tasks") } : undefined)
+const sessionCommands = computed(() => commands.value ? { ...commands.value, tasks: () => panes.show(props.sessionId, "tasks") } : undefined)
 
 // Text a panel puts into this Session's composer (the review comments of the changes panel).
 watch(() => ui.composerInsert, (request) => {
@@ -166,7 +158,7 @@ function selectModel(model: ModelId): Promise<void> {
 
 function openLine(branchId: string): void {
   chat.ensureLine(props.sessionId, branchId)
-  ui.openLine(props.sessionId, branchId)
+  panes.openLine(props.sessionId, branchId)
 }
 
 function branch(text: string, cut: number): void {
@@ -177,7 +169,7 @@ async function createBranch(prompt: string): Promise<void> {
   const at = view.value?.lastTurnEnd
   if (at === undefined) throw new Error(t("lines.noFinishedTurn"))
   const branchId = await chat.createLine(props.sessionId, MAIN_BRANCH, at, prompt)
-  ui.openLine(props.sessionId, branchId)
+  panes.openLine(props.sessionId, branchId)
 }
 
 /** Makes the split pane's Session the routed one, and the routed one the split. */
@@ -230,48 +222,12 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
       <header class="session-header" data-tauri-drag-region="deep">
         <button v-if="ui.shellMode === 'compact'" class="ui-icon-button session-nav" data-variant="ghost" data-size="md" type="button" :aria-label="t('sidebar.openMenu')" @click="ui.drawerOpen = true"><Menu aria-hidden="true" /></button>
         <div class="session-heading">
-          <SessionCrumb v-if="summary" :cwd="summary.cwd" :interactive="!split" />
+          <SessionCrumb v-if="summary" :session-id="sessionId" :cwd="summary.cwd" :interactive="!split" />
           <h1 data-route-heading tabindex="-1" :title="title">{{ title }}</h1>
         </div>
         <div class="session-tools">
           <SessionOutline v-if="outline.length > 1" :markers="outline" @jump="timeline?.jumpTo($event)" />
-          <button
-            v-if="!split && (changedFiles > 0 || shown('changes'))"
-            class="ui-button session-lines"
-            data-variant="ghost"
-            data-size="sm"
-            type="button"
-            :aria-pressed="shown('changes')"
-            :aria-label="t('sessionChanges.open')"
-            v-tooltip="withKeys(t('sessionChanges.open'), 'toggleDiff')"
-            @click="ui.toggleDetail('changes')"
-          >
-            <FileDiff aria-hidden="true" />
-            <span>{{ t("sessionChanges.title") }}</span>
-            <span v-if="changedFiles > 0" class="ui-badge" data-size="sm">{{ changedFiles }}</span>
-          </button>
-          <button v-if="!split && (hasPlan || shown('plan'))" type="button" class="ui-button session-lines" data-variant="ghost" data-size="sm" :aria-pressed="shown('plan')" :aria-label="t('plan.panel')" v-tooltip="t('plan.panel')" @click="ui.toggleDetail('plan')">
-            <ListChecks aria-hidden="true" /><span>{{ t("plan.panel") }}</span>
-          </button>
-          <button
-            v-if="!split && connection.supports('session.branch_end')"
-            class="ui-button session-lines"
-            data-variant="ghost"
-            data-size="sm"
-            type="button"
-            :aria-label="t('lines.open')"
-            @click="ui.toggleLines(sessionId)"
-          >
-            <GitBranch aria-hidden="true" />
-            <span>{{ t("lines.title") }}</span>
-            <span v-if="lineCount > 0" class="ui-badge" data-size="sm" :data-tone="linesBusy ? 'warning' : undefined">{{ lineCount }}</span>
-          </button>
-          <button v-if="!split" type="button" class="ui-button session-lines" data-variant="ghost" data-size="sm" :aria-pressed="shown('tasks')" :aria-label="t('tasks.title')" v-tooltip="t('tasks.title')" @click="ui.toggleDetail('tasks')">
-            <Activity aria-hidden="true" /><span>{{ t("tasks.title") }}</span><span v-if="activeTasks" class="ui-badge" data-tone="primary">{{ activeTasks }}</span>
-          </button>
-          <button v-if="!split && connection.supports('terminal.open')" type="button" class="ui-button session-lines" data-variant="ghost" data-size="sm" :aria-pressed="shown('terminal')" :aria-label="t('terminal.title')" v-tooltip="withKeys(t('terminal.toggle'), 'toggleTerminal')" @click="ui.toggleDetail('terminal')">
-            <SquareTerminal aria-hidden="true" /><span>{{ t("terminal.title") }}</span>
-          </button>
+          <SessionPaneButtons v-if="!split" :session-id="sessionId" />
           <OpenInMenu v-if="!split && summary" :path="summary.cwd" />
           <TranscriptViewMenu v-if="!split" :session-id="sessionId" />
           <template v-if="split">
@@ -330,7 +286,7 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
       :reasoning-effort="view.reasoningEffort"
       :select-effort="connection.supports('session.model.update') ? async (value) => { await chat.setEffort(sessionId, value) } : undefined"
       :create-branch="canNewLine ? createBranch : undefined"
-      :open-lines="branchable ? () => ui.openLines(sessionId) : undefined"
+      :open-lines="branchable ? () => panes.openLines(sessionId) : undefined"
       :session-commands="sessionCommands"
       :list-skills="listSkills"
       :context-usage="contextUsage"
@@ -343,8 +299,5 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
 <style scoped>
 .session-running { gap: 6px; }
 .session-running > .status-dot { border: 0; }
-.session-lines { gap: 6px; flex: none; }
-.session-lines[aria-pressed="true"] { background: var(--hover); color: var(--foreground); }
-.session-lines .ui-badge { min-width: 18px; padding-inline: 4px; }
 .session-tools { display: flex; flex: none; align-items: center; gap: var(--space-3); }
 </style>

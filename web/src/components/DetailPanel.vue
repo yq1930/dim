@@ -16,7 +16,7 @@ import { useFilesStore } from "../stores/files"
 import { useGitStore } from "../stores/git"
 import { useSessionsStore } from "../stores/sessions"
 import { useTerminalsStore } from "../stores/terminals"
-import { useUiStore, type DetailView } from "../stores/ui"
+import { usePanesStore, type DetailView } from "../stores/panes"
 import { withKeys } from "../app/shortcuts"
 
 /** xterm.js loads only once a terminal is shown, and the file view's highlighter once a file is. */
@@ -35,7 +35,7 @@ const files = useFilesStore()
 const sessions = useSessionsStore()
 const terminals = useTerminalsStore()
 const git = useGitStore()
-const ui = useUiStore()
+const panes = usePanesStore()
 const id = useId()
 const tablist = ref<HTMLElement>()
 provide(LINK_CONTEXT, computed(() => {
@@ -62,7 +62,8 @@ const tabs = computed<Tab[]>(() => {
     ...(connection.supports("session.branch_end") ? [{ view: "lines" as const, icon: GitBranch, label: t("lines.title"), ...(lines.length > 0 ? { badge: lines.length, ...(linesBusy ? { tone: "warning" as const } : {}) } : {}) }] : []),
   ]
 })
-const current = computed<DetailView>(() => tabs.value.some((tab) => tab.view === ui.detailView) ? ui.detailView : "changes")
+const layout = computed(() => panes.of(props.sessionId))
+const current = computed<DetailView>(() => tabs.value.some((tab) => tab.view === layout.value.view) ? layout.value.view : "changes")
 /** Tabs that do not fit with their names show only their icons, except the selected one. */
 const compact = ref(false)
 let fullWidth = 0
@@ -94,7 +95,7 @@ function onKeydown(event: KeyboardEvent): void {
   const index = tabs.value.findIndex((tab) => tab.view === current.value)
   const next = tabs.value[(index + (event.key === "ArrowRight" ? 1 : -1) + tabs.value.length) % tabs.value.length]
   if (next === undefined) return
-  ui.openDetail(next.view)
+  panes.show(props.sessionId, next.view)
   void nextTick(() => tablist.value?.querySelector<HTMLButtonElement>('[aria-selected="true"]')?.focus())
 }
 </script>
@@ -115,7 +116,7 @@ function onKeydown(event: KeyboardEvent): void {
           :tabindex="tab.view === current ? 0 : -1"
           :aria-label="tab.label"
           v-tooltip="compact && tab.view !== current ? tab.label : undefined"
-          @click="ui.openDetail(tab.view)"
+          @click="panes.show(sessionId, tab.view)"
         >
           <component :is="tab.icon" :size="14" aria-hidden="true" />
           <span v-if="!compact || tab.view === current">{{ tab.label }}</span>
@@ -123,11 +124,11 @@ function onKeydown(event: KeyboardEvent): void {
         </button>
       </div>
       <div class="panel-tab-actions">
-        <button type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="ui.detailExpanded ? t('lines.collapse') : t('lines.expand')" v-tooltip="withKeys(ui.detailExpanded ? t('lines.collapse') : t('lines.expand'), 'toggleExpandPane')" @click="ui.detailExpanded = !ui.detailExpanded">
-          <Minimize2 v-if="ui.detailExpanded" aria-hidden="true" />
+        <button type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="layout.expanded ? t('lines.collapse') : t('lines.expand')" v-tooltip="withKeys(layout.expanded ? t('lines.collapse') : t('lines.expand'), 'toggleExpandPane')" @click="panes.toggleExpanded(sessionId)">
+          <Minimize2 v-if="layout.expanded" aria-hidden="true" />
           <Maximize2 v-else aria-hidden="true" />
         </button>
-        <button type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="t('detail.close')" v-tooltip="withKeys(t('detail.close'), 'closePane')" @click="ui.closeDetail">
+        <button type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="t('detail.close')" v-tooltip="withKeys(t('detail.close'), 'closePane')" @click="panes.close(sessionId)">
           <X aria-hidden="true" />
         </button>
       </div>

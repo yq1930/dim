@@ -5,7 +5,7 @@ import { readFolderListing, readSavedFile, readTextSearch, type FolderListing, t
 import type { FileView } from "../rpc/protocol"
 import { useChatStore } from "./chat"
 import { useConnectionStore } from "./connection"
-import { useUiStore } from "./ui"
+import { usePanesStore } from "./panes"
 
 export type ShownFile = Exclude<FileView, { kind: "directory" }>
 
@@ -38,10 +38,14 @@ function message(cause: unknown): string {
   return cause instanceof Error && cause.message ? cause.message : String(cause)
 }
 
-/** Each Session's open files and file tree, the detail panel's file view, for this page load. */
+/**
+ * Each Session's open files and file tree, the detail panel's file view. The
+ * tabs' paths are remembered with the Session's panes and opened again when its
+ * file view is next shown; the rest lasts for this page load.
+ */
 export const useFilesStore = defineStore("files", () => {
   const chat = useChatStore()
-  const ui = useUiStore()
+  const panes = usePanesStore()
   const bySession = ref<Record<string, OpenFile[]>>({})
   const active = ref<Record<string, string | undefined>>({})
   const wrap = ref(readFlag(WRAP_KEY, true))
@@ -52,6 +56,7 @@ export const useFilesStore = defineStore("files", () => {
   /** Each Session's open folders. */
   const expanded = ref<Record<string, string[]>>({})
   let seq = 0
+  const restoring = new Set<string>()
 
   watch(wrap, (value) => { try { localStorage.setItem(WRAP_KEY, String(value)) } catch { /* kept for this page load */ } })
   watch(tree, (value) => { try { localStorage.setItem(TREE_KEY, String(value)) } catch { /* kept for this page load */ } })
@@ -70,6 +75,26 @@ export const useFilesStore = defineStore("files", () => {
 
   function find(sessionId: string, path: string): OpenFile | undefined {
     return bySession.value[sessionId]?.find((file) => file.path === path)
+  }
+
+  function remember(sessionId: string): void {
+    panes.setFiles(sessionId, (bySession.value[sessionId] ?? []).map((file) => file.path), active.value[sessionId])
+  }
+
+  /** Opens the tabs the Session's panes remember, once per page load, unless files were opened meanwhile. */
+  async function restore(sessionId: string): Promise<void> {
+    const saved = panes.of(sessionId).files
+    if (bySession.value[sessionId] !== undefined || restoring.has(sessionId) || saved === undefined || saved.paths.length === 0) return
+    restoring.add(sessionId)
+    try {
+      const read = await Promise.all(saved.paths.map((path) => chat.readFile(sessionId, path).catch(() => undefined)))
+      if (bySession.value[sessionId] !== undefined) return
+      const opened = read.flatMap((view): OpenFile[] => view === undefined || view.kind === "directory" ? [] : [{ path: view.path, preview: false, view }])
+      bySession.value = { ...bySession.value, [sessionId]: opened }
+      active.value = { ...active.value, [sessionId]: opened.find((file) => file.path === saved.active)?.path ?? opened.at(-1)?.path }
+    } finally {
+      restoring.delete(sessionId)
+    }
   }
 
   /**
@@ -102,7 +127,8 @@ export const useFilesStore = defineStore("files", () => {
     }
     bySession.value = { ...bySession.value, [sessionId]: next }
     active.value = { ...active.value, [sessionId]: view.path }
-    ui.openDetail("files")
+    remember(sessionId)
+    panes.show(sessionId, "files")
     return true
   }
 
@@ -124,6 +150,7 @@ export const useFilesStore = defineStore("files", () => {
 
   function activate(sessionId: string, path: string | undefined): void {
     active.value = { ...active.value, [sessionId]: path }
+    remember(sessionId)
   }
 
   function keepOpen(sessionId: string, path: string): void {
@@ -137,6 +164,7 @@ export const useFilesStore = defineStore("files", () => {
     const rest = files.filter((file) => file.path !== path)
     bySession.value = { ...bySession.value, [sessionId]: rest }
     if (active.value[sessionId] === path) activate(sessionId, (rest[index] ?? rest[index - 1])?.path)
+    else remember(sessionId)
   }
 
   /** Starts editing an editable text file; the edit keeps the tab. */
@@ -236,7 +264,7 @@ export const useFilesStore = defineStore("files", () => {
     return useConnectionStore().client.call("session.files.grep", { sessionId, query }, readTextSearch, 30_000)
   }
 
-  return { bySession, active, wrap, tree, folders, expanded, supports, readable, open, reload, activate, keepOpen, close, edit, setDraft, discard, finish, save, readFolder, toggleFolder, refreshTree, collapseTree, grep }
+  return { bySession, active, wrap, tree, folders, expanded, supports, readable, open, restore, reload, activate, keepOpen, close, edit, setDraft, discard, finish, save, readFolder, toggleFolder, refreshTree, collapseTree, grep }
 })
 
 /** Whether a file read again has the content shown: by revision where both have one, else by size and time. */

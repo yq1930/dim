@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n"
 import { GitBranch } from "lucide-vue-next"
 import { MAIN_BRANCH } from "../../rpc/protocol"
 import { useChatStore } from "../../stores/chat"
+import { usePanesStore } from "../../stores/panes"
 import { useUiStore } from "../../stores/ui"
 import { lineName, shortId } from "./line-state"
 
@@ -56,7 +57,7 @@ async function create(): Promise<void> {
   error.value = ""
   try {
     const branchId = await chat.createLine(current.sessionId, current.parentBranchId, current.at, text)
-    ui.openLine(current.sessionId, branchId)
+    usePanesStore().openLine(current.sessionId, branchId)
     close()
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause)

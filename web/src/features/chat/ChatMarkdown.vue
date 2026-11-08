@@ -14,6 +14,7 @@ import { loadMarkdownRenderer } from "./markdown-renderer"
 import { inject, onBeforeUnmount, onMounted, ref, shallowRef } from "vue"
 import { useI18n } from "vue-i18n"
 import { useFilesStore } from "../../stores/files"
+import { localUrl, usePreviewsStore } from "../../stores/previews"
 import { useToastStore } from "../../stores/toast"
 import { LINK_CONTEXT } from "./link-context"
 import { markdownLinkLines, markdownLinkPath } from "./markdown-links"
@@ -27,6 +28,7 @@ defineProps<{
 const { t } = useI18n()
 const toast = useToastStore()
 const files = useFilesStore()
+const previews = usePreviewsStore()
 const link = inject(LINK_CONTEXT, undefined)
 /** markstream sizes code from a number, not CSS: 13px on 20px lines, the 14px type scale's code size. */
 const codeBlockOptions = { fontSize: 13, lineHeight: 20 }
@@ -58,6 +60,13 @@ onBeforeUnmount(() => observer?.disconnect())
 async function onLinkClick(event: MouseEvent): Promise<void> {
   const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null
   const href = anchor?.getAttribute("href") ?? ""
+  // A page on this computer, such as a dev server's, opens in the preview pane.
+  const local = /^https?:\/\//i.test(href) ? localUrl(href) : undefined
+  if (local !== undefined && link?.value?.filePane === true && !event.metaKey) {
+    event.preventDefault()
+    await previews.show(link.value.sessionId, local)
+    return
+  }
   const path = anchor === null ? undefined : markdownLinkPath(href)
   if (path === undefined) return
   event.preventDefault()

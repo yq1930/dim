@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, provide, ref, useId, watch, type Component } from "vue"
 import { useI18n } from "vue-i18n"
-import { Activity, FileDiff, Files, GitBranch, GitPullRequest, ListChecks, Maximize2, Minimize2, SquareTerminal, X } from "lucide-vue-next"
+import { Activity, AppWindow, FileDiff, Files, GitBranch, GitPullRequest, ListChecks, Maximize2, Minimize2, SquareTerminal, X } from "lucide-vue-next"
 import LinesPanel from "../features/lines/LinesPanel.vue"
 import PlanPanel from "../features/chat/PlanPanel.vue"
 import SessionChangesPanel from "../features/chat/SessionChangesPanel.vue"
@@ -21,6 +21,7 @@ import { useUiStore, type DetailView } from "../stores/ui"
 /** xterm.js loads only once a terminal is shown, and the file view's highlighter once a file is. */
 const TerminalPanel = defineAsyncComponent(() => import("../features/terminal/TerminalPanel.vue"))
 const FilesPanel = defineAsyncComponent(() => import("../features/files/FilesPanel.vue"))
+const PreviewPanel = defineAsyncComponent(() => import("../features/preview/PreviewPanel.vue"))
 
 type Tab = { view: DetailView; icon: Component; label: string; badge?: string | number; tone?: "primary" | "warning" }
 
@@ -52,6 +53,7 @@ const tabs = computed<Tab[]>(() => {
   return [
     { view: "changes", icon: FileDiff, label: t("sessionChanges.title"), ...(changed > 0 ? { badge: changed } : {}) },
     ...(files.readable(props.sessionId) ? [{ view: "files" as const, icon: Files, label: t("files.title") }] : []),
+    { view: "preview", icon: AppWindow, label: t("preview.title") },
     { view: "plan", icon: ListChecks, label: t("plan.panel"), ...(todos.length > 0 ? { badge: `${todos.filter((todo) => todo.status === "completed").length}/${todos.length}` } : {}) },
     { view: "tasks", icon: Activity, label: t("tasks.title"), ...(running > 0 ? { badge: running, tone: "primary" as const } : {}) },
     ...(terminals.available ? [{ view: "terminal" as const, icon: SquareTerminal, label: t("terminal.title") }] : []),
@@ -132,6 +134,7 @@ function onKeydown(event: KeyboardEvent): void {
     <div :id="`${id}-body`" class="detail-panel-body" role="tabpanel" :aria-labelledby="`${id}-${current}`">
       <SessionChangesPanel v-if="current === 'changes'" :session-id="sessionId" />
       <FilesPanel v-else-if="current === 'files'" :session-id="sessionId" />
+      <PreviewPanel v-else-if="current === 'preview'" :session-id="sessionId" />
       <PlanPanel v-else-if="current === 'plan'" :session-id="sessionId" />
       <TasksPanel v-else-if="current === 'tasks'" :session-id="sessionId" />
       <TerminalPanel v-else-if="current === 'terminal'" :session-id="sessionId" />

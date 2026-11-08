@@ -1,7 +1,8 @@
 /** Readers of the `terminal.*` management replies (docs/design/web-workspace.md §4.4). */
-import { arr, bool, num, obj, str } from "./read-core"
+import { arr, bool, fail, num, obj, str } from "./read-core"
 
-export type TerminalSummary = { terminalId: string; cwd: string; title: string; exited: boolean }
+/** A terminal; `command` is the program it runs in place of a shell (a dev server the preview started). */
+export type TerminalSummary = { terminalId: string; cwd: string; title: string; exited: boolean; command?: string[] }
 
 /** Output after a cursor; `reset` says output before it is no longer kept. */
 export type TerminalChunk = { data: string; cursor: number; reset: boolean; exited: boolean; exitCode?: number }
@@ -15,7 +16,8 @@ export function readTerminals(value: unknown): TerminalSummary[] {
   return arr(obj(value, "terminal.list").terminals, "terminal.list.terminals").map((item, index) => {
     const at = `terminal.list.terminals[${index}]`
     const source = obj(item, at)
-    return { terminalId: str(source, "terminalId", at), cwd: str(source, "cwd", at), title: str(source, "title", at), exited: bool(source, "exited", at) }
+    const command = source.command === undefined ? undefined : arr(source.command, `${at}.command`).map((part, index) => typeof part === "string" ? part : fail(`${at}.command[${index}]`, "a string"))
+    return { terminalId: str(source, "terminalId", at), cwd: str(source, "cwd", at), title: str(source, "title", at), exited: bool(source, "exited", at), ...(command === undefined ? {} : { command }) }
   })
 }
 

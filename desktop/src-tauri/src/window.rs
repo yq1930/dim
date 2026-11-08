@@ -109,8 +109,9 @@ pub fn webview_store_id(home: &Path) -> Result<[u8; 16]> {
     }
 }
 
-/// Opens the main window on the boot page. It may navigate to the boot page
-/// and the local service's origin; other web links open in the default
+/// Opens the main window on the boot page. It may navigate to the boot page,
+/// the local service's origin and the dev servers the preview pane shows
+/// (WebKit asks for its frames too); other web links open in the default
 /// browser, and no page opens a window of its own.
 pub fn build(app: &AppHandle, desktop: &Arc<Desktop>, store: [u8; 16]) -> Result<WebviewWindow> {
     let state = *desktop.window_state.lock().unwrap();
@@ -134,7 +135,8 @@ pub fn build(app: &AppHandle, desktop: &Arc<Desktop>, store: [u8; 16]) -> Result
             if url.scheme() == "tauri" && url.host_str() == Some("localhost") {
                 return true;
             }
-            if navigation.state::<Arc<Desktop>>().service.in_workspace(url) {
+            let desktop = navigation.state::<Arc<Desktop>>();
+            if desktop.service.in_workspace(url) || desktop.previews.allows(url) {
                 return true;
             }
             open_external(&navigation, url);

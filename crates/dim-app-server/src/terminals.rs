@@ -1,5 +1,6 @@
 //! `terminal.*` management methods: interactive login shells the operator
-//! opens beside a Session ([web workspace §4.4](../../../docs/design/web-workspace.md#44-terminals)).
+//! opens beside a Session, or a program such as a dev server that a login
+//! shell starts ([web workspace §4.4](../../../docs/design/web-workspace.md#44-terminals)).
 //! The process owns them, so they outlive page reloads and a Session's idle
 //! unload; unloading the plugin ends every one.
 use crate::methods::ManagementMethods;
@@ -37,6 +38,7 @@ const CLOSE: &str = "terminal.close";
 /// The output a terminal keeps for a reader that attaches later.
 const RETAINED: usize = 256 * 1024;
 const MAX_TERMINALS: usize = 32;
+const MAX_TITLE: usize = 100;
 const MAX_WAIT: Duration = Duration::from_secs(25);
 const REAP_POLL: Duration = Duration::from_millis(200);
 const OUTPUT_GRACE: Duration = Duration::from_secs(1);
@@ -59,6 +61,14 @@ struct OpenRequest {
     cwd: String,
     cols: u16,
     rows: u16,
+    /// A program and its arguments to run in place of the interactive
+    /// shell; the login shell starts it, so it sees the operator's
+    /// environment, and the terminal exits with it.
+    #[serde(default)]
+    command: Option<Vec<String>>,
+    /// The title listed; the program's or the shell's name by default.
+    #[serde(default)]
+    title: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -180,6 +190,7 @@ struct Terminal {
     owner: String,
     cwd: String,
     title: String,
+    command: Option<Vec<String>>,
     order: u64,
     pty: tokio::sync::Mutex<PtyProcessTree>,
     input: mpsc::Sender<Vec<u8>>,
@@ -250,6 +261,20 @@ impl Terminals {
                 "cwd must be an existing absolute directory",
             ));
         }
+        if request
+            .command
+            .as_ref()
+            .is_some_and(|command| command.first().is_none_or(|program| program.is_empty()))
+        {
+            return Err(RpcError::invalid("command must name a program"));
+        }
+        if request
+            .title
+            .as_ref()
+            .is_some_and(|title| title.is_empty() || title.chars().count() > MAX_TITLE)
+        {
+            return Err(RpcError::invalid("title must be 1 to 100 characters"));
+        }
         if self.open.lock().unwrap().len() >= MAX_TERMINALS {
             return Err(RpcError::app(
                 -32000,
@@ -257,11 +282,22 @@ impl Terminals {
                 "Too many terminals are open",
             ));
         }
-        let (executable, args) = login_shell(&platform.env);
-        let title = executable
-            .file_stem()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_default();
+        let (executable, mut args) = login_shell(&platform.env);
+        let started = request
+            .command
+            .as_ref()
+            .map(|command| PathBuf::from(&command[0]));
+        let title = request.title.clone().unwrap_or_else(|| {
+            started
+                .as_deref()
+                .unwrap_or(&executable)
+                .file_stem()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        });
+        if let Some(command) = &request.command {
+            args = program_args(command);
+        }
         let mut pty = platform
             .spawn_pty(
                 ProcessSpec {
@@ -279,6 +315,7 @@ impl Terminals {
             owner: request.owner,
             cwd: request.cwd,
             title,
+            command: request.command,
             order: self.opened.fetch_add(1, Ordering::Relaxed),
             pty: tokio::sync::Mutex::new(pty),
             input,
@@ -306,12 +343,16 @@ impl Terminals {
         let terminals: Vec<_> = owned
             .into_iter()
             .map(|(id, terminal)| {
-                json!({
+                let mut listed = json!({
                     "terminalId": id,
                     "cwd": terminal.cwd,
                     "title": terminal.title,
                     "exited": terminal.output.lock().unwrap().exit.is_some(),
-                })
+                });
+                if let Some(command) = &terminal.command {
+                    listed["command"] = json!(command);
+                }
+                listed
             })
             .collect();
         reply(json!({ "terminals": terminals }))
@@ -474,6 +515,18 @@ fn login_shell(env: &[(OsString, OsString)]) -> (PathBuf, Vec<OsString>) {
         })
         .unwrap_or_else(|| "/bin/sh".into());
     (shell, vec!["-l".into()])
+}
+
+/// The login shell's arguments that run `command` in its place: `exec "$0"
+/// "$@"` keeps every argument as given. Windows hands it to `cmd.exe /C`.
+fn program_args(command: &[String]) -> Vec<OsString> {
+    let mut args: Vec<OsString> = if cfg!(windows) {
+        vec!["/C".into()]
+    } else {
+        vec!["-l".into(), "-c".into(), r#"exec "$0" "$@""#.into()]
+    };
+    args.extend(command.iter().map(OsString::from));
+    args
 }
 
 fn terminal_env(env: &[(OsString, OsString)]) -> Vec<(OsString, OsString)> {

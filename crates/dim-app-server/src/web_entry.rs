@@ -34,7 +34,8 @@ const PORT_ATTEMPTS: u16 = 100;
 const COOKIE: &str = "dim_web";
 const FREE_FAILURES: u32 = 5;
 const MAX_BACKOFF: Duration = Duration::from_secs(60);
-const CSP: &str = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'";
+/// `frame-src` admits dev servers on this computer, which the preview pane shows.
+const CSP: &str = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-src 'self' http://localhost:* http://127.0.0.1:* https://localhost:* https://127.0.0.1:*; frame-ancestors 'none'";
 
 /// Process-wide owner of the entry; at most one is open. The daemon-owned
 /// `enabled` switch and the local connections that called `web.open` (the

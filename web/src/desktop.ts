@@ -57,3 +57,8 @@ export async function openInApp(id: string, path: string): Promise<void> {
 export function keepAwake(active: boolean): void {
   void window.__TAURI__?.core.invoke("keep_awake", { active }).catch(() => undefined)
 }
+
+/** Lets the desktop window's preview frame show a dev server on this computer; a browser needs nothing. */
+export async function showPreview(url: string): Promise<void> {
+  await window.__TAURI__?.core.invoke("show_preview", { url })
+}

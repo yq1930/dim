@@ -7,6 +7,7 @@ fn main() {
             "notify_attention",
             "open_in_app",
             "open_workspace_path",
+            "show_preview",
         ]),
     ))
     .expect("Cannot build desktop permissions");

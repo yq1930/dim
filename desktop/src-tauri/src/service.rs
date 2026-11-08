@@ -256,6 +256,7 @@ impl Service {
                 .permission("allow-notify-attention")
                 .permission("allow-open-in-app")
                 .permission("allow-open-workspace-path")
+                .permission("allow-show-preview")
                 .permission("core:window:allow-start-dragging")
                 .permission("core:window:allow-internal-toggle-maximize"),
             )?;

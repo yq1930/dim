@@ -6,6 +6,7 @@ mod awake;
 mod commands;
 mod environment;
 mod menu;
+mod preview;
 mod service;
 mod update;
 mod window;
@@ -34,6 +35,7 @@ pub struct Desktop {
     /// Application icons as data URLs, by bundle path; `None` when one has none.
     icons: Mutex<HashMap<PathBuf, Option<String>>>,
     awake: awake::KeepAwake,
+    previews: preview::Previews,
 }
 
 fn main() {
@@ -52,7 +54,8 @@ fn main() {
             awake::keep_awake,
             commands::choose_workspace,
             commands::notify_attention,
-            commands::open_workspace_path
+            commands::open_workspace_path,
+            preview::show_preview
         ])
         .on_menu_event(menu::handle)
         .setup(|app| {
@@ -76,6 +79,7 @@ fn main() {
                 updating: AtomicBool::new(false),
                 icons: Mutex::default(),
                 awake: awake::KeepAwake::default(),
+                previews: preview::Previews::default(),
             });
             app.manage(desktop.clone());
             app.set_menu(menu::build(app.handle())?)?;

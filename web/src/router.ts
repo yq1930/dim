@@ -17,6 +17,7 @@ export const router = createRouter({
         { path: "", name: "settings-index", component: { render: () => null } },
         { path: "account", name: "settings-account", component: () => import("./features/settings/AccountSettings.vue") },
         { path: "appearance", name: "settings-appearance", component: () => import("./features/settings/AppearanceSettings.vue") },
+        { path: "general", name: "settings-general", component: () => import("./features/settings/GeneralSettings.vue") },
         { path: "agent", name: "settings-agent", component: () => import("./features/settings/AgentSettings.vue") },
         { path: "providers", name: "settings-providers", component: () => import("./features/settings/ProviderSettings.vue") },
         { path: "providers/new", name: "settings-provider-new", component: () => import("./features/settings/ProviderSettings.vue") },

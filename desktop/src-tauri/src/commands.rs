@@ -32,7 +32,7 @@ const RUNNABLE: [&str; 17] = [
     "workflow",
 ];
 
-fn in_local_workspace(app: &AppHandle, window: &WebviewWindow) -> Result<bool, String> {
+pub(crate) fn in_local_workspace(app: &AppHandle, window: &WebviewWindow) -> Result<bool, String> {
     let url = window.url().map_err(|error| error.to_string())?;
     Ok(window.label() == window::MAIN && app.state::<Arc<Desktop>>().service.in_workspace(&url))
 }

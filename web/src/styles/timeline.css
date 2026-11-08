@@ -42,6 +42,15 @@
 .app-shell[data-mode="compact"] .workspace-crumb { grid-area: crumb; max-width: none; }
 .app-shell[data-mode="compact"] .workspace-crumb-separator { display: none; }
 .app-shell[data-mode="compact"] .session-running { grid-area: badge; margin-left: var(--space-2); }
+/* A Session's header: the branch beside the workspace under the title, the tools in one row of icons at the end. */
+.app-shell[data-mode="compact"] .chat-page .session-header {
+  grid-template-columns: auto minmax(0, max-content) auto minmax(0, 1fr) auto;
+  grid-template-areas: "nav title title title panel" "nav crumb chip badge panel";
+}
+.app-shell[data-mode="compact"] .chat-page .branch-chip { grid-area: chip; justify-self: start; }
+.app-shell[data-mode="compact"] .chat-page .session-running { justify-self: start; }
+.app-shell[data-mode="compact"] .chat-page .session-tools { grid-area: panel; gap: var(--space-1); margin-left: var(--space-2); }
+.app-shell[data-mode="compact"] .chat-page .session-tools .session-lines > span:not(.ui-badge) { display: none; }
 /* 32px buttons 12px apart: their 44px touch areas meet without overlapping. */
 .app-shell[data-mode="compact"] .session-title-menu { grid-area: more; margin-left: var(--space-3); }
 /* Flipped above the trigger when the list below would clip it (menu-placement.ts). */
@@ -121,6 +130,10 @@
    rows' -8px pull lands their chevrons under the group label (22px). */
 .timeline-work-group-content { display: flex; flex-direction: column; gap: 2px; margin-left: 6px; padding: 2px 0 0 15px; border-left: 1px solid color-mix(in oklab, var(--border) 60%, transparent); }
 .timeline-thinking-quote { max-height: 240px; overflow: auto; padding-left: var(--space-3); border-left: 2px solid color-mix(in oklab, var(--border) 70%, transparent); color: var(--muted-foreground); font-size: var(--text-base); line-height: var(--leading-relaxed); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* The thinking and verbose views read thinking in full, as part of the transcript. */
+.timeline-shell:not([data-view="normal"]) .timeline-thinking-quote { max-height: none; overflow: visible; }
+/* Steps open by default there, so an open step's row is not marked unless pointed at. */
+.timeline-shell:not([data-view="normal"]) .timeline-work-item-toggle[aria-expanded="true"]:not(:hover) { background: transparent; }
 .compaction-divider-line { display: flex; min-height: 28px; align-items: center; gap: var(--space-3); }
 .compaction-divider-line > span { height: 1px; flex: 1; background: var(--border); }
 .compaction-divider-label { display: flex; max-width: 72%; min-width: 0; flex: none; align-items: center; gap: var(--space-2); overflow: hidden; padding: 0 var(--space-2); border: 0; border-radius: var(--control-sm-radius); background: none; color: var(--muted-foreground); font: inherit; font-size: var(--text-base); font-weight: var(--weight-regular); white-space: nowrap; }

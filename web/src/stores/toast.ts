@@ -39,12 +39,14 @@ export const useToastStore = defineStore("toast", () => {
     timers.delete(id)
   }
 
-  function push(input: ToastInput): void {
+  /** Shows a toast and returns its id, so a newer one can replace it. */
+  function push(input: ToastInput): number {
     const id = ++seq
     const next = [...toasts.value, { ...input, id }]
     for (const dropped of next.slice(0, -MAX_VISIBLE)) pause(dropped.id)
     toasts.value = next.slice(-MAX_VISIBLE)
     resume(id)
+    return id
   }
 
   return { toasts, push, dismiss, pause, resume }

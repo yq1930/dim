@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from "vue"
 import { onBeforeRouteLeave, onBeforeRouteUpdate, RouterLink, RouterView, useRoute, useRouter } from "vue-router"
 import { useI18n } from "vue-i18n"
-import { Activity, Archive, ArrowLeft, Box, Brain, Globe, Palette, Plug, Settings2, ShieldCheck, SlidersHorizontal, UserCircle, Wrench } from "lucide-vue-next"
+import { Activity, Archive, ArrowLeft, Box, Brain, Cog, Globe, Palette, Plug, Settings2, ShieldCheck, SlidersHorizontal, UserCircle, Wrench } from "lucide-vue-next"
 import ConfirmDialog from "../../components/ConfirmDialog.vue"
 import { settingsMessages } from "../../i18n/settings"
 import { useConnectionStore } from "../../stores/connection"
@@ -18,7 +18,7 @@ const dirty = ref(false)
 const confirm = ref<InstanceType<typeof ConfirmDialog>>()
 provide(settingsDirtyKey, dirty)
 const categories = [
-  { id: "account", icon: UserCircle }, { id: "appearance", icon: Palette }, { id: "agent", icon: Settings2 },
+  { id: "account", icon: UserCircle }, { id: "appearance", icon: Palette }, { id: "general", icon: Cog }, { id: "agent", icon: Settings2 },
   { id: "providers", icon: Brain }, { id: "modality", icon: SlidersHorizontal }, { id: "mcp", icon: Wrench },
   { id: "plugins", icon: Plug }, { id: "skills", icon: Box }, { id: "web", icon: Globe }, { id: "permissions", icon: ShieldCheck },
   { id: "archived", icon: Archive }, { id: "diagnostics", icon: Activity },
@@ -59,7 +59,7 @@ onBeforeUnmount(() => window.removeEventListener("beforeunload", beforeUnload))
         <RouterLink class="ui-icon-button" data-variant="ghost" :to="parent" :aria-label="t('back')"><ArrowLeft aria-hidden="true" /></RouterLink>
         <span>{{ t(category ?? 'settings') }}</span>
       </div>
-      <fieldset class="settings-content" :disabled="connection.phase !== 'connected' && !['appearance', 'account', 'providers'].includes(category ?? '')">
+      <fieldset class="settings-content" :disabled="connection.phase !== 'connected' && !['appearance', 'general', 'account', 'providers'].includes(category ?? '')">
         <RouterView v-slot="{ Component }"><component :is="Component" :key="category === 'providers' ? 'providers' : route.path" /></RouterView>
       </fieldset>
     </div>

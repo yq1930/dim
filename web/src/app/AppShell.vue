@@ -7,14 +7,18 @@ import AppSidebar from "../components/AppSidebar.vue"
 import DetailPanel from "../components/DetailPanel.vue"
 import ToastRegion from "../components/ToastRegion.vue"
 import ChatPage from "../features/chat/ChatPage.vue"
+import { useAutoArchive } from "../features/git/auto-archive"
 import EndLineDialog from "../features/lines/EndLineDialog.vue"
 import NewLineDialog from "../features/lines/NewLineDialog.vue"
 import { overlayTitleBar } from "../desktop"
 import { settingsMessages } from "../i18n/settings"
 import { useConnectionStore } from "../stores/connection"
+import { usePreferencesStore } from "../stores/preferences"
 import { useSessionsStore, workspaceName } from "../stores/sessions"
 import { useTerminalsStore } from "../stores/terminals"
+import { useToastStore } from "../stores/toast"
 import { useUiStore } from "../stores/ui"
+import { useKeepAwake } from "./keep-awake"
 
 const route = useRoute()
 const { t } = useI18n()
@@ -39,6 +43,8 @@ const splitId = computed(() => {
   return route.name === "chat-session" && id !== undefined && id !== sessionId.value && ui.splitAvailable && sessions.byId.has(id) ? id : undefined
 })
 watch(splitId, (id) => { if (id === undefined) ui.activePane = "main" })
+useKeepAwake()
+useAutoArchive(() => [sessionId.value, splitId.value])
 const pageTitle = computed(() => {
   if (settingsRoute.value) return settingsText("settings")
   if (route.name === "chat-session" && typeof route.params.sessionId === "string") {
@@ -72,6 +78,9 @@ function closeMenusOutside(event: PointerEvent): void {
   }
 }
 
+/** The last "Switched to … view" toast, replaced by the next. */
+let viewToast: number | undefined
+
 function onKey(event: KeyboardEvent): void {
   if (event.key === "Escape") {
     for (const menu of document.querySelectorAll<HTMLDetailsElement>(POPOVERS)) menu.open = false
@@ -81,6 +90,17 @@ function onKey(event: KeyboardEvent): void {
   if (event.ctrlKey && !event.metaKey && !event.altKey && event.code === "Backquote" && route.name === "chat-session" && terminals.available) {
     event.preventDefault()
     ui.toggleDetail("terminal")
+    return
+  }
+  // Ctrl+O steps the Session in the active pane through the transcript views, as in Claude Code.
+  if (event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "o" && route.name === "chat-session") {
+    const target = ui.activePane === "split" && splitId.value !== undefined ? splitId.value : sessionId.value
+    if (target === undefined) return
+    event.preventDefault()
+    const view = usePreferencesStore().cycleView(target)
+    const toast = useToastStore()
+    if (viewToast !== undefined) toast.dismiss(viewToast)
+    viewToast = toast.push({ tone: "info", title: t("transcript.switched", { view: t(`transcript.${view}`) }) })
     return
   }
   // ⌘B / Ctrl+B toggles the sidebar: the drawer in compact mode, the inline rail otherwise.

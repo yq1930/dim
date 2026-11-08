@@ -378,7 +378,8 @@ authorization attempt rather than starting another login.
 │ ← Back               │ Providers                    [+ Add]       │
 │ Account              │ ┌────────────────────────────────────────┐ │
 │ Appearance           │ │ Dim account        OAuth     Connected │ │
-│ Agent defaults       │ │ Custom provider    API key   3 models  │ │
+│ General              │ │ Custom provider    API key   3 models  │ │
+│ Agent defaults       │ │                                        │ │
 │ Providers          ● │ └────────────────────────────────────────┘ │
 │ Modality             │                                            │
 │ MCP                  │ Provider detail opens in a dialog:         │
@@ -394,8 +395,9 @@ Keep the reference category order and align the functional scope with the legacy
 CLI Web. Missing host capabilities require owner implementations, not permanent
 placeholder pages. Actual runtime unavailability is shown as an actionable error,
 never as a successful empty list or save.
-Session-specific model, effort and approval decisions stay in chat. Browser theme
-and text size remain browser-owned; persistent host defaults use their existing
+Session-specific model, effort and approval decisions stay in chat. Browser theme,
+text size and the default transcript view remain browser-owned, as do General's
+keep-awake and auto-archive switches (§4.8); persistent host defaults use their existing
 Settings owner. Do not expose a generic configuration-file or JSON editor.
 
 #### Account, Provider and model priorities
@@ -758,6 +760,23 @@ Scheduled tasks                                        [New task]
 | Actions | A switch pauses and resumes (`schedule.set_enabled`); "Run now" starts a run (`schedule.run_now`) of an enabled job, since the Scheduler skips one of a paused job, and says when the run is skipped; Edit, Run history and Delete are in the job's menu. Delete asks first and says that the Sessions its runs created go with it (Scheduler A.7) |
 | Editor | Name, prompt, workspace (a known workspace, a typed path or, in the desktop app, the native folder picker), schedule, permission, model, Session mode and time limit, and whether it is enabled. Schedules are every day, weekdays or one day of the week at a time (a cron line in the server's zone), every N minutes or hours (`every_minutes`), once at a local time (`at`), or a custom cron line. Permission is read-only, edit the workspace or full access; runs answer no approvals, so `ask` is not offered. A model set on a job stays set, since a save cannot clear it. A new job starts in the workspace of the Session last shown |
 | Run history | The job's last 50 runs (`schedule.history`) with their state, window or manual start, duration and detail; a run's Session opens in the chat page |
+
+### 4.8 Transcript views and the desktop host
+
+As Claude Code's desktop app does, the Web workspace lets the reader choose how much of the agent's work a transcript shows, opens a Session's folder in other applications, keeps the computer awake while a Session works and archives Sessions once their pull request is done. These are preferences of the browser (`stores/preferences.ts`), not host settings.
+
+```text
+Session title            [Changes] [Terminal] [VS Code ▾] [⋯]
+                                                  │         └ Transcript view ⌃O: Normal ✓ / Thinking / Verbose
+                                                  └ VS Code, WebStorm, Xcode / Terminal, iTerm / Finder / Copy path
+```
+
+| Surface | Behavior |
+| --- | --- |
+| Transcript view | Normal groups consecutive thinking and tool rows into one folded summary line. Thinking gives each step a row of its own and opens its thinking in full; Verbose also opens every tool call's input and output. A row the reader opens or closes keeps that until the view changes. The header's ⋯ menu, or Ctrl+O in the active pane, changes one Session's view, remembered for the last 200 Sessions; Appearance sets the default, which "Make … the default" in the menu also sets. Lines in the detail panel follow their Session's view |
+| Open in | In the macOS desktop app the header opens the Session's folder in the application last chosen; its menu lists the known editors (VS Code, Cursor, Windsurf, Zed, Sublime Text, the JetBrains IDEs, Android Studio, Xcode), terminals (Terminal, iTerm, Ghostty, Warp) and Finder that Launch Services finds, with their icons, and copies the path. The native `installed_apps` and `open_in_app` commands answer the main window on the local workspace only; `open_in_app` hands an existing absolute path to one of those applications with `open -b` |
+| Keep awake | On by default in the desktop app (General). While a Session runs, and none waits on the operator for an approval, a question or a plan review, the native `keep_awake` command holds `caffeinate -i -w <pid>`: the computer does not idle-sleep, though the display may and closing the lid still sleeps it. A run the page did not start (a scheduled task's) shows only in the directory, which the page reads every minute while the setting is on |
+| Auto-archive | Off by default (General). Every 5 minutes the page asks `git.pr` about the 30 most recently active Session directories on a branch, skipping one without a pull request for 30 minutes. Once a pull request this browser saw open, in a round or in the Git tab, is merged or closed, the Sessions in its directory are archived, unless the directory has uncommitted changes (they then stay) or one of them is running or shown (a later round tries again); after a merge, a worktree the workspace created is removed and Git keeps its branch. A pull request already closed when first seen is left alone. A toast reports each archive |
 
 ## 5. Build and release
 

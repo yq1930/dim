@@ -30,3 +30,30 @@ export async function openWorkspacePath(path: string, reveal: boolean): Promise<
 export function notifyDesktop(title: string, body: string): void {
   void window.__TAURI__?.core.invoke("notify_attention", { title, body }).catch(() => undefined)
 }
+
+/** An application the desktop app opens a folder in: an editor, a terminal or Finder. */
+export type DesktopApp = { id: string; name: string; kind: "editor" | "terminal" | "finder"; icon?: string }
+
+let installed: Promise<DesktopApp[]> | undefined
+
+/** The editors, terminals and Finder installed, asked for once per page load; none outside the desktop app. */
+export function installedApps(): Promise<DesktopApp[]> {
+  const tauri = window.__TAURI__
+  if (tauri === undefined) return Promise.resolve([])
+  installed ??= tauri.core.invoke<DesktopApp[]>("installed_apps").catch(() => {
+    installed = undefined
+    return []
+  })
+  return installed
+}
+
+/** Opens an absolute path in one of the installed applications. */
+export async function openInApp(id: string, path: string): Promise<void> {
+  if (!window.__TAURI__) throw new Error("Opening a folder in another app needs the desktop app")
+  await window.__TAURI__.core.invoke("open_in_app", { id, path })
+}
+
+/** Keeps the computer from idle-sleeping while `active`; a browser has no such control. */
+export function keepAwake(active: boolean): void {
+  void window.__TAURI__?.core.invoke("keep_awake", { active }).catch(() => undefined)
+}

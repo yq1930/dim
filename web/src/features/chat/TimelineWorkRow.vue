@@ -13,9 +13,9 @@ import TimelineWorkItemView from "./TimelineWorkItem.vue"
 const props = defineProps<{
   items: WorkItem[]
   expanded: boolean
-  expandedItemIds: Record<string, boolean>
+  itemExpanded: (item: WorkItem) => boolean
 }>()
-const emit = defineEmits<{ toggle: []; toggleItem: [itemId: string] }>()
+const emit = defineEmits<{ toggle: []; toggleItem: [item: WorkItem] }>()
 const { t } = useI18n()
 
 const CATEGORY_KEYS = {
@@ -65,16 +65,16 @@ const running = computed(() => props.items.some((item) => item.kind === "thinkin
           v-for="item in items"
           :key="item.id"
           :item="item"
-          :expanded="expandedItemIds[item.id] === true"
-          @toggle="emit('toggleItem', item.id)"
+          :expanded="itemExpanded(item)"
+          @toggle="emit('toggleItem', item)"
         />
       </div>
     </template>
     <TimelineWorkItemView
       v-else-if="items[0]"
       :item="items[0]"
-      :expanded="expandedItemIds[items[0].id] === true"
-      @toggle="emit('toggleItem', items[0].id)"
+      :expanded="itemExpanded(items[0])"
+      @toggle="emit('toggleItem', items[0])"
     />
   </div>
 </template>

@@ -142,6 +142,7 @@ function noModel(): void {
         :file-changes="fileChanges"
         :empty="t('lines.empty')"
         variant="panel"
+        :session-id="sessionId"
         @changes="changesDialog?.open($event)"
         @branch="branchHere"
         @open-line="openLine"

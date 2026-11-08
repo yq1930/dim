@@ -251,7 +251,10 @@ impl Service {
                 .local(false)
                 .remote(format!("{origin}/*"))
                 .permission("allow-choose-workspace")
+                .permission("allow-installed-apps")
+                .permission("allow-keep-awake")
                 .permission("allow-notify-attention")
+                .permission("allow-open-in-app")
                 .permission("allow-open-workspace-path")
                 .permission("core:window:allow-start-dragging")
                 .permission("core:window:allow-internal-toggle-maximize"),

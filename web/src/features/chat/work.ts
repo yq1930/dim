@@ -1,7 +1,8 @@
 /**
  * The chat page's grouping of timeline rows: consecutive reasoning and tool
  * rows read as one work group ("Thought 2 times · 3 reads, 1 command") that
- * expands into its items; messages stand on their own.
+ * expands into its items; messages stand on their own. A flat transcript
+ * (the thinking and verbose views) gives each item a row of its own.
  */
 import type { TimelineRow } from "../../projection"
 import type { ToolResult } from "../../rpc/protocol"
@@ -28,7 +29,7 @@ export type DisplayRow =
   | { key: string; kind: "work"; items: WorkItem[] }
   | { key: string; kind: "row"; row: Exclude<TimelineRow, { kind: "thinking" | "tool" }> }
 
-export function groupRows(rows: readonly TimelineRow[]): DisplayRow[] {
+export function groupRows(rows: readonly TimelineRow[], flat = false): DisplayRow[] {
   const display: DisplayRow[] = []
   let work: WorkItem[] = []
   const flush = (): void => {
@@ -36,6 +37,7 @@ export function groupRows(rows: readonly TimelineRow[]): DisplayRow[] {
     work = []
   }
   for (const row of rows) {
+    if (flat) flush()
     if (row.kind === "thinking") {
       if (row.text === "" && !row.streaming) continue
       work.push({ id: row.key, kind: "thinking", content: row.text, running: row.streaming, ...(row.elapsedMs === undefined ? {} : { durationMs: row.elapsedMs }) })

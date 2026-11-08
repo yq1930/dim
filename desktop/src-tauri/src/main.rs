@@ -1,6 +1,8 @@
 //! Lacus for macOS: a Tauri window over the local Web workspace that the
 //! bundled `dimcode` serves.
 
+mod apps;
+mod awake;
 mod commands;
 mod environment;
 mod menu;
@@ -9,6 +11,7 @@ mod update;
 mod window;
 
 use std::{
+    collections::HashMap,
     path::PathBuf,
     sync::{
         Arc, Mutex,
@@ -28,6 +31,9 @@ pub struct Desktop {
     unread: AtomicI64,
     /// A check for updates, an open offer or an install is under way.
     updating: AtomicBool,
+    /// Application icons as data URLs, by bundle path; `None` when one has none.
+    icons: Mutex<HashMap<PathBuf, Option<String>>>,
+    awake: awake::KeepAwake,
 }
 
 fn main() {
@@ -41,6 +47,9 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
+            apps::installed_apps,
+            apps::open_in_app,
+            awake::keep_awake,
             commands::choose_workspace,
             commands::notify_attention,
             commands::open_workspace_path
@@ -65,6 +74,8 @@ fn main() {
                 )),
                 unread: AtomicI64::new(0),
                 updating: AtomicBool::new(false),
+                icons: Mutex::default(),
+                awake: awake::KeepAwake::default(),
             });
             app.manage(desktop.clone());
             app.set_menu(menu::build(app.handle())?)?;
@@ -93,6 +104,7 @@ fn main() {
         RunEvent::Reopen { .. } => window::show(app),
         RunEvent::Exit => {
             window::remember(app);
+            let _ = app.state::<Arc<Desktop>>().awake.set(false);
             let service = app.state::<Arc<Desktop>>().service.clone();
             if let Err(error) = tauri::async_runtime::block_on(service.quit(app)) {
                 eprintln!("Lacus shutdown: {error}");

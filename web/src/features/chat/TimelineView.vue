@@ -7,7 +7,8 @@ import type { TimelineRow } from "../../projection"
 import ChatMarkdown from "./ChatMarkdown.vue"
 import TimelineUserMessage from "./TimelineUserMessage.vue"
 import TimelineWorkRow from "./TimelineWorkRow.vue"
-import { groupRows } from "./work"
+import { groupRows, type WorkItem } from "./work"
+import { usePreferencesStore } from "../../stores/preferences"
 import { RAIL_MIN_MARKERS, timelineMarkers } from "../../timeline-markers"
 import { formatElapsedSeconds } from "./timeline-time"
 
@@ -17,6 +18,9 @@ import { formatElapsedSeconds } from "./timeline-time"
  * `variant`: the main column or the narrower line panel.
  * `fileChanges`: the Session lists and undoes a turn's file changes.
  * `nextSteps`: the latest turn that changed files offers to review or commit them.
+ * `sessionId`: the Session whose transcript view applies (normal without one): normal
+ * groups and folds the agent's work; thinking gives each step a row and opens its
+ * thinking; verbose opens every step.
  */
 const props = defineProps<{
   rows: readonly TimelineRow[]
@@ -27,6 +31,7 @@ const props = defineProps<{
   nextSteps?: boolean
   empty?: string
   variant?: "main" | "panel"
+  sessionId?: string
 }>()
 const emit = defineEmits<{ quote: [text: string]; branch: [text: string, cut: number]; openLine: [branchId: string]; changes: [turnId: string]; review: []; commit: [] }>()
 const { t } = useI18n()
@@ -36,9 +41,21 @@ const list = ref<HTMLElement>()
 const FOLLOW_THRESHOLD_PX = 96
 const following = ref(true)
 const expandedGroups = ref<Record<string, boolean>>({})
+/** Items the reader opened or closed; the others follow the view. */
 const expandedItems = ref<Record<string, boolean>>({})
+const preferences = usePreferencesStore()
+const view = computed(() => props.sessionId === undefined ? "normal" : preferences.viewOf(props.sessionId))
 
-const display = computed(() => groupRows(props.rows))
+const display = computed(() => groupRows(props.rows, view.value !== "normal"))
+watch(view, () => { expandedItems.value = {} })
+
+function itemExpanded(item: WorkItem): boolean {
+  return expandedItems.value[item.id] ?? (view.value === "verbose" || (view.value === "thinking" && item.kind === "thinking"))
+}
+
+function toggleItem(item: WorkItem): void {
+  expandedItems.value[item.id] = !itemExpanded(item)
+}
 
 /** When the run under way began, as this view saw it, and a clock for its elapsed time. */
 const runStart = ref<number>()
@@ -155,7 +172,7 @@ onMounted(() => void toEnd())
 </script>
 
 <template>
-  <div class="timeline-shell" :data-variant="variant ?? 'main'">
+  <div class="timeline-shell" :data-variant="variant ?? 'main'" :data-view="view">
     <div ref="viewport" class="timeline app-scroll-viewport" @scroll.passive="onScroll">
       <p v-if="display.length === 0 && !running" class="timeline-empty">{{ empty ?? t("chat.emptyTimeline") }}</p>
       <div ref="list" class="virtual-timeline" :style="{ height: `${totalSize}px`, position: 'relative' }">
@@ -173,9 +190,9 @@ onMounted(() => void toEnd())
               v-if="entry.kind === 'work'"
               :items="entry.items"
               :expanded="expandedGroups[entry.key] === true"
-              :expanded-item-ids="expandedItems"
+              :item-expanded="itemExpanded"
               @toggle="toggleGroup(entry.key, item.index)"
-              @toggle-item="expandedItems[$event] = !expandedItems[$event]"
+              @toggle-item="toggleItem"
             />
             <TimelineUserMessage v-else-if="entry.row.kind === 'user'" :text="entry.row.text" :skills="entry.row.skills" :at="entry.row.at" :quotable="quotable" :branchable="branchable === true" @branch="onBranch(entry.row, $event)" @quote="emit('quote', $event)" />
             <article v-else-if="entry.row.kind === 'assistant'" class="timeline-row" data-role="assistant">

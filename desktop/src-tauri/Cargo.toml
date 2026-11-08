@@ -11,7 +11,12 @@ description = "Lacus: the macOS desktop client for the local Dim Web workspace"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+base64 = "0.23"
 libc = "0.2"
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWorkspace"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSURL"] }
+plist = "1"
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "system-proxy"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 serde = { version = "1", features = ["derive"] }

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref } from "vue"
+import { nextTick, onBeforeUnmount, ref, type Component } from "vue"
 import { MoreHorizontal } from "lucide-vue-next"
-defineProps<{ label: string }>()
+/** `icon` replaces the trigger's ⋯; `triggerClass` styles the trigger, since the menu has two roots. */
+defineProps<{ label: string; icon?: Component; triggerClass?: string }>()
 const trigger = ref<HTMLButtonElement>()
 const dialog = ref<HTMLDialogElement>()
 const expanded = ref(false)
@@ -33,7 +34,7 @@ defineExpose({ open })
 </script>
 
 <template>
-  <button ref="trigger" type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="label" aria-haspopup="dialog" :aria-expanded="expanded" v-tooltip="label" @click.stop="open()"><MoreHorizontal aria-hidden="true" /></button>
+  <button ref="trigger" type="button" class="ui-icon-button" :class="triggerClass" data-variant="ghost" data-size="sm" :aria-label="label" aria-haspopup="dialog" :aria-expanded="expanded" v-tooltip="label" @click.stop="open()"><component :is="icon ?? MoreHorizontal" aria-hidden="true" /></button>
   <dialog ref="dialog" class="row-action-menu ui-popover" :style="{ left: `${left}px`, top: `${top}px` }" :aria-label="label" @cancel="expanded = false" @close="expanded = false" @keydown="key" @click="($event.target === dialog || ($event.target as HTMLElement).closest('button')) && close()">
     <slot />
   </dialog>

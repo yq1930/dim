@@ -7,10 +7,12 @@ import BrandMark from "../../components/BrandMark.vue"
 import ConfirmDialog from "../../components/ConfirmDialog.vue"
 import ApprovalPrompt from "./ApprovalPrompt.vue"
 import ComposerPanel from "./ComposerPanel.vue"
+import OpenInMenu from "./OpenInMenu.vue"
 import QueuedInputs from "./QueuedInputs.vue"
 import PlanReview from "./PlanReview.vue"
 import QuestionPrompt from "./QuestionPrompt.vue"
 import TimelineView from "./TimelineView.vue"
+import TranscriptViewMenu from "./TranscriptViewMenu.vue"
 import SessionOutline from "./SessionOutline.vue"
 import SessionCrumb from "../git/SessionCrumb.vue"
 import TodoPanel from "./TodoPanel.vue"
@@ -223,48 +225,52 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
           <SessionCrumb v-if="summary" :cwd="summary.cwd" :interactive="!split" />
           <h1 data-route-heading tabindex="-1" :title="title">{{ title }}</h1>
         </div>
-        <SessionOutline v-if="outline.length > 1" :markers="outline" @jump="timeline?.jumpTo($event)" />
-        <button
-          v-if="!split && (changedFiles > 0 || shown('changes'))"
-          class="ui-button session-lines"
-          data-variant="ghost"
-          data-size="sm"
-          type="button"
-          :aria-pressed="shown('changes')"
-          :aria-label="t('sessionChanges.open')"
-          v-tooltip="t('sessionChanges.open')"
-          @click="ui.toggleDetail('changes')"
-        >
-          <FileDiff aria-hidden="true" />
-          <span>{{ t("sessionChanges.title") }}</span>
-          <span v-if="changedFiles > 0" class="ui-badge" data-size="sm">{{ changedFiles }}</span>
-        </button>
-        <button v-if="!split && (hasPlan || shown('plan'))" type="button" class="ui-button session-lines" data-variant="ghost" data-size="sm" :aria-pressed="shown('plan')" :aria-label="t('plan.panel')" v-tooltip="t('plan.panel')" @click="ui.toggleDetail('plan')">
-          <ListChecks aria-hidden="true" /><span>{{ t("plan.panel") }}</span>
-        </button>
-        <button
-          v-if="!split && connection.supports('session.branch_end')"
-          class="ui-button session-lines"
-          data-variant="ghost"
-          data-size="sm"
-          type="button"
-          :aria-label="t('lines.open')"
-          @click="ui.toggleLines(sessionId)"
-        >
-          <GitBranch aria-hidden="true" />
-          <span>{{ t("lines.title") }}</span>
-          <span v-if="lineCount > 0" class="ui-badge" data-size="sm" :data-tone="linesBusy ? 'warning' : undefined">{{ lineCount }}</span>
-        </button>
-        <button v-if="!split" type="button" class="ui-button session-lines" data-variant="ghost" data-size="sm" :aria-pressed="shown('tasks')" :aria-label="t('tasks.title')" v-tooltip="t('tasks.title')" @click="ui.toggleDetail('tasks')">
-          <Activity aria-hidden="true" /><span>{{ t("tasks.title") }}</span><span v-if="activeTasks" class="ui-badge" data-tone="primary">{{ activeTasks }}</span>
-        </button>
-        <button v-if="!split && connection.supports('terminal.open')" type="button" class="ui-button session-lines" data-variant="ghost" data-size="sm" :aria-pressed="shown('terminal')" :aria-label="t('terminal.title')" v-tooltip="t('terminal.toggle')" @click="ui.toggleDetail('terminal')">
-          <SquareTerminal aria-hidden="true" /><span>{{ t("terminal.title") }}</span>
-        </button>
-        <template v-if="split">
-          <button type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="t('split.swap')" v-tooltip="t('split.swap')" @click="swapPanes"><ArrowLeftRight aria-hidden="true" /></button>
-          <button type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="t('split.close')" v-tooltip="t('split.close')" @click="ui.closeSplit"><X aria-hidden="true" /></button>
-        </template>
+        <div class="session-tools">
+          <SessionOutline v-if="outline.length > 1" :markers="outline" @jump="timeline?.jumpTo($event)" />
+          <button
+            v-if="!split && (changedFiles > 0 || shown('changes'))"
+            class="ui-button session-lines"
+            data-variant="ghost"
+            data-size="sm"
+            type="button"
+            :aria-pressed="shown('changes')"
+            :aria-label="t('sessionChanges.open')"
+            v-tooltip="t('sessionChanges.open')"
+            @click="ui.toggleDetail('changes')"
+          >
+            <FileDiff aria-hidden="true" />
+            <span>{{ t("sessionChanges.title") }}</span>
+            <span v-if="changedFiles > 0" class="ui-badge" data-size="sm">{{ changedFiles }}</span>
+          </button>
+          <button v-if="!split && (hasPlan || shown('plan'))" type="button" class="ui-button session-lines" data-variant="ghost" data-size="sm" :aria-pressed="shown('plan')" :aria-label="t('plan.panel')" v-tooltip="t('plan.panel')" @click="ui.toggleDetail('plan')">
+            <ListChecks aria-hidden="true" /><span>{{ t("plan.panel") }}</span>
+          </button>
+          <button
+            v-if="!split && connection.supports('session.branch_end')"
+            class="ui-button session-lines"
+            data-variant="ghost"
+            data-size="sm"
+            type="button"
+            :aria-label="t('lines.open')"
+            @click="ui.toggleLines(sessionId)"
+          >
+            <GitBranch aria-hidden="true" />
+            <span>{{ t("lines.title") }}</span>
+            <span v-if="lineCount > 0" class="ui-badge" data-size="sm" :data-tone="linesBusy ? 'warning' : undefined">{{ lineCount }}</span>
+          </button>
+          <button v-if="!split" type="button" class="ui-button session-lines" data-variant="ghost" data-size="sm" :aria-pressed="shown('tasks')" :aria-label="t('tasks.title')" v-tooltip="t('tasks.title')" @click="ui.toggleDetail('tasks')">
+            <Activity aria-hidden="true" /><span>{{ t("tasks.title") }}</span><span v-if="activeTasks" class="ui-badge" data-tone="primary">{{ activeTasks }}</span>
+          </button>
+          <button v-if="!split && connection.supports('terminal.open')" type="button" class="ui-button session-lines" data-variant="ghost" data-size="sm" :aria-pressed="shown('terminal')" :aria-label="t('terminal.title')" v-tooltip="t('terminal.toggle')" @click="ui.toggleDetail('terminal')">
+            <SquareTerminal aria-hidden="true" /><span>{{ t("terminal.title") }}</span>
+          </button>
+          <OpenInMenu v-if="!split && summary" :path="summary.cwd" />
+          <TranscriptViewMenu v-if="!split" :session-id="sessionId" />
+          <template v-if="split">
+            <button type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="t('split.swap')" v-tooltip="t('split.swap')" @click="swapPanes"><ArrowLeftRight aria-hidden="true" /></button>
+            <button type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="t('split.close')" v-tooltip="t('split.close')" @click="ui.closeSplit"><X aria-hidden="true" /></button>
+          </template>
+        </div>
         <span v-if="view.sessionRunning" class="ui-badge session-running" data-tone="primary"><span class="status-dot" data-state="running" aria-hidden="true" />{{ t(view.stopping ? "status.stopping" : "status.running") }}</span>
       </header>
     </div>
@@ -272,6 +278,7 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
       ref="timeline"
       :rows="view.rows"
       :running="view.running"
+      :session-id="sessionId"
       :quotable="!approval && questions.length === 0 && reviews.length === 0"
       :branchable="branchable && !approval && questions.length === 0 && reviews.length === 0"
       :file-changes="fileChanges"
@@ -331,4 +338,5 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
 .session-lines { gap: 6px; flex: none; }
 .session-lines[aria-pressed="true"] { background: var(--hover); color: var(--foreground); }
 .session-lines .ui-badge { min-width: 18px; padding-inline: 4px; }
+.session-tools { display: flex; flex: none; align-items: center; gap: var(--space-3); }
 </style>

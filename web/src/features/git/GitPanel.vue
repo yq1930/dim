@@ -13,6 +13,7 @@ import { useGitStore } from "../../stores/git"
 import { useSessionsStore } from "../../stores/sessions"
 import { useToastStore } from "../../stores/toast"
 import { useUiStore } from "../../stores/ui"
+import { notePullRequest } from "./auto-archive"
 
 /**
  * The detail panel's Git view of a Session's directory: its branch and how
@@ -60,7 +61,10 @@ async function refresh(): Promise<void> {
   if (request !== generation) return
   loading.value = false
   if (found.status === "fulfilled") { status.value = found.value; error.value = "" } else error.value = message(found.reason)
-  if (pr.status === "fulfilled") pullRequest.value = pr.value
+  if (pr.status === "fulfilled") {
+    pullRequest.value = pr.value
+    if (pr.value.available) notePullRequest(directory, pr.value.pullRequest)
+  }
 }
 
 watch([cwd, () => connection.phase], () => {

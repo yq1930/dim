@@ -1846,6 +1846,12 @@ impl PtyProcessTree {
     pub fn write(&mut self, bytes: &[u8]) -> io::Result<()> {
         self.writer.write_all(bytes)
     }
+    /// Takes the writer half for a dedicated writer thread, so a write that
+    /// blocks never holds the handle; [`write`](Self::write) writes nowhere
+    /// afterwards.
+    pub fn take_writer(&mut self) -> Box<dyn std::io::Write + Send> {
+        std::mem::replace(&mut self.writer, Box::new(std::io::sink()))
+    }
     /// Resizes the PTY.
     pub fn resize(&self, size: PtySize) -> io::Result<()> {
         self.master

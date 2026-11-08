@@ -36,13 +36,13 @@
 .app-shell[data-sidebar-collapsed="true"] .content-region { grid-column: 1; }
 .sidebar-reopen { position: absolute; z-index: var(--z-sticky); top: var(--space-2); left: var(--space-3); }
 .app-shell[data-sidebar-collapsed="true"]:not([data-mode="compact"]) .main-header,
-.app-shell[data-sidebar-collapsed="true"]:not([data-mode="compact"]) .session-header { padding-left: 52px; }
+.app-shell[data-sidebar-collapsed="true"]:not([data-mode="compact"]) .main-region .session-header { padding-left: 52px; }
 /* macOS desktop: the window draws no title bar, so the page runs under the window controls.
    The sidebar's top row and a collapsed sidebar's reopen button leave the controls 92px;
    pages without a top bar of their own keep an empty 48px one to drag the window by. */
 :root[data-titlebar="overlay"] .brand-row { height: 48px; padding: 0 var(--space-3) 0 92px; }
 :root[data-titlebar="overlay"] .sidebar-reopen { top: var(--space-2); left: 92px; }
-:root[data-titlebar="overlay"] .app-shell[data-sidebar-collapsed="true"]:not([data-mode="compact"]) :is(.main-header, .session-header) { padding-left: 136px; }
+:root[data-titlebar="overlay"] .app-shell[data-sidebar-collapsed="true"]:not([data-mode="compact"]) .main-region :is(.main-header, .session-header) { padding-left: 136px; }
 .window-titlebar { grid-row: 1; grid-column: 1; height: 48px; }
 .window-titlebar ~ .reconnect-banner { grid-row: 1; align-self: end; }
 .compact-header { display: none; min-width: 0; align-items: center; gap: var(--space-3); padding: var(--space-1) var(--space-3); border-bottom: 1px solid var(--border); background: var(--background); }

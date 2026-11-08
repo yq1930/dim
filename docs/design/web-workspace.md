@@ -102,7 +102,7 @@ For development against the repository checkout, and for a build that must carry
 | Item | Rule |
 | --- | --- |
 | Version | `hello` v3 with `clientKind: "web"`; v1/v2 → `protocol_version` |
-| Methods | Rpc Session built-ins and execution Session methods on every Session of the host, plus the explicit settings methods in §4.3. Other management methods, including `daemon.shutdown` and Web-entry controls, return `-32601 unknown_method` |
+| Methods | Rpc Session built-ins and execution Session methods on every Session of the host, plus the explicit settings methods in §4.3 and the terminal methods in §4.4. Other management methods, including `daemon.shutdown` and Web-entry controls, return `-32601 unknown_method` |
 | Model list | The read-only management methods `provider.list`, `provider.catalog`, `provider.selection` and `account.providers` are also served (decision Q1); their replies carry no credentials (`provider.list` reports only `credentialConfigured` and header names). Managed Provider discovery follows §4.2. Switching uses the Session method `session.model.update` |
 
 Compatibility: the bare `/ws` keeps today's rules (`hello` and `daemon.ping` only in protected profiles). Execution Session methods become reachable from the web entry; this is the same widening RemoteGateway records as E3, limited here to loopback connections authenticated by the local user's token.
@@ -154,7 +154,9 @@ The frontend directory is fixed when the daemon starts (§2.4); a daemon started
 | Sidebar | Workspaces combine Session summaries grouped by `cwd` with recently opened directories; new Session by `session.create {cwd}` with a typed path, native directory picker or known workspace. Session actions offer rename, archive, copy workspace path and confirmed deletion. Each Session row shows its state: waiting (a line holds an approval, a question or a plan review), running, unread (its main line's run ended while another page was shown; opening the Session clears it, and a reload forgets it) or idle; a collapsed workspace shows waiting before running. Waiting is known for the Sessions this page has opened, since only they are attached |
 | Chat | Timeline (markdown, Shiki) with a message rail (one marker per user message from three messages on, as dim-agent's rail: hover shows the message and its first reply, a click scrolls it into view and marks it for a moment; `/timeline` is not offered, dim-agent has none), composer (submit, stop, model menu and permission preset picker, below; Escape stops a run unless a menu is open, as the CLI's Esc interrupts, and the processing row shows the run's elapsed time with that hint; ↑ on the first line of an empty draft, or of one still holding a recalled message, steps back through the main line's earlier messages and ↓ steps forward to an empty draft, a recalled message's file links becoming `@path` mentions again, and a draft the operator wrote is never replaced), approval prompt (`approval.request` → `approval.respond`; "Allow for this session" → `session.grants.add` and "Always allow" for a simple `exec` command → `permission.set_rules`, both before the allow; "Reject and say why" sends the operator's words with `session.submit` mode `steer`, then denies, so the model reads them at that tool result with the refusal), question prompt for `ask_user` (`step/tool-call` → `session.question.respond`, closed by `step/tool-result`); the approval and question prompts take the composer's place; queued messages of the main line above the composer (`input/message` until `input/applied` or `input/deleted`; Steer and Remove → `session.input.withdraw`, Steer resends the message's content with the withdrawal); composer attachments: pasted or dropped images are sent as image content blocks (`session.submit` with `user.content`), a paste longer than 16 KiB is stored with `attachment.put` when the Session serves it and its path is named in the message, as the TUI does (`crates/dim-cli/src/attachments.rs`); `@` file mentions: the composer offers the files of the Session's workspace from `session.files.search` (WorkspaceTools; the TUI picker's index and ranking), inserts a file as `@path` and sends it as a Markdown link to its absolute path (`[@path](/abs)`, as the TUI sends it); a directory steps into `@dir/`; a turn whose `write` or `edit` changed files ends with a row that opens its changes (`session.files.changes`: each file's status, and the commands whose changes are not undone) and undoes the restorable ones (`session.files.rewind`), shown where the Session serves both methods, and a rewind's record shows as a notice ([file rewind](file-rewind.md)) |
 | Session modes | The composer's mode menu and `/permissions` choose how `main` works: Ask (`ask`), Accept edits (`workspace-write`), Auto (`full-access`), Plan (plan mode over the current preset) and Read only (`read-only`), under [ADR 018](../adr/018-permission-is-the-preset.md), [ADR 022](../adr/022-the-ask-preset.md) and the [Permission policy contract](../architecture/rust-agent/plugins/Permission.md#policy-contract). The menu is offered where the connection serves `session.permission.get` and `session.permission.update` (the App Server serves them on the connection, not in a Session's method table), plus Plan where the Session lists `session.plan.set`. The client reads `session.permission.get` and `permission/changed`, displays the mode and tool lists, and preserves both lists in a versioned `session.permission.update`. Choosing a preset while planning first ends plan mode, which restores the preset it replaced, then sets the chosen one. Conflicts refresh without retrying. Choosing Auto requires confirmation. Shift+Tab in the composer steps through Ask, Accept edits and Plan, as the CLI cycles its permission modes; Auto and Read only are chosen in the menu, whose footer names the shortcut. A new Session starts with the preset last chosen on the new-Session page (Accept edits by default), set after `session.create` and before plan mode. Process isolation links to its Settings control. |
-| Changes | The header's Changes button, shown once the main line changed a file, opens the right detail panel on the Session's changes instead of its lines (`ui.detailView`): every file the main line's successful `write` and `edit` calls changed, sorted by path, with its line counts and each call's display diff in order — an edit's, or a write's when it replaced a file ([WorkspaceTools display diff](../architecture/rust-agent/plugins/WorkspaceTools.md#display-diff)), else the written content as added lines, the first 400 shown. Each line shows its number in its file (the old file for a removed line), read from the diff's hunk headers or, for a written file, its position. Picking a line opens a comment on it; comments stay per Session for the page load, mark their lines, and "Add to message" puts them into the main composer as one numbered message — each with its file, line and the line's text — without sending it. It folds the line's own rows and adds no RPC; changes made by commands are not seen, and undoing stays with each turn's changes row |
+| Detail panel | The right panel shows the routed Session in one tab per view (`ui.detailView`): Changes, Plan, Background tasks, Terminal (§4.4) and Lines. The header's buttons open their tab and close the panel when it already shows it; `/diff` and `/tasks` open theirs. Plan shows the plan of the main line's latest `exit_plan_mode` call with the operator's decision (`structuredContent.approved`) and the main line's task list |
+| Split view | A Session row's menu opens that Session beside the routed one while the shell is at least 1,100 px wide. The split pane shows its transcript and composer, swaps places with the routed Session or closes; the detail panel keeps following the routed Session. Only the pane last pressed or focused answers approvals from the keyboard. The split Session is remembered in browser storage |
+| Changes | The Changes tab, whose header button shows once the main line changed a file, lists every file the main line's successful `write` and `edit` calls changed, sorted by path, with its line counts and each call's display diff in order — an edit's, or a write's when it replaced a file ([WorkspaceTools display diff](../architecture/rust-agent/plugins/WorkspaceTools.md#display-diff)), else the written content as added lines, the first 400 shown. Each line shows its number in its file (the old file for a removed line), read from the diff's hunk headers or, for a written file, its position. Picking a line opens a comment on it; comments stay per Session for the page load, mark their lines, and "Add to message" puts them into the main composer as one numbered message — each with its file, line and the line's text — without sending it. It folds the line's own rows and adds no RPC; changes made by commands are not seen, and undoing stays with each turn's changes row |
 | Lines | Right detail panel with a Lines tree and one tab per opened line; each tab folds that line's own history and sends, stops, approves and ends on its `branchId` (§4.1) |
 | i18n | `en` and `zh-CN` |
 
@@ -202,7 +204,7 @@ A line is a Timeline of the same Session ([Timeline branches](timeline-branches.
 
 ### Background commands
 
-The Session header and `/tasks` open background command management. The existing
+The detail panel's Background tasks tab, opened by its header button and `/tasks`, manages background commands. The existing
 per-line history queue discovers every branch and folds `exec/started` and
 `exec/ended` into the same Session projection. Identity is `(branchId, taskId)`;
 the command label comes from its originating tool call, with the recorded
@@ -211,7 +213,7 @@ commands. A failed branch-history read leaves the list explicitly incomplete
 and offers retry; reconnect and replay do not duplicate tasks.
 
 Selecting a running command reads `session.exec.output` using its Session,
-branch and task IDs. While the dialog is visible and connected, it refreshes
+branch and task IDs. While the tab is shown and connected, it refreshes
 one second after the preceding read settles, with at most one output request
 outstanding. Selection changes and close/unmount invalidate replies and timers.
 The preview follows the [background output contract](background-task-output.md):
@@ -222,16 +224,17 @@ task state. Only `exec/ended` supplies the final status and result.
 
 Stopping a command requires confirmation and calls the existing
 `session.exec.stop` with the captured target. The action is disabled while
-disconnected or pending. Closing the dialog only stops output polling. Member
+disconnected or pending. Leaving the tab only stops output polling. Member
 agents and workflows keep their existing controls; this panel lists background
 commands, separately from the model's to-do checklist.
 
 ```text
-Session header: [Changes] [Lines] [Background tasks 2]
-Background tasks
-  build / main          Running  | Live output
-  tests / test line     Running  | ...
-  previous build        Stopped  | [Refresh] [Stop command]
+Detail panel: [Changes] [Plan] [Background tasks 2] [Terminal] [Lines]   ⤢ ×
+  build / main          Running
+  tests / test line     Running
+  previous build        Stopped
+  ─────────────────────────────
+  Live output …         [Refresh] [Stop command]
 ```
 
 ### 4.2 Model discovery and slash commands
@@ -668,6 +671,30 @@ Keep business validation, persistence and credential handling in their existing
 owners. No new plugin, catalog, event format or generic form framework is needed;
 shared login presentation serves account and Provider pages. Additional helpers
 must justify a responsibility beyond translating an already typed owner reply.
+
+### 4.4 Terminals
+
+The detail panel's Terminal tab runs the operator's interactive shells in the Session's workspace, one tab each, as an editor's integrated terminal does. The App Server process owns them (the `Terminals` process row), so a terminal outlives page reloads, a closed panel and the Session's idle unload; unloading the plugin ends every one. They belong to the operator: no approval, Permission preset or sandbox applies, and the model never reads them.
+
+| Method | Params → reply |
+| --- | --- |
+| `terminal.open` | `{owner, cwd, cols, rows}` → `{terminalId, cwd, title}`: the service environment's `$SHELL` (else zsh, bash or sh) as a login shell under a PTY in `cwd`, an existing absolute directory. Its environment is the service's with `TERM=xterm-256color`, `COLORTERM=truecolor` and, when no locale is set, `LANG=en_US.UTF-8`. `owner` groups terminals; the Web workspace passes the Session id |
+| `terminal.list` | `{owner}` → `{terminals: [{terminalId, cwd, title, exited}]}` in opening order |
+| `terminal.read` | `{terminalId, cursor, waitMs?}` → `{data, cursor, reset, exited, exitCode?}`: the output after byte `cursor`, waiting up to `waitMs` (25 s at most) for some. A terminal keeps its last 256 KiB; `reset` says output before the reply was dropped. `data` never ends inside a UTF-8 sequence. `exited` once the shell exited and its output ended |
+| `terminal.write` | `{terminalId, data}` → `{}`: keystrokes and pastes |
+| `terminal.resize` | `{terminalId, cols, rows}` → `{}`: 2–1,000 columns and 1–1,000 rows |
+| `terminal.close` | `{terminalId}` → `{}`: ends the shell's process group |
+
+Errors: `terminal_unknown` for an id that is not open, `terminal_limit` beyond 32 open terminals, `terminal_failed` when the PTY cannot start or take input, `invalid_params` for a bad `cwd` or size.
+
+The frontend draws each terminal with xterm.js, loaded only once the tab is shown. A tab replays from cursor 0, then long-polls `terminal.read` and sends `terminal.write` in order; it refits to its size and follows the light and dark theme. Showing the tab for a Session without terminals opens one; closing the last tab leaves it empty. Ctrl+` shows or hides the tab.
+
+```text
+[Changes] [Plan] [Background tasks] [Terminal] [Lines]   ⤢ ×
+[zsh 1 ×] [zsh 2 ×]                                       +
+~/project % npm test
+…
+```
 
 ## 5. Build and release
 

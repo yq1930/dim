@@ -2,7 +2,7 @@
 import { computed } from "vue"
 import { RouterLink } from "vue-router"
 import { useI18n } from "vue-i18n"
-import { Archive, Copy, Pencil, Pin, PinOff, Trash2 } from "lucide-vue-next"
+import { Archive, Columns2, Copy, Pencil, Pin, PinOff, Trash2 } from "lucide-vue-next"
 import { useConnectionStore } from "../stores/connection"
 import { useUiStore } from "../stores/ui"
 import type { SessionSummary } from "../rpc/protocol"
@@ -40,6 +40,7 @@ const pinned = computed(() => ui.pinnedSessions.includes(props.session.sessionId
       <button type="button" class="ui-menu-item" @click="ui.togglePinned(session.sessionId)"><PinOff v-if="pinned" aria-hidden="true" /><Pin v-else aria-hidden="true" />{{ t(pinned ? "sidebar.unpin" : "sidebar.pin") }}</button>
       <button v-if="connection.supports('session.methods')" type="button" class="ui-menu-item" :disabled="busy || connection.phase !== 'connected'" @click="emit('action', 'rename', session)"><Pencil aria-hidden="true" />{{ t("sidebar.rename") }}</button>
       <button v-if="connection.supports('session.archive')" type="button" class="ui-menu-item" :disabled="busy || session.running || connection.phase !== 'connected'" @click="emit('action', 'archive', session)"><Archive aria-hidden="true" />{{ t("sidebar.archive") }}</button>
+      <button v-if="ui.splitAvailable && activeSessionId !== undefined && session.sessionId !== activeSessionId" type="button" class="ui-menu-item" @click="ui.openSplit(session.sessionId)"><Columns2 aria-hidden="true" />{{ t("split.open") }}</button>
       <button type="button" class="ui-menu-item" @click="emit('copy', session.cwd)"><Copy aria-hidden="true" />{{ t("workspace.copyPath") }}</button>
       <button v-if="connection.supports('session.delete')" type="button" class="ui-menu-item" :disabled="busy || session.running || connection.phase !== 'connected'" @click="emit('action', 'delete', session)"><Trash2 aria-hidden="true" />{{ t("sidebar.delete") }}</button>
     </RowActionMenu></span>

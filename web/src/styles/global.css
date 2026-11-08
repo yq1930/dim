@@ -263,3 +263,4 @@ code { font-family: var(--font-mono); }
 @import "./composer.css";
 @import "./new-session.css";
 @import "./lines.css";
+@import "./panels.css";

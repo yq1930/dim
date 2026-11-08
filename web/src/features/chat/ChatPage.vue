@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue"
-import { RouterLink } from "vue-router"
+import { RouterLink, useRoute, useRouter } from "vue-router"
 import { useI18n } from "vue-i18n"
-import { FileDiff, GitBranch, Menu, Terminal } from "lucide-vue-next"
+import { Activity, ArrowLeftRight, FileDiff, GitBranch, ListChecks, Menu, SquareTerminal, X } from "lucide-vue-next"
 import BrandMark from "../../components/BrandMark.vue"
 import ConfirmDialog from "../../components/ConfirmDialog.vue"
 import ApprovalPrompt from "./ApprovalPrompt.vue"
@@ -14,7 +14,6 @@ import TimelineView from "./TimelineView.vue"
 import SessionOutline from "./SessionOutline.vue"
 import TodoPanel from "./TodoPanel.vue"
 import TurnChangesDialog from "./TurnChangesDialog.vue"
-import BackgroundTasksDialog from "./BackgroundTasksDialog.vue"
 import { useComposerDrafts } from "./composer-drafts"
 import { useSessionCommands } from "./session-commands"
 import { changedFileCount } from "./session-changes"
@@ -25,9 +24,10 @@ import { useConnectionStore } from "../../stores/connection"
 import { useModelsStore } from "../../stores/models"
 import { useSessionsStore, workspaceName } from "../../stores/sessions"
 import { useToastStore } from "../../stores/toast"
-import { useUiStore } from "../../stores/ui"
+import { useUiStore, type DetailView, type Pane } from "../../stores/ui"
 
-const props = defineProps<{ sessionId: string }>()
+/** A Session's transcript and composer; `pane` is "split" for the one shown beside the routed Session. */
+const props = defineProps<{ sessionId: string; pane?: Pane }>()
 const { t } = useI18n()
 const models = useModelsStore()
 const chat = useChatStore()
@@ -35,6 +35,8 @@ const connection = useConnectionStore()
 const sessions = useSessionsStore()
 const ui = useUiStore()
 const toast = useToastStore()
+const route = useRoute()
+const router = useRouter()
 const forkConfirm = ref<InstanceType<typeof ConfirmDialog>>()
 const drafts = useComposerDrafts()
 
@@ -60,7 +62,9 @@ const changesDialog = ref<InstanceType<typeof TurnChangesDialog>>()
 const timeline = ref<InstanceType<typeof TimelineView>>()
 const outline = computed(() => timeline.value?.markers ?? [])
 const changedFiles = computed(() => changedFileCount(view.value?.rows ?? [], summary.value?.cwd))
-const changesShown = computed(() => ui.detailOpen && ui.detailView === "changes")
+const split = computed(() => props.pane === "split")
+const shown = (detail: DetailView) => ui.detailOpen && ui.detailView === detail
+const hasPlan = computed(() => view.value?.planning === true || (view.value?.todos.length ?? 0) > 0 || view.value?.rows.some((row) => row.kind === "tool" && row.name === "exit_plan_mode") === true)
 /** The main line's messages, oldest first, for the composer's ↑ recall. */
 const sentMessages = computed(() => (view.value?.rows ?? []).flatMap((row) => row.kind === "user" && row.text.trim() !== "" ? [row.text] : []))
 /** The App Server serves the permission methods on the connection; a Session may also list them. */
@@ -70,10 +74,10 @@ const permissionControl = computed(() => {
   if (session?.status !== "ready" || !serves("session.permission.get") || !serves("session.permission.update")) return undefined
   return { policy: session.permission, select: setPermission }
 })
-const approvalKeyboard = computed(() => ui.approvalKeyboard(props.sessionId, MAIN_BRANCH, view.value?.approvals ?? []))
+/** In split view only the pane the operator is in answers approvals from the keyboard. */
+const approvalKeyboard = computed(() => split.value === (ui.activePane === "split") && ui.approvalKeyboard(props.sessionId, MAIN_BRANCH, view.value?.approvals ?? []))
 const composer = ref<InstanceType<typeof ComposerPanel>>()
 const contextUsage = ref<ContextUsage>()
-const tasksDialog = ref<InstanceType<typeof BackgroundTasksDialog>>()
 const backgroundTasks = computed(() => view.value?.backgroundTasks ?? [])
 const activeTasks = computed(() => backgroundTasks.value.filter((task) => !task.finish).length)
 const lineCount = computed(() => view.value?.lines.filter((line) => line.id !== MAIN_BRANCH).length ?? 0)
@@ -99,7 +103,7 @@ async function commit(): Promise<void> {
     failure(cause)
   }
 }
-const sessionCommands = computed(() => commands.value ? { ...commands.value, tasks: () => tasksDialog.value?.open() } : undefined)
+const sessionCommands = computed(() => commands.value ? { ...commands.value, tasks: () => ui.openDetail("tasks") } : undefined)
 
 // Text a panel puts into this Session's composer (the review comments of the changes panel).
 watch(() => ui.composerInsert, (request) => {
@@ -163,6 +167,15 @@ async function createBranch(prompt: string): Promise<void> {
   ui.openLine(props.sessionId, branchId)
 }
 
+/** Makes the split pane's Session the routed one, and the routed one the split. */
+async function swapPanes(): Promise<void> {
+  const main = route.params.sessionId
+  if (typeof main !== "string") return
+  await router.push(`/chat/${props.sessionId}`)
+  ui.openSplit(main)
+  ui.activePane = "main"
+}
+
 async function setPermission(preset: PermissionPreset): Promise<void> {
   try {
     const outcome = await chat.setPermission(props.sessionId, preset)
@@ -193,7 +206,6 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
 
   <section v-else class="chat-page">
     <ConfirmDialog ref="forkConfirm" />
-    <BackgroundTasksDialog ref="tasksDialog" :session-id="sessionId" />
     <TurnChangesDialog
       v-if="fileChanges"
       ref="changesDialog"
@@ -213,22 +225,25 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
         </div>
         <SessionOutline v-if="outline.length > 1" :markers="outline" @jump="timeline?.jumpTo($event)" />
         <button
-          v-if="changedFiles > 0 || changesShown"
+          v-if="!split && (changedFiles > 0 || shown('changes'))"
           class="ui-button session-lines"
           data-variant="ghost"
           data-size="sm"
           type="button"
-          :aria-pressed="changesShown"
+          :aria-pressed="shown('changes')"
           :aria-label="t('sessionChanges.open')"
           v-tooltip="t('sessionChanges.open')"
-          @click="ui.toggleChanges()"
+          @click="ui.toggleDetail('changes')"
         >
           <FileDiff aria-hidden="true" />
           <span>{{ t("sessionChanges.title") }}</span>
           <span v-if="changedFiles > 0" class="ui-badge" data-size="sm">{{ changedFiles }}</span>
         </button>
+        <button v-if="!split && (hasPlan || shown('plan'))" type="button" class="ui-button session-lines" data-variant="ghost" data-size="sm" :aria-pressed="shown('plan')" :aria-label="t('plan.panel')" v-tooltip="t('plan.panel')" @click="ui.toggleDetail('plan')">
+          <ListChecks aria-hidden="true" /><span>{{ t("plan.panel") }}</span>
+        </button>
         <button
-          v-if="connection.supports('session.branch_end')"
+          v-if="!split && connection.supports('session.branch_end')"
           class="ui-button session-lines"
           data-variant="ghost"
           data-size="sm"
@@ -240,9 +255,16 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
           <span>{{ t("lines.title") }}</span>
           <span v-if="lineCount > 0" class="ui-badge" data-size="sm" :data-tone="linesBusy ? 'warning' : undefined">{{ lineCount }}</span>
         </button>
-        <button type="button" class="ui-button session-lines" data-variant="ghost" data-size="sm" :aria-label="t('tasks.title')" @click="tasksDialog?.open()">
-          <Terminal aria-hidden="true" /><span>{{ t("tasks.title") }}</span><span v-if="activeTasks" class="ui-badge" data-tone="primary">{{ activeTasks }}</span>
+        <button v-if="!split" type="button" class="ui-button session-lines" data-variant="ghost" data-size="sm" :aria-pressed="shown('tasks')" :aria-label="t('tasks.title')" v-tooltip="t('tasks.title')" @click="ui.toggleDetail('tasks')">
+          <Activity aria-hidden="true" /><span>{{ t("tasks.title") }}</span><span v-if="activeTasks" class="ui-badge" data-tone="primary">{{ activeTasks }}</span>
         </button>
+        <button v-if="!split && connection.supports('terminal.open')" type="button" class="ui-button session-lines" data-variant="ghost" data-size="sm" :aria-pressed="shown('terminal')" :aria-label="t('terminal.title')" v-tooltip="t('terminal.toggle')" @click="ui.toggleDetail('terminal')">
+          <SquareTerminal aria-hidden="true" /><span>{{ t("terminal.title") }}</span>
+        </button>
+        <template v-if="split">
+          <button type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="t('split.swap')" v-tooltip="t('split.swap')" @click="swapPanes"><ArrowLeftRight aria-hidden="true" /></button>
+          <button type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="t('split.close')" v-tooltip="t('split.close')" @click="ui.closeSplit"><X aria-hidden="true" /></button>
+        </template>
         <span v-if="view.sessionRunning" class="ui-badge session-running" data-tone="primary"><span class="status-dot" data-state="running" aria-hidden="true" />{{ t(view.stopping ? "status.stopping" : "status.running") }}</span>
       </header>
     </div>

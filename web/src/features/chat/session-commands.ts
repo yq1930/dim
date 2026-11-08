@@ -55,7 +55,7 @@ export function useSessionCommands(options: {
       review,
       status,
       copy: copyLastReply,
-      diff: () => ui.openChanges(),
+      diff: () => ui.openDetail("changes"),
     }
   })
 

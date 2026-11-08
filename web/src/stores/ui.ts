@@ -5,8 +5,12 @@ import { useAppearanceStore } from "./appearance"
 
 export type ShellMode = "compact" | "regular" | "wide"
 
-/** What the right detail panel shows: the Session's lines, or the files it changed. */
-export type DetailView = "lines" | "changes"
+/** What the right detail panel shows for the Session on screen. */
+export type DetailView = "changes" | "plan" | "tasks" | "terminal" | "lines"
+const DETAIL_VIEWS: readonly DetailView[] = ["changes", "plan", "tasks", "terminal", "lines"]
+
+/** The pane a Session shows in: the routed one, or the one beside it in split view. */
+export type Pane = "main" | "split"
 
 /** A review comment on one line of a change, kept until it is put into the composer. */
 export type ReviewNote = {
@@ -40,6 +44,8 @@ export type EndLineRequest = {
 const STORAGE_KEY = "dim-web.ui.v1"
 const DETAIL_MIN = 320
 const DETAIL_MAX = 720
+/** Split view needs room for two transcripts beside the sidebar. */
+const SPLIT_MIN_WIDTH = 1100
 
 /** Layout state remembered in this browser. */
 type Persisted = {
@@ -51,11 +57,12 @@ type Persisted = {
   detailWidth: number
   /** Sessions shown first in the sidebar, in the order they were pinned. */
   pinnedSessions: string[]
+  splitSessionId: string | undefined
 }
 
 /** localStorage is outside the app: read it once, keeping only well-formed fields. */
 function readPersisted(): Persisted {
-  const fallback: Persisted = { sidebarCollapsed: false, collapsedWorkspaces: [], lastSessionId: undefined, detailOpen: false, detailView: "lines", detailWidth: 420, pinnedSessions: [] }
+  const fallback: Persisted = { sidebarCollapsed: false, collapsedWorkspaces: [], lastSessionId: undefined, detailOpen: false, detailView: "lines", detailWidth: 420, pinnedSessions: [], splitSessionId: undefined }
   try {
     const value: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")
     if (value === null || typeof value !== "object") return fallback
@@ -68,9 +75,10 @@ function readPersisted(): Persisted {
       collapsedWorkspaces: Array.isArray(stored.collapsedWorkspaces) ? stored.collapsedWorkspaces.filter((item): item is string => typeof item === "string") : [],
       lastSessionId: typeof stored.lastSessionId === "string" ? stored.lastSessionId : undefined,
       detailOpen: stored.detailOpen === true,
-      detailView: stored.detailView === "changes" ? "changes" : "lines",
+      detailView: DETAIL_VIEWS.find((view) => view === stored.detailView) ?? "lines",
       detailWidth: width,
       pinnedSessions: Array.isArray(stored.pinnedSessions) ? stored.pinnedSessions.filter((item): item is string => typeof item === "string") : [],
+      splitSessionId: typeof stored.splitSessionId === "string" ? stored.splitSessionId : undefined,
     }
   } catch {
     return fallback
@@ -104,8 +112,13 @@ export const useUiStore = defineStore("ui", () => {
   const reviewNotes = ref<Record<string, ReviewNote[]>>({})
   const composerInsert = ref<ComposerInsert>()
   let insertSeq = 0
+  /** The Session shown beside the routed one, when the shell is wide enough. */
+  const splitSessionId = ref(persisted.splitSessionId)
+  const splitAvailable = computed(() => shellWidth.value >= SPLIT_MIN_WIDTH)
+  /** The pane the operator last pressed or focused; it takes the keyboard's approvals. */
+  const activePane = ref<Pane>("main")
 
-  watch([sidebarCollapsed, collapsedWorkspaces, lastSessionId, detailOpen, detailView, detailWidth, pinnedSessions], () => {
+  watch([sidebarCollapsed, collapsedWorkspaces, lastSessionId, detailOpen, detailView, detailWidth, pinnedSessions, splitSessionId], () => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         sidebarCollapsed: sidebarCollapsed.value,
@@ -115,6 +128,7 @@ export const useUiStore = defineStore("ui", () => {
         detailView: detailView.value,
         detailWidth: detailWidth.value,
         pinnedSessions: pinnedSessions.value,
+        splitSessionId: splitSessionId.value,
       }))
     } catch {
     }
@@ -157,7 +171,18 @@ export const useUiStore = defineStore("ui", () => {
   }
 
   function markUnread(sessionId: string): void {
-    if (sessionId !== viewingSessionId.value && !unread.value.includes(sessionId)) unread.value = [...unread.value, sessionId]
+    if (sessionId !== viewingSessionId.value && sessionId !== splitSessionId.value && !unread.value.includes(sessionId)) unread.value = [...unread.value, sessionId]
+  }
+
+  function openSplit(sessionId: string): void {
+    splitSessionId.value = sessionId
+    activePane.value = "split"
+    if (unread.value.includes(sessionId)) unread.value = unread.value.filter((id) => id !== sessionId)
+  }
+
+  function closeSplit(): void {
+    splitSessionId.value = undefined
+    activePane.value = "main"
   }
 
   function addReviewNote(sessionId: string, note: ReviewNote): void {
@@ -177,23 +202,21 @@ export const useUiStore = defineStore("ui", () => {
     composerInsert.value = { sessionId, text, id: ++insertSeq }
   }
 
-  function openChanges(): void {
-    detailView.value = "changes"
+  function openDetail(view: DetailView): void {
+    detailView.value = view
     detailOpen.value = true
     detailFocused.value = true
   }
 
-  function toggleChanges(): void {
-    if (detailOpen.value && detailView.value === "changes") {
+  function toggleDetail(view: DetailView): void {
+    if (detailOpen.value && detailView.value === view) {
       detailOpen.value = false
       detailFocused.value = false
-    } else openChanges()
+    } else openDetail(view)
   }
 
   function openLines(sessionId: string): void {
-    detailView.value = "lines"
-    detailOpen.value = true
-    detailFocused.value = true
+    openDetail("lines")
     activeLineTab.value = { ...activeLineTab.value, [sessionId]: undefined }
   }
 
@@ -208,9 +231,7 @@ export const useUiStore = defineStore("ui", () => {
     const tabs = lineTabs.value[sessionId] ?? []
     if (!tabs.includes(branchId)) lineTabs.value = { ...lineTabs.value, [sessionId]: [...tabs, branchId] }
     activeLineTab.value = { ...activeLineTab.value, [sessionId]: branchId }
-    detailView.value = "lines"
-    detailOpen.value = true
-    detailFocused.value = true
+    openDetail("lines")
   }
 
   function activateLine(sessionId: string, branchId: string): void {
@@ -219,9 +240,7 @@ export const useUiStore = defineStore("ui", () => {
       return
     }
     activeLineTab.value = { ...activeLineTab.value, [sessionId]: branchId }
-    detailView.value = "lines"
-    detailOpen.value = true
-    detailFocused.value = true
+    openDetail("lines")
   }
 
   function closeLineTab(sessionId: string, branchId: string): void {
@@ -277,8 +296,8 @@ export const useUiStore = defineStore("ui", () => {
     sidebarCollapsed, lastSessionId, drawerOpen, shellWidth, shellMode, setShellWidth,
     isWorkspaceExpanded, toggleWorkspace, pinnedSessions, togglePinned, unpin,
     detailOpen, detailView, detailWidth, detailExpanded, detailFocused, lineTabs, activeLineTab, newLine, endingLine,
-    setDetailWidth, openChanges, toggleChanges, openLines, toggleLines, openLine, activateLine, closeLineTab, closeDetail,
-    viewingSessionId, unread, viewSession, markUnread,
+    setDetailWidth, openDetail, toggleDetail, openLines, toggleLines, openLine, activateLine, closeLineTab, closeDetail,
+    viewingSessionId, unread, viewSession, markUnread, splitSessionId, splitAvailable, activePane, openSplit, closeSplit,
     reviewNotes, addReviewNote, removeReviewNote, clearReviewNotes, composerInsert, requestComposerInsert,
     approvalKeyboard,
     requestNewLine, closeNewLine, requestEndLine, closeEndLine, resetSessionTabs,

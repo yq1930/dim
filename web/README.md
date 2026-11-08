@@ -33,10 +33,13 @@ npm run typecheck  # type check only
 
 ## Layout
 
-The Session header's **Background tasks** button and `/tasks` list background
-commands across the Session's lines. Select a running command to see its live
-output tail; **Stop command** asks for confirmation before stopping that command.
-Closing the dialog leaves commands running. Reopening the Session rebuilds the
+The right detail panel shows the Session in tabs: Changes, Plan, Background
+tasks, Terminal and Lines; the Session header's buttons open them. The
+**Background tasks** tab (also `/tasks`) lists background commands across the
+Session's lines. Select a running command to see its live output tail; **Stop
+command** asks for confirmation before stopping that command. Leaving the tab
+leaves commands running. The **Terminal** tab runs shells in the Session's
+workspace through the App Server's `terminal.*` methods; Ctrl+` shows or hides it. Reopening the Session rebuilds the
 list from recorded history. Failed history reads and unavailable live output are
 shown explicitly, and output is rendered as text.
 
@@ -49,3 +52,4 @@ shown explicitly, and output is rendered as text.
 | `src/stores/` | Connection, session directory, attached sessions and their per-line streams, models, layout and line tabs |
 | `src/features/chat/` | Chat page, new-session page, timeline, composer, model menu, approval prompt |
 | `src/features/lines/` | Right-side Lines panel, tree, line conversation, new-line and end-line dialogs |
+| `src/features/terminal/` | The detail panel's Terminal tab: xterm.js views of the App Server's terminals |

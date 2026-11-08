@@ -4,13 +4,14 @@ import { useI18n } from "vue-i18n"
 import { Check, Star } from "lucide-vue-next"
 import RowActionMenu from "../../components/RowActionMenu.vue"
 import { TRANSCRIPT_VIEWS, usePreferencesStore } from "../../stores/preferences"
+import { shortcutText } from "../../app/shortcuts"
 
 /** The header's ⋯ menu: the Session's transcript view, as Claude Code's Transcript view menu. */
 const props = defineProps<{ sessionId: string }>()
 const { t } = useI18n()
 const preferences = usePreferencesStore()
 const current = computed(() => preferences.viewOf(props.sessionId))
-const cycleKey = navigator.userAgent.includes("Mac") ? "⌃O" : "Ctrl+O"
+const cycleKey = shortcutText("cycleTranscriptMode")
 </script>
 
 <template>

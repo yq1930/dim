@@ -690,7 +690,7 @@ The detail panel's Terminal tab runs the operator's interactive shells in the Se
 
 Errors: `terminal_unknown` for an id that is not open, `terminal_limit` beyond 32 open terminals, `terminal_failed` when the PTY cannot start or take input, `invalid_params` for a bad `cwd`, size, `command` or `title`.
 
-The frontend draws each terminal with xterm.js, loaded only once the tab is shown. A tab replays from cursor 0, then long-polls `terminal.read` and sends `terminal.write` in order; it refits to its size and follows the light and dark theme. Showing the tab for a Session without terminals opens one; closing the last tab leaves it empty. Ctrl+` shows or hides the tab.
+The frontend draws each terminal with xterm.js, loaded only once the tab is shown. A tab replays from cursor 0, then long-polls `terminal.read` and sends `terminal.write` in order; it refits to its size and follows the light and dark theme. Showing the tab for a Session without terminals opens one; closing the last tab leaves it empty. Ctrl+` (also ⌘J in the macOS desktop app) shows or hides the tab (§4.10).
 
 ```text
 [Changes] [Plan] [Background tasks] [Terminal] [Lines]   ⤢ ×
@@ -804,6 +804,25 @@ The Preview tab shows a dev server on this computer in a frame, as Claude Code's
 | Reloads | A page load finds the Session's servers among its terminals (`terminal.list`, those with a `command`) and reads their output again; what the preview showed is not kept |
 
 The macOS desktop window lets a frame show an origin only after the page announced it (the `show_preview` command), since WebKit hands the window's navigation rule the frame's navigations too; other addresses still open in the default browser.
+
+### 4.10 Keyboard shortcuts
+
+The page's shortcuts are one table, `app/shortcuts.ts`, in the shape of Claude Code's keybindings: each binding names a command, its keys (`cmd` reads as Ctrl off the Mac), whether it matches the character the key types (so letters follow the keyboard layout) or the physical key (punctuation), and where it applies (the Mac, the desktop app, or a browser, which keeps some keys for itself). The shell runs the commands; while a dialog is open the keyboard stays with it. ⌘/, or the keyboard button at the foot of the sidebar, opens the Keyboard shortcuts dialog: the table's commands and the keys components handle themselves (Enter, Shift+Enter, Esc, ↑, Shift+Tab, ⌘S, and an approval's Enter or Y and Esc or N), in three groups, filtered by what is typed. The tooltips of controls a command also runs name its keys.
+
+| Group | Command | Desktop app | Browser |
+| --- | --- | --- | --- |
+| General | New Session (in the routed Session's workspace) | ⌘N | ⇧⌘O |
+| General | Toggle sidebar | ⌘B | ⌘B |
+| General | Settings | ⌘, | — |
+| General | Keyboard shortcuts | ⌘/ | ⌘/ |
+| General | Transcript view of the active pane | ⌃O | ⌃O |
+| Panes | Changes, Files, Preview | ⇧⌘D, ⇧⌘F, ⇧⌘P | ⌃⇧D, ⇧⌘F, ⌥⌘P |
+| Panes | Terminal | ⌘J or ⌃` | ⌃` |
+| Panes | Close the right panel, else the split pane | ⌘\ | ⌘\ |
+| Panes | Expand or collapse the right panel | ⇧⌘\ | ⇧⌘\ |
+| Composer | Mode menu, model menu of the active pane | ⇧⌘M or ⌥⌘M, ⇧⌘I | ⌥⌘M, ⇧⌘I |
+
+Off the Mac, ⌘ reads as Ctrl. A pane command does nothing for a Session without that view (Files without `session.files.read`, Terminal without terminals). The composer of the active pane opens its menu on `ui.composerMenu`, as it takes panel text on `ui.composerInsert`.
 
 ## 5. Build and release
 

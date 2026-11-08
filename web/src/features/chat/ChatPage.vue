@@ -29,6 +29,7 @@ import { useModelsStore } from "../../stores/models"
 import { useSessionsStore } from "../../stores/sessions"
 import { useToastStore } from "../../stores/toast"
 import { useUiStore, type DetailView, type Pane } from "../../stores/ui"
+import { withKeys } from "../../app/shortcuts"
 
 /** A Session's transcript and composer; `pane` is "split" for the one shown beside the routed Session. */
 const props = defineProps<{ sessionId: string; pane?: Pane }>()
@@ -120,6 +121,13 @@ watch(() => ui.composerInsert, (request) => {
   }
   const draft = drafts.get(`session:${props.sessionId}:main`)
   draft.text = draft.text === "" ? request.text : `${draft.text}\n\n${request.text}`
+})
+
+// A shortcut opens a menu of the composer in the pane the operator is in.
+watch(() => ui.composerMenu, (request) => {
+  if (request === undefined || request.pane !== (props.pane ?? "main")) return
+  ui.composerMenu = undefined
+  composer.value?.openMenu(request.menu)
 })
 
 const listSkills = computed(() => {
@@ -235,7 +243,7 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
             type="button"
             :aria-pressed="shown('changes')"
             :aria-label="t('sessionChanges.open')"
-            v-tooltip="t('sessionChanges.open')"
+            v-tooltip="withKeys(t('sessionChanges.open'), 'toggleDiff')"
             @click="ui.toggleDetail('changes')"
           >
             <FileDiff aria-hidden="true" />
@@ -261,7 +269,7 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
           <button v-if="!split" type="button" class="ui-button session-lines" data-variant="ghost" data-size="sm" :aria-pressed="shown('tasks')" :aria-label="t('tasks.title')" v-tooltip="t('tasks.title')" @click="ui.toggleDetail('tasks')">
             <Activity aria-hidden="true" /><span>{{ t("tasks.title") }}</span><span v-if="activeTasks" class="ui-badge" data-tone="primary">{{ activeTasks }}</span>
           </button>
-          <button v-if="!split && connection.supports('terminal.open')" type="button" class="ui-button session-lines" data-variant="ghost" data-size="sm" :aria-pressed="shown('terminal')" :aria-label="t('terminal.title')" v-tooltip="t('terminal.toggle')" @click="ui.toggleDetail('terminal')">
+          <button v-if="!split && connection.supports('terminal.open')" type="button" class="ui-button session-lines" data-variant="ghost" data-size="sm" :aria-pressed="shown('terminal')" :aria-label="t('terminal.title')" v-tooltip="withKeys(t('terminal.toggle'), 'toggleTerminal')" @click="ui.toggleDetail('terminal')">
             <SquareTerminal aria-hidden="true" /><span>{{ t("terminal.title") }}</span>
           </button>
           <OpenInMenu v-if="!split && summary" :path="summary.cwd" />

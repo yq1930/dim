@@ -7,6 +7,7 @@ import type { ModelId } from "../../rpc/protocol"
 import { useModelsStore } from "../../stores/models"
 import { useConnectionStore } from "../../stores/connection"
 import { useToastStore } from "../../stores/toast"
+import { withKeys } from "../../app/shortcuts"
 
 /**
  * The model picker: the current provider's models, numbered for the keyboard,
@@ -194,7 +195,7 @@ defineExpose({ open: () => {
     <span class="model-trigger-label">{{ triggerLabel }}</span>
   </span>
   <details v-else ref="details" class="composer-popover model-menu" :class="{ 'is-disabled': disabled }" @toggle="onToggle">
-    <summary class="ui-button model-trigger" data-variant="ghost" data-size="sm" v-tooltip="model ? `${triggerLabel} · ${providerName}` : undefined">
+    <summary class="ui-button model-trigger" data-variant="ghost" data-size="sm" v-tooltip="withKeys(model ? `${triggerLabel} · ${providerName}` : t('composer.command.models'), 'openModelMenu')">
       <span v-if="model" class="provider-badge" aria-hidden="true">{{ initial(providerName) }}</span>
       <span class="model-trigger-label">{{ triggerLabel }}</span>
       <span v-if="effortLabel" class="model-trigger-effort">{{ effortLabel }}</span>

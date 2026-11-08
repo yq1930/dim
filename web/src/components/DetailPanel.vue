@@ -17,6 +17,7 @@ import { useGitStore } from "../stores/git"
 import { useSessionsStore } from "../stores/sessions"
 import { useTerminalsStore } from "../stores/terminals"
 import { useUiStore, type DetailView } from "../stores/ui"
+import { withKeys } from "../app/shortcuts"
 
 /** xterm.js loads only once a terminal is shown, and the file view's highlighter once a file is. */
 const TerminalPanel = defineAsyncComponent(() => import("../features/terminal/TerminalPanel.vue"))
@@ -122,11 +123,11 @@ function onKeydown(event: KeyboardEvent): void {
         </button>
       </div>
       <div class="panel-tab-actions">
-        <button type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="ui.detailExpanded ? t('lines.collapse') : t('lines.expand')" v-tooltip="ui.detailExpanded ? t('lines.collapse') : t('lines.expand')" @click="ui.detailExpanded = !ui.detailExpanded">
+        <button type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="ui.detailExpanded ? t('lines.collapse') : t('lines.expand')" v-tooltip="withKeys(ui.detailExpanded ? t('lines.collapse') : t('lines.expand'), 'toggleExpandPane')" @click="ui.detailExpanded = !ui.detailExpanded">
           <Minimize2 v-if="ui.detailExpanded" aria-hidden="true" />
           <Maximize2 v-else aria-hidden="true" />
         </button>
-        <button type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="t('detail.close')" v-tooltip="t('detail.close')" @click="ui.closeDetail">
+        <button type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="t('detail.close')" v-tooltip="withKeys(t('detail.close'), 'closePane')" @click="ui.closeDetail">
           <X aria-hidden="true" />
         </button>
       </div>

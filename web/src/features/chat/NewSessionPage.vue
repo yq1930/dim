@@ -13,6 +13,7 @@ import { useConnectionStore } from "../../stores/connection"
 import { useGitStore } from "../../stores/git"
 import { useModelsStore } from "../../stores/models"
 import { useSessionsStore, workspaceName } from "../../stores/sessions"
+import { useUiStore } from "../../stores/ui"
 
 /**
  * A new session: pick a known workspace or type an absolute directory, write
@@ -36,6 +37,14 @@ const permissionControl = computed(() => connection.supports("session.permission
   ? { policy: { preset: preset.value, allowedTools: [], disallowedTools: [] }, select: async (next: PermissionPreset) => { choosePreset(next) } }
   : undefined)
 const menu = ref<HTMLDetailsElement>()
+const composer = ref<InstanceType<typeof ComposerPanel>>()
+const ui = useUiStore()
+// A shortcut opens a menu of the composer.
+watch(() => ui.composerMenu, (request) => {
+  if (request?.pane !== "main") return
+  ui.composerMenu = undefined
+  composer.value?.openMenu(request.menu)
+})
 let active = true
 onBeforeUnmount(() => { active = false })
 
@@ -138,7 +147,7 @@ async function send(text: string, attachments: DraftAttachments): Promise<void> 
       <BrandMark class="new-session-mark" />
       <h1 data-route-heading tabindex="-1">{{ t("newThread.title") }}</h1>
     </div>
-    <ComposerPanel class="is-new-thread" :draft-key="`new:${cwd}`" :running="false" :model="model" :model-selectable="true" :send="send" :stores-pastes="true" :select-model="(next) => { picked = next }" :reasoning-effort="reasoningEffort" :select-effort="(value) => { reasoningEffort = value }" :list-skills="listSkills" :permission="permissionControl" :plan-mode="{ active: planning, toggle: () => { planning = !planning } }">
+    <ComposerPanel ref="composer" class="is-new-thread" :draft-key="`new:${cwd}`" :running="false" :model="model" :model-selectable="true" :send="send" :stores-pastes="true" :select-model="(next) => { picked = next }" :reasoning-effort="reasoningEffort" :select-effort="(value) => { reasoningEffort = value }" :list-skills="listSkills" :permission="permissionControl" :plan-mode="{ active: planning, toggle: () => { planning = !planning } }">
       <template #status>
         <details ref="menu" class="composer-popover workspace-menu">
           <summary class="ui-button" data-variant="ghost" data-size="xs" data-trailing v-tooltip="cwd || undefined">

@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import { RouterLink, useRoute, useRouter } from "vue-router"
 import { useI18n } from "vue-i18n"
-import { Archive, CalendarClock, FolderOpen, PanelLeftClose, Plus, Search, Settings } from "lucide-vue-next"
+import { Archive, CalendarClock, FolderOpen, Keyboard, PanelLeftClose, Plus, Search, Settings } from "lucide-vue-next"
 import { useConnectionStore } from "../stores/connection"
 import { settingsMessages } from "../i18n/settings"
 import BrandMark from "./BrandMark.vue"
@@ -15,6 +15,7 @@ import { useToastStore } from "../stores/toast"
 import { copyText } from "../clipboard"
 import type { SessionSummary } from "../rpc/protocol"
 import { useComposerDrafts } from "../features/chat/composer-drafts"
+import { withKeys } from "../app/shortcuts"
 import WorkspaceOpenDialog from "./WorkspaceOpenDialog.vue"
 import SessionRenameDialog from "./SessionRenameDialog.vue"
 import ConfirmDialog from "./ConfirmDialog.vue"
@@ -89,7 +90,7 @@ const visible = computed(() => sessions.workspaces.flatMap((workspace) => {
     <header class="brand-row" data-tauri-drag-region="deep">
       <BrandMark class="brand-logo" />
       <strong class="brand-copy">{{ t("brand.product") }}</strong>
-      <button class="ui-icon-button sidebar-collapse" data-variant="ghost" data-size="sm" type="button" :aria-label="t('sidebar.closeMenu')" @click="ui.sidebarCollapsed = true">
+      <button class="ui-icon-button sidebar-collapse" data-variant="ghost" data-size="sm" type="button" :aria-label="t('sidebar.closeMenu')" v-tooltip="withKeys(t('sidebar.closeMenu'), 'toggleSidebar')" @click="ui.sidebarCollapsed = true">
         <PanelLeftClose aria-hidden="true" />
       </button>
     </header>
@@ -150,7 +151,12 @@ const visible = computed(() => sessions.workspaces.flatMap((workspace) => {
       <RouterLink class="ui-button" data-variant="ghost" data-size="md" to="/settings" @click="$emit('navigate')">
         <Settings aria-hidden="true" />{{ settingsText("settings") }}
       </RouterLink>
-      <ConnectionBadge />
+      <div class="sidebar-footer-row">
+        <ConnectionBadge />
+        <button type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="t('shortcuts.title')" v-tooltip="withKeys(t('shortcuts.title'), 'showShortcuts')" @click="ui.shortcutsOpen = true">
+          <Keyboard aria-hidden="true" />
+        </button>
+      </div>
     </footer>
   </aside>
   <WorkspaceOpenDialog ref="workspaceDialog" @select="openWorkspace" />
@@ -161,4 +167,5 @@ const visible = computed(() => sessions.workspaces.flatMap((workspace) => {
 <style scoped>
 .sidebar-new { width: 100%; justify-content: flex-start; }
 .sidebar-new-label { flex: 1; text-align: left; }
+.sidebar-footer-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding-right: var(--space-1); }
 </style>

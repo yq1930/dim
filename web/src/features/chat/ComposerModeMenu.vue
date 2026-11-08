@@ -11,6 +11,7 @@ import { RouterLink } from "vue-router"
 import { useI18n } from "vue-i18n"
 import { Check, ChevronDown, Eye, Hand, ListChecks, PencilLine, Zap } from "lucide-vue-next"
 import ConfirmDialog from "../../components/ConfirmDialog.vue"
+import { withKeys } from "../../app/shortcuts"
 import type { PermissionPolicy } from "../../rpc/protocol"
 
 const props = defineProps<{
@@ -51,7 +52,7 @@ defineExpose({ open: () => {
 
 <template>
   <details ref="details" class="composer-popover work-mode-menu" :class="{ 'is-disabled': disabled }">
-    <summary class="ui-button work-mode-trigger" data-variant="ghost" data-size="sm" :data-mode="current" :aria-label="t('composer.mode.label')">
+    <summary class="ui-button work-mode-trigger" data-variant="ghost" data-size="sm" :data-mode="current" :aria-label="t('composer.mode.label')" v-tooltip="withKeys(t('composer.mode.label'), 'openModeMenu')">
       <component :is="icon" aria-hidden="true" />
       <span>{{ current === undefined ? t("composer.mode.label") : t(`composer.mode.${current}`) }}</span>
       <ChevronDown class="work-mode-chevron" aria-hidden="true" />

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
-import { RouterView, useRoute } from "vue-router"
+import { RouterView, useRoute, useRouter } from "vue-router"
 import { useI18n } from "vue-i18n"
 import { Menu, PanelLeftOpen, X } from "lucide-vue-next"
 import AppSidebar from "../components/AppSidebar.vue"
@@ -13,20 +13,25 @@ import NewLineDialog from "../features/lines/NewLineDialog.vue"
 import { overlayTitleBar } from "../desktop"
 import { settingsMessages } from "../i18n/settings"
 import { useConnectionStore } from "../stores/connection"
+import { useFilesStore } from "../stores/files"
 import { usePreferencesStore } from "../stores/preferences"
 import { useSessionsStore, workspaceName } from "../stores/sessions"
 import { useTerminalsStore } from "../stores/terminals"
 import { useToastStore } from "../stores/toast"
-import { useUiStore } from "../stores/ui"
+import { useUiStore, type DetailView, type Pane } from "../stores/ui"
 import { useKeepAwake } from "./keep-awake"
+import ShortcutsDialog from "./ShortcutsDialog.vue"
+import { matchShortcut, shortcutContext, withKeys, type ShortcutCommand } from "./shortcuts"
 
 const route = useRoute()
+const router = useRouter()
 const { t } = useI18n()
 const { t: settingsText } = useI18n({ messages: settingsMessages })
 const connection = useConnectionStore()
 const sessions = useSessionsStore()
 const ui = useUiStore()
 const terminals = useTerminalsStore()
+const files = useFilesStore()
 const root = ref<HTMLElement>()
 const drawer = ref<HTMLDialogElement>()
 let observer: ResizeObserver | undefined
@@ -81,35 +86,91 @@ function closeMenusOutside(event: PointerEvent): void {
 /** The last "Switched to … view" toast, replaced by the next. */
 let viewToast: number | undefined
 
+/** The pane the operator is in, of those shown. */
+const activePane = computed<Pane>(() => ui.activePane === "split" && splitId.value !== undefined ? "split" : "main")
+
+/** Steps the Session in the active pane through the transcript views. */
+function cycleTranscript(): boolean {
+  const target = route.name !== "chat-session" ? undefined : activePane.value === "split" ? splitId.value : sessionId.value
+  if (target === undefined) return false
+  const view = usePreferencesStore().cycleView(target)
+  const toast = useToastStore()
+  if (viewToast !== undefined) toast.dismiss(viewToast)
+  viewToast = toast.push({ tone: "info", title: t("transcript.switched", { view: t(`transcript.${view}`) }) })
+  return true
+}
+
+/** Shows or hides one view of the right panel, where the Session has it. */
+function togglePane(view: DetailView): boolean {
+  const id = sessionId.value
+  if (route.name !== "chat-session" || id === undefined) return false
+  if ((view === "files" && !files.readable(id)) || (view === "terminal" && !terminals.available)) return false
+  ui.toggleDetail(view)
+  return true
+}
+
+/** Closes the right panel, or the pane beside the routed Session. */
+function closePane(): boolean {
+  if (detailOpen.value) ui.closeDetail()
+  else if (splitId.value !== undefined) ui.closeSplit()
+  else return false
+  return true
+}
+
+function openComposerMenu(menu: "mode" | "model"): boolean {
+  if (route.name !== "chat-new" && route.name !== "chat-session") return false
+  ui.requestComposerMenu(activePane.value, menu)
+  return true
+}
+
+/** What each command of the shortcut table does here; false when it does nothing on this page. */
+const commands: Record<ShortcutCommand, () => boolean> = {
+  showShortcuts: () => {
+    ui.shortcutsOpen = !ui.shortcutsOpen
+    return true
+  },
+  toggleSidebar: () => {
+    if (ui.shellMode === "compact") ui.drawerOpen = !ui.drawerOpen
+    else ui.sidebarCollapsed = !ui.sidebarCollapsed
+    return true
+  },
+  newSession: () => {
+    const cwd = sessionId.value === undefined ? undefined : sessions.byId.get(sessionId.value)?.cwd
+    void router.push({ name: "chat-new", ...(cwd === undefined ? {} : { query: { cwd } }) })
+    return true
+  },
+  openSettings: () => {
+    if (!settingsRoute.value) void router.push("/settings")
+    return true
+  },
+  cycleTranscriptMode: cycleTranscript,
+  toggleDiff: () => togglePane("changes"),
+  toggleFiles: () => togglePane("files"),
+  togglePreview: () => togglePane("preview"),
+  toggleTerminal: () => togglePane("terminal"),
+  closePane,
+  toggleExpandPane: () => {
+    if (!detailOpen.value) return false
+    ui.detailExpanded = !ui.detailExpanded
+    return true
+  },
+  openModeMenu: () => openComposerMenu("mode"),
+  openModelMenu: () => openComposerMenu("model"),
+}
+const keys = shortcutContext()
+
 function onKey(event: KeyboardEvent): void {
   if (event.key === "Escape") {
     for (const menu of document.querySelectorAll<HTMLDetailsElement>(POPOVERS)) menu.open = false
     return
   }
-  // Ctrl+` shows or hides the Session's terminals, as in editors.
-  if (event.ctrlKey && !event.metaKey && !event.altKey && event.code === "Backquote" && route.name === "chat-session" && terminals.available) {
-    event.preventDefault()
-    ui.toggleDetail("terminal")
-    return
-  }
-  // Ctrl+O steps the Session in the active pane through the transcript views, as in Claude Code.
-  if (event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "o" && route.name === "chat-session") {
-    const target = ui.activePane === "split" && splitId.value !== undefined ? splitId.value : sessionId.value
-    if (target === undefined) return
-    event.preventDefault()
-    const view = usePreferencesStore().cycleView(target)
-    const toast = useToastStore()
-    if (viewToast !== undefined) toast.dismiss(viewToast)
-    viewToast = toast.push({ tone: "info", title: t("transcript.switched", { view: t(`transcript.${view}`) }) })
-    return
-  }
-  // ⌘B / Ctrl+B toggles the sidebar: the drawer in compact mode, the inline rail otherwise.
-  const mod = navigator.userAgent.includes("Mac") ? event.metaKey : event.ctrlKey
-  if (mod && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "b") {
-    event.preventDefault()
-    if (ui.shellMode === "compact") ui.drawerOpen = !ui.drawerOpen
-    else ui.sidebarCollapsed = !ui.sidebarCollapsed
-  }
+  if (event.defaultPrevented || event.repeat || event.isComposing) return
+  const command = matchShortcut(event, keys)
+  if (command === undefined) return
+  // An open dialog keeps the keyboard; the shortcuts dialog still closes with its own keys.
+  const dialog = document.querySelector("dialog[open]:not(.drawer-content)")
+  if (dialog !== null && !(command === "showShortcuts" && dialog.classList.contains("shortcuts-dialog"))) return
+  if (commands[command]()) event.preventDefault()
 }
 
 /** The directory has no change notification; coming back to the tab refreshes it. */
@@ -202,7 +263,7 @@ function focusMain(): void {
       :style="{ '--detail-width': `${ui.detailWidth}px` }"
     >
       <main id="main" class="main-region" :aria-label="t('a11y.mainContent')" :data-active="splitId !== undefined && ui.activePane === 'main'" @pointerdown="focusMain" @focusin="focusMain">
-        <button v-if="ui.sidebarCollapsed && ui.shellMode !== 'compact' && !settingsRoute" class="ui-icon-button sidebar-reopen" data-variant="ghost" data-size="md" type="button" :aria-label="t('sidebar.openMenu')" v-tooltip="t('sidebar.openMenu')" @click="ui.sidebarCollapsed = false">
+        <button v-if="ui.sidebarCollapsed && ui.shellMode !== 'compact' && !settingsRoute" class="ui-icon-button sidebar-reopen" data-variant="ghost" data-size="md" type="button" :aria-label="t('sidebar.openMenu')" v-tooltip="withKeys(t('sidebar.openMenu'), 'toggleSidebar')" @click="ui.sidebarCollapsed = false">
           <PanelLeftOpen aria-hidden="true" />
         </button>
         <div v-if="titleBarStrip" class="window-titlebar" data-tauri-drag-region="deep" />
@@ -238,5 +299,6 @@ function focusMain(): void {
 
     <NewLineDialog v-if="ui.newLine" />
     <EndLineDialog v-if="ui.endingLine" />
+    <ShortcutsDialog />
   </div>
 </template>

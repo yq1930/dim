@@ -6,6 +6,7 @@ import { codeToTokens } from "../../vendor/shiki-web"
 import { copyText } from "../../clipboard"
 import ConfirmDialog from "../../components/ConfirmDialog.vue"
 import { canChooseWorkspace, openWorkspacePath } from "../../desktop"
+import { keyText, shortcutContext } from "../../app/shortcuts"
 import { normalize, useFilesStore, type OpenFile } from "../../stores/files"
 import { useToastStore } from "../../stores/toast"
 import { useUiStore } from "../../stores/ui"
@@ -39,7 +40,7 @@ const editable = computed(() => view.value?.kind === "text" && view.value.editab
 const editing = computed(() => props.file.editing === true && editable.value)
 const editorText = computed(() => props.file.draft ?? normalize(text.value ?? ""))
 const dirty = computed(() => props.file.draft !== undefined)
-const saveKey = navigator.userAgent.includes("Mac") ? "⌘S" : "Ctrl+S"
+const saveKey = keyText("cmd+s", shortcutContext().mac)
 const highlighted = shallowRef<string[]>()
 const HIGHLIGHT_MAX_CHARS = 256 * 1024
 let job = 0

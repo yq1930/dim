@@ -27,6 +27,9 @@ export type ReviewNote = {
 /** Text a panel asks the Session's main composer to take. */
 export type ComposerInsert = { sessionId: string; text: string; id: number }
 
+/** A menu of a pane's composer that the keyboard asked to open. */
+export type ComposerMenuRequest = { pane: Pane; menu: "mode" | "model"; id: number }
+
 export type NewLineRequest = {
   sessionId: string
   parentBranchId: string
@@ -112,6 +115,9 @@ export const useUiStore = defineStore("ui", () => {
   const reviewNotes = ref<Record<string, ReviewNote[]>>({})
   const composerInsert = ref<ComposerInsert>()
   let insertSeq = 0
+  const composerMenu = ref<ComposerMenuRequest>()
+  /** Whether the keyboard shortcuts dialog is open. */
+  const shortcutsOpen = ref(false)
   /** The Session shown beside the routed one, when the shell is wide enough. */
   const splitSessionId = ref(persisted.splitSessionId)
   const splitAvailable = computed(() => shellWidth.value >= SPLIT_MIN_WIDTH)
@@ -200,6 +206,10 @@ export const useUiStore = defineStore("ui", () => {
 
   function requestComposerInsert(sessionId: string, text: string): void {
     composerInsert.value = { sessionId, text, id: ++insertSeq }
+  }
+
+  function requestComposerMenu(pane: Pane, menu: ComposerMenuRequest["menu"]): void {
+    composerMenu.value = { pane, menu, id: ++insertSeq }
   }
 
   function openDetail(view: DetailView): void {
@@ -298,7 +308,7 @@ export const useUiStore = defineStore("ui", () => {
     detailOpen, detailView, detailWidth, detailExpanded, detailFocused, lineTabs, activeLineTab, newLine, endingLine,
     setDetailWidth, openDetail, toggleDetail, openLines, toggleLines, openLine, activateLine, closeLineTab, closeDetail,
     viewingSessionId, unread, viewSession, markUnread, splitSessionId, splitAvailable, activePane, openSplit, closeSplit,
-    reviewNotes, addReviewNote, removeReviewNote, clearReviewNotes, composerInsert, requestComposerInsert,
+    reviewNotes, addReviewNote, removeReviewNote, clearReviewNotes, composerInsert, requestComposerInsert, composerMenu, requestComposerMenu, shortcutsOpen,
     approvalKeyboard,
     requestNewLine, closeNewLine, requestEndLine, closeEndLine, resetSessionTabs,
   }

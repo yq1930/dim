@@ -403,7 +403,13 @@ async function quote(message: string): Promise<void> {
 }
 
 onMounted(() => { resize(); field.value?.focus() })
-defineExpose({ focus: () => field.value?.focus(), quote, insert })
+/** Opens the mode or model menu, as their shortcuts do. */
+function openMenu(menu: "mode" | "model"): void {
+  if (menu === "mode") modeMenu.value?.open()
+  else modelMenu.value?.open()
+}
+
+defineExpose({ focus: () => field.value?.focus(), quote, insert, openMenu })
 </script>
 
 <template>

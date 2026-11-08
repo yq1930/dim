@@ -1,7 +1,8 @@
 import type { Directive } from "vue"
 
 /**
- * `v-tooltip="text"`: the control kit's `.ui-tooltip` in place of native `title`.
+ * `v-tooltip="text"`, or `{ text, keys }` for a control a shortcut also runs:
+ * the control kit's `.ui-tooltip` in place of native `title`.
  * Hover shows it after 400ms (immediately while moving between tooltipped controls,
  * within 300ms of the last one closing), keyboard focus immediately; press, Escape, scroll,
  * leaving or moving the pointer elsewhere hides it. One shared element is shown as a
@@ -14,7 +15,9 @@ const GAP = 6
 const VIEWPORT_MARGIN = 8
 const TOOLTIP_ID = "ui-tooltip"
 
-type Target = HTMLElement & { _tooltip?: string }
+export type TooltipValue = string | { text: string; keys?: string } | undefined
+
+type Target = HTMLElement & { _tooltip?: TooltipValue }
 
 let tooltip: HTMLDivElement | undefined
 let active: Target | undefined
@@ -40,10 +43,17 @@ function element(): HTMLDivElement {
 
 function show(target: Target): void {
   clearTimeout(timer)
-  const text = target._tooltip
+  const value = target._tooltip
+  const text = typeof value === "string" ? value : value?.text
   if (!text || !target.isConnected) return
   const node = element()
   node.textContent = text
+  if (typeof value === "object" && value.keys) {
+    const keys = document.createElement("kbd")
+    keys.className = "ui-kbd"
+    keys.textContent = value.keys
+    node.append(keys)
+  }
   if (!node.matches(":popover-open")) node.showPopover()
   active = target
   if (target.getAttribute("aria-label") !== text) target.setAttribute("aria-describedby", TOOLTIP_ID)
@@ -127,7 +137,7 @@ function bindGlobal(): void {
   document.addEventListener("pointerdown", (event) => { touchInput = event.pointerType === "touch" }, { capture: true, passive: true })
 }
 
-export const vTooltip: Directive<Target, string | undefined> = {
+export const vTooltip: Directive<Target, TooltipValue> = {
   mounted(target, binding) {
     target._tooltip = binding.value
     for (const [type, listener] of listeners) target.addEventListener(type, listener)

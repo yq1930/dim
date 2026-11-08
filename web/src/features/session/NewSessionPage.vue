@@ -147,7 +147,7 @@ async function send(text: string, attachments: DraftAttachments): Promise<void> 
       <BrandMark class="new-session-mark" />
       <h1 data-route-heading tabindex="-1">{{ t("newThread.title") }}</h1>
     </div>
-    <ComposerPanel ref="composer" class="is-new-thread" :draft-key="`new:${cwd}`" :running="false" :model="model" :model-selectable="true" :send="send" :stores-pastes="true" :select-model="(next) => { picked = next }" :reasoning-effort="reasoningEffort" :select-effort="(value) => { reasoningEffort = value }" :list-skills="listSkills" :permission="permissionControl" :plan-mode="{ active: planning, toggle: () => { planning = !planning } }">
+    <ComposerPanel ref="composer" class="is-new-thread" :placeholder="t('composer.describeTask')" :draft-key="`new:${cwd}`" :running="false" :model="model" :model-selectable="true" :send="send" :stores-pastes="true" :select-model="(next) => { picked = next }" :reasoning-effort="reasoningEffort" :select-effort="(value) => { reasoningEffort = value }" :list-skills="listSkills" :permission="permissionControl" :plan-mode="{ active: planning, toggle: () => { planning = !planning } }">
       <template #status>
         <details ref="menu" class="composer-popover workspace-menu">
           <summary class="ui-button" data-variant="ghost" data-size="xs" data-trailing v-tooltip="cwd || undefined">

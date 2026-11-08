@@ -23,6 +23,8 @@ async function open(from?: MouseEvent | HTMLElement): Promise<void> {
   element.showModal()
   expanded.value = true
   await nextTick()
+  // A menu that would run off the bottom opens above its anchor (the composer's), or is pulled up to fit.
+  if (below !== undefined && top.value + element.offsetHeight > window.innerHeight - 8) top.value = below.top - element.offsetHeight - 4
   top.value = Math.max(8, Math.min(top.value, window.innerHeight - element.offsetHeight - 8))
   element.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus()
 }

@@ -9,7 +9,7 @@
 .composer-panel.is-new-thread > * { width: 100%; }
 /* z-index: the drawer below tucks under the surface; on narrow composers the
    status bar is positioned (popover anchor) and would otherwise paint over it. */
-.composer-panel.is-new-thread .composer-surface { z-index: 1; background: var(--background); }
+.composer-panel.is-new-thread .composer-surface { z-index: 1; }
 .composer-panel.is-new-thread .composer-statusbar { height: auto; justify-content: flex-start; margin-top: calc(-1 * var(--space-3)); padding: var(--space-5) var(--space-2) var(--space-2); border: 1px solid var(--border); border-top: 0; border-radius: 0 0 var(--radius-2xl) var(--radius-2xl); background: color-mix(in oklab, var(--muted) 80%, transparent); }
 .chat-loading { display: flex; min-height: 0; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-4); color: var(--muted-foreground); font-size: var(--text-sm); }
 .chat-loading p { margin: 0; }

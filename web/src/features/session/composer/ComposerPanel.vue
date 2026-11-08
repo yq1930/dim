@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, ref, useId, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import { useI18n } from "vue-i18n"
-import { ArrowUp, FileSearch, FileText, Paperclip, Square, X } from "lucide-vue-next"
+import { ArrowUp, FileSearch, FileText, Paperclip, Plus, Square, X } from "lucide-vue-next"
 import type { ContextUsage, DraftAttachments, FileCandidate, ModelId, PermissionPreset, PermissionPolicy } from "../../../rpc/protocol"
 import { formatTokens } from "./usage-format"
 import { linkMentions } from "../../../mentions"
@@ -11,6 +11,7 @@ import { useSessionsStore } from "../../../stores/sessions"
 import ComposerModeMenu, { type WorkMode } from "./ComposerModeMenu.vue"
 import ComposerModelMenu from "./ComposerModelMenu.vue"
 import WorkspaceFileDialog from "../../../components/WorkspaceFileDialog.vue"
+import RowActionMenu from "../../../components/RowActionMenu.vue"
 import { FILE_ACCEPT, useComposerAttachments } from "./composer-attachments"
 import { ARGUMENT_COMMANDS, commandWords, useCommandMenu, type MenuEntry } from "./composer-commands"
 import { createComposerDraft, useComposerDrafts } from "./composer-drafts"
@@ -488,8 +489,13 @@ defineExpose({ focus: () => field.value?.focus(), quote, insert, openMenu })
       <footer class="composer-toolbar">
         <div class="composer-tool-group">
           <input v-if="attachments" ref="upload" type="file" class="sr-only" tabindex="-1" :aria-label="t('composer.attachFiles')" :accept="FILE_ACCEPT" multiple @change="chooseFiles" />
-          <button v-if="attachments" type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :disabled="sending || !!draft.reading" :aria-label="t('composer.attachFiles')" v-tooltip="t('composer.attachFiles')" @click="upload?.click()"><Paperclip aria-hidden="true" /></button>
-          <button v-if="searchFiles" type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="t('composer.workspaceFiles')" v-tooltip="t('composer.workspaceFiles')" @click="fileDialog?.open()"><FileSearch aria-hidden="true" /></button>
+          <RowActionMenu v-if="attachments || searchFiles" :label="t('composer.add')" :icon="Plus">
+            <template #trigger="{ open, expanded }">
+              <button type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="t('composer.add')" aria-haspopup="dialog" :aria-expanded="expanded" v-tooltip="t('composer.add')" @click.stop="open($event.currentTarget as HTMLElement)"><Plus aria-hidden="true" /></button>
+            </template>
+            <button v-if="attachments" type="button" class="ui-menu-item" :disabled="sending || !!draft.reading" @click="upload?.click()"><Paperclip aria-hidden="true" />{{ t("composer.attachFiles") }}</button>
+            <button v-if="searchFiles" type="button" class="ui-menu-item" @click="fileDialog?.open()"><FileSearch aria-hidden="true" />{{ t("composer.workspaceFiles") }}</button>
+          </RowActionMenu>
           <ComposerModeMenu v-if="workModes.length && variant !== 'panel'" ref="modeMenu" :modes="workModes" :current="workMode" :policy="permission?.policy" :disabled="changingMode" @select="onMode" />
         </div>
         <div class="composer-run-group">

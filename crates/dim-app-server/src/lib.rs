@@ -36,6 +36,7 @@ pub mod settings;
 pub mod settings_methods;
 mod skills_management;
 pub mod storage;
+mod terminals;
 mod transport;
 mod tree_protocol;
 mod ui_host;
@@ -808,6 +809,9 @@ pub async fn serve(mut builder: AgentBuilder, mut config: ServerConfig) -> Resul
             Ok(Box::new(exec_shell_settings::ExecShellSettingsPlugin::new(
                 names,
             )?))
+        })?);
+        rows.push(register_part(&mut builtins, builder.catalog(), |names| {
+            Ok(Box::new(terminals::TerminalsPlugin::new(names)?))
         })?);
         rows.push(register_part(&mut builtins, builder.catalog(), |names| {
             Ok(Box::new(execution_settings::ExecutionBackendPlugin::new(

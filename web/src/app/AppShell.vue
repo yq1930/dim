@@ -4,14 +4,15 @@ import { RouterView, useRoute } from "vue-router"
 import { useI18n } from "vue-i18n"
 import { Menu, PanelLeftOpen, X } from "lucide-vue-next"
 import AppSidebar from "../components/AppSidebar.vue"
+import DetailPanel from "../components/DetailPanel.vue"
 import ToastRegion from "../components/ToastRegion.vue"
+import ChatPage from "../features/chat/ChatPage.vue"
 import EndLineDialog from "../features/lines/EndLineDialog.vue"
-import LinesPanel from "../features/lines/LinesPanel.vue"
 import NewLineDialog from "../features/lines/NewLineDialog.vue"
-import SessionChangesPanel from "../features/chat/SessionChangesPanel.vue"
 import { settingsMessages } from "../i18n/settings"
 import { useConnectionStore } from "../stores/connection"
 import { useSessionsStore, workspaceName } from "../stores/sessions"
+import { useTerminalsStore } from "../stores/terminals"
 import { useUiStore } from "../stores/ui"
 
 const route = useRoute()
@@ -20,6 +21,7 @@ const { t: settingsText } = useI18n({ messages: settingsMessages })
 const connection = useConnectionStore()
 const sessions = useSessionsStore()
 const ui = useUiStore()
+const terminals = useTerminalsStore()
 const root = ref<HTMLElement>()
 const drawer = ref<HTMLDialogElement>()
 let observer: ResizeObserver | undefined
@@ -28,6 +30,11 @@ const settingsRoute = computed(() => route.path === "/settings" || route.path.st
 const chatRoute = computed(() => route.name === "chat-new" || route.name === "chat-session")
 const sessionId = computed(() => typeof route.params.sessionId === "string" ? route.params.sessionId : undefined)
 const detailOpen = computed(() => ui.detailOpen && route.name === "chat-session" && sessionId.value !== undefined)
+const splitId = computed(() => {
+  const id = ui.splitSessionId
+  return route.name === "chat-session" && id !== undefined && id !== sessionId.value && ui.splitAvailable && sessions.byId.has(id) ? id : undefined
+})
+watch(splitId, (id) => { if (id === undefined) ui.activePane = "main" })
 const pageTitle = computed(() => {
   if (settingsRoute.value) return settingsText("settings")
   if (route.name === "chat-session" && typeof route.params.sessionId === "string") {
@@ -63,6 +70,12 @@ function closeMenusOutside(event: PointerEvent): void {
 function onKey(event: KeyboardEvent): void {
   if (event.key === "Escape") {
     for (const menu of document.querySelectorAll<HTMLDetailsElement>(POPOVERS)) menu.open = false
+    return
+  }
+  // Ctrl+` shows or hides the Session's terminals, as in editors.
+  if (event.ctrlKey && !event.metaKey && !event.altKey && event.code === "Backquote" && route.name === "chat-session" && terminals.available) {
+    event.preventDefault()
+    ui.toggleDetail("terminal")
     return
   }
   // ⌘B / Ctrl+B toggles the sidebar: the drawer in compact mode, the inline rail otherwise.
@@ -120,6 +133,11 @@ function startResize(event: PointerEvent): void {
 function resizeBy(delta: number): void {
   ui.setDetailWidth(ui.detailWidth + delta)
 }
+
+function focusMain(): void {
+  ui.detailFocused = false
+  ui.activePane = "main"
+}
 </script>
 
 <template>
@@ -155,9 +173,10 @@ function resizeBy(delta: number): void {
       class="content-region"
       :data-has-detail="detailOpen"
       :data-detail-expanded="ui.detailExpanded"
+      :data-split="splitId !== undefined"
       :style="{ '--detail-width': `${ui.detailWidth}px` }"
     >
-      <main id="main" class="main-region" :aria-label="t('a11y.mainContent')" @pointerdown="ui.detailFocused = false" @focusin="ui.detailFocused = false">
+      <main id="main" class="main-region" :aria-label="t('a11y.mainContent')" :data-active="splitId !== undefined && ui.activePane === 'main'" @pointerdown="focusMain" @focusin="focusMain">
         <button v-if="ui.sidebarCollapsed && ui.shellMode !== 'compact' && !settingsRoute" class="ui-icon-button sidebar-reopen" data-variant="ghost" data-size="md" type="button" :aria-label="t('sidebar.openMenu')" v-tooltip="t('sidebar.openMenu')" @click="ui.sidebarCollapsed = false">
           <PanelLeftOpen aria-hidden="true" />
         </button>
@@ -167,6 +186,10 @@ function resizeBy(delta: number): void {
         <p v-if="connection.phase === 'reconnecting'" class="reconnect-banner" role="status">{{ t("page.reconnecting") }}</p>
         <RouterView :key="settingsRoute ? 'settings' : route.fullPath" />
       </main>
+
+      <section v-if="splitId" class="split-region" :aria-label="t('split.region')" :data-active="ui.activePane === 'split'" @pointerdown="ui.activePane = 'split'" @focusin="ui.activePane = 'split'">
+        <ChatPage :key="splitId" :session-id="splitId" pane="split" />
+      </section>
 
       <div
         v-if="detailOpen"
@@ -182,9 +205,8 @@ function resizeBy(delta: number): void {
         @keydown.left.prevent="resizeBy(-16)"
         @keydown.right.prevent="resizeBy(16)"
       />
-      <aside v-if="detailOpen && sessionId" class="detail-region" data-active="true" :aria-label="ui.detailView === 'changes' ? t('sessionChanges.title') : t('lines.panelAria')" @pointerdown="ui.detailFocused = true" @focusin="ui.detailFocused = true">
-        <SessionChangesPanel v-if="ui.detailView === 'changes'" :session-id="sessionId" />
-        <LinesPanel v-else :session-id="sessionId" />
+      <aside v-if="detailOpen && sessionId" class="detail-region" data-active="true" :aria-label="t('detail.panel')" @pointerdown="ui.detailFocused = true" @focusin="ui.detailFocused = true">
+        <DetailPanel :session-id="sessionId" />
       </aside>
     </div>
 

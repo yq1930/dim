@@ -2985,6 +2985,20 @@
       ]
     },
     {
+      "id": "dim_app_server::terminals",
+      "crate": "dim_app_server",
+      "parent": "dim_app_server",
+      "file": "crates/dim-app-server/src/terminals.rs",
+      "unexpandedMacros": [
+        "cfg",
+        "json",
+        "tokio::pin",
+        "tokio::select",
+        "unreachable",
+        "vec"
+      ]
+    },
+    {
       "id": "dim_app_server::transport",
       "crate": "dim_app_server",
       "parent": "dim_app_server",
@@ -18306,6 +18320,14 @@
     },
     {
       "from": "dim_app_server",
+      "to": "dim_app_server::terminals",
+      "references": [
+        "mod terminals",
+        "path terminals::TerminalsPlugin::new"
+      ]
+    },
+    {
+      "from": "dim_app_server",
       "to": "dim_app_server::transport",
       "references": [
         "mod transport",
@@ -27129,6 +27151,52 @@
         "path error",
         "use super::SqliteStorage",
         "use super::sqlite::error"
+      ]
+    },
+    {
+      "from": "dim_app_server::terminals",
+      "to": "dim_agent_capabilities::host_platform",
+      "references": [
+        "path HostPlatform",
+        "path ProcessSpec",
+        "path PtyProcessTree",
+        "path PtySize",
+        "use dim_agent_capabilities::host_platform::HostPlatform",
+        "use dim_agent_capabilities::host_platform::ProcessSpec",
+        "use dim_agent_capabilities::host_platform::PtyProcessTree",
+        "use dim_agent_capabilities::host_platform::PtySize"
+      ]
+    },
+    {
+      "from": "dim_app_server::terminals",
+      "to": "dim_agent_capabilities::methods",
+      "references": [
+        "path RpcError",
+        "path RpcError::app",
+        "path RpcError::invalid",
+        "path params",
+        "path reply",
+        "use dim_agent_capabilities::methods::Interruption",
+        "use dim_agent_capabilities::methods::MethodDecl",
+        "use dim_agent_capabilities::methods::RpcError",
+        "use dim_agent_capabilities::methods::params",
+        "use dim_agent_capabilities::methods::reply"
+      ]
+    },
+    {
+      "from": "dim_app_server::terminals",
+      "to": "dim_agent_runtime::names",
+      "references": [
+        "path Names",
+        "use dim_agent_runtime::Names"
+      ]
+    },
+    {
+      "from": "dim_app_server::terminals",
+      "to": "dim_app_server::methods",
+      "references": [
+        "path ManagementMethods",
+        "use crate::methods::ManagementMethods"
       ]
     },
     {

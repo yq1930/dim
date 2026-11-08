@@ -2,7 +2,7 @@
 import { computed, ref } from "vue"
 import { RouterLink } from "vue-router"
 import { useI18n } from "vue-i18n"
-import { Archive, ChevronRight, Copy, Folder, FolderOpen, Loader2, Pencil, Plus, Trash2, X } from "lucide-vue-next"
+import { Archive, ChevronRight, Columns2, Copy, Folder, FolderOpen, Loader2, Pencil, Plus, Trash2, X } from "lucide-vue-next"
 import { useChatStore } from "../stores/chat"
 import { useSessionsStore, type Workspace } from "../stores/sessions"
 import { useConnectionStore } from "../stores/connection"
@@ -95,6 +95,7 @@ function toggleReveal(): void {
         <span class="session-actions"><RowActionMenu :label="t('sidebar.sessionActions', { name: session.title ?? session.preview ?? t('sidebar.untitled') })">
           <button v-if="connection.supports('session.methods')" type="button" class="ui-menu-item" :disabled="busy || connection.phase !== 'connected'" @click="emit('action', 'rename', session)"><Pencil aria-hidden="true" />{{ t("sidebar.rename") }}</button>
           <button v-if="connection.supports('session.archive')" type="button" class="ui-menu-item" :disabled="busy || session.running || connection.phase !== 'connected'" @click="emit('action', 'archive', session)"><Archive aria-hidden="true" />{{ t("sidebar.archive") }}</button>
+          <button v-if="ui.splitAvailable && activeSessionId !== undefined && session.sessionId !== activeSessionId" type="button" class="ui-menu-item" @click="ui.openSplit(session.sessionId)"><Columns2 aria-hidden="true" />{{ t("split.open") }}</button>
           <button type="button" class="ui-menu-item" @click="emit('copy', session.cwd)"><Copy aria-hidden="true" />{{ t("workspace.copyPath") }}</button>
           <button v-if="connection.supports('session.delete')" type="button" class="ui-menu-item" :disabled="busy || session.running || connection.phase !== 'connected'" @click="emit('action', 'delete', session)"><Trash2 aria-hidden="true" />{{ t("sidebar.delete") }}</button>
         </RowActionMenu></span>

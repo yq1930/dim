@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
-import { GitBranch, ListTree, Maximize2, Minimize2, Plus, X } from "lucide-vue-next"
+import { GitBranch, ListTree, Plus, X } from "lucide-vue-next"
 import { MAIN_BRANCH } from "../../rpc/protocol"
 import { useChatStore } from "../../stores/chat"
 import { useToastStore } from "../../stores/toast"
@@ -110,13 +110,6 @@ function onKeydown(event: KeyboardEvent): void {
         <button type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="t('lines.newLine')" v-tooltip="t('lines.newLine')" @click="newLine">
           <Plus aria-hidden="true" />
         </button>
-        <button type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="ui.detailExpanded ? t('lines.collapse') : t('lines.expand')" v-tooltip="ui.detailExpanded ? t('lines.collapse') : t('lines.expand')" @click="ui.detailExpanded = !ui.detailExpanded">
-          <Minimize2 v-if="ui.detailExpanded" aria-hidden="true" />
-          <Maximize2 v-else aria-hidden="true" />
-        </button>
-        <button type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="t('lines.closePanel')" v-tooltip="t('lines.closePanel')" @click="ui.closeDetail">
-          <X aria-hidden="true" />
-        </button>
       </div>
     </header>
 
@@ -130,7 +123,7 @@ function onKeydown(event: KeyboardEvent): void {
 
 <style scoped>
 .lines-panel { display: flex; min-width: 0; min-height: 0; flex-direction: column; background: var(--background); }
-.lines-tabs { display: flex; min-width: 0; height: 48px; flex: none; align-items: center; gap: var(--space-1); padding: 0 var(--space-2) 0 var(--space-3); border-bottom: 1px solid var(--border); }
+.lines-tabs { display: flex; min-width: 0; height: 40px; flex: none; align-items: center; gap: var(--space-1); padding: 0 var(--space-2) 0 var(--space-3); border-bottom: 1px solid var(--border); }
 .lines-tablist { display: flex; min-width: 0; flex: 1; align-items: center; gap: 2px; overflow-x: auto; scrollbar-width: none; }
 .lines-tablist::-webkit-scrollbar { display: none; }
 .lines-tab-wrap { display: flex; min-width: 0; align-items: center; border-radius: var(--control-sm-radius); }

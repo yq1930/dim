@@ -1,0 +1,35 @@
+/* Tabs of the right detail panel (web-workspace §4) and of its terminal panel. */
+.detail-panel { display: flex; min-width: 0; min-height: 0; flex-direction: column; background: var(--background); }
+.detail-panel-body { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; }
+.detail-panel-body > * { min-height: 0; flex: 1; }
+.panel-tabs { display: flex; min-width: 0; height: 48px; flex: none; align-items: center; gap: var(--space-1); padding: 0 var(--space-2) 0 var(--space-3); border-bottom: 1px solid var(--border); }
+.panel-subtabs { display: flex; min-width: 0; height: 40px; flex: none; align-items: center; gap: var(--space-1); padding: 0 var(--space-2); border-bottom: 1px solid var(--border); }
+.panel-tablist { display: flex; min-width: 0; flex: 1; align-items: center; gap: 2px; overflow-x: auto; scrollbar-width: none; }
+.panel-tablist::-webkit-scrollbar { display: none; }
+.panel-tab { display: flex; min-width: 0; height: 28px; flex: none; align-items: center; gap: 6px; padding: 0 var(--space-2); border: 0; border-radius: var(--control-sm-radius); background: transparent; color: var(--muted-foreground); font: inherit; font-size: var(--text-sm); white-space: nowrap; cursor: pointer; }
+.panel-tab:hover, .panel-tab[aria-selected="true"] { color: var(--foreground); }
+.panel-tab[aria-selected="true"], .panel-tab-wrap.is-active { background: var(--hover); }
+.panel-tab-wrap > .panel-tab[aria-selected="true"] { background: transparent; }
+.panel-tab > svg { flex: none; }
+.panel-tab > .ui-badge { min-width: 18px; padding-inline: 4px; }
+.panel-tab[data-ended="true"] { opacity: .6; }
+.panel-tab-title { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+.panel-tab-wrap { display: flex; min-width: 0; flex: none; align-items: center; border-radius: var(--control-sm-radius); }
+.panel-tab-wrap > .panel-tab { padding-right: var(--space-1); }
+.panel-tab-close { display: grid; width: 22px; height: 22px; flex: none; place-items: center; margin-right: 3px; border: 0; border-radius: var(--control-xs-radius); background: transparent; color: var(--muted-foreground); cursor: pointer; }
+.panel-tab-close:hover { background: var(--hover); color: var(--foreground); }
+.panel-tab-actions { display: flex; flex: none; align-items: center; gap: 1px; }
+.panel-empty { margin: auto; color: var(--muted-foreground); font-size: var(--text-sm); }
+
+/* Split view: a second Session beside the routed one, before the detail panel. */
+.content-region[data-split="true"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.content-region[data-split="true"][data-has-detail="true"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 8px minmax(320px, var(--detail-width)); }
+.content-region[data-split="true"][data-has-detail="true"][data-detail-expanded="true"] { grid-template-columns: 0 0 0 minmax(0, 1fr); }
+.content-region[data-split="true"][data-has-detail="true"][data-detail-expanded="true"] > .split-region { display: none; }
+.content-region[data-split="true"] > .detail-resizer { grid-column: 3; }
+.content-region[data-split="true"] > .detail-region { grid-column: 4; }
+.split-region { position: relative; display: grid; min-width: 0; min-height: 0; grid-column: 2; grid-row: 1; grid-template-rows: minmax(0, 1fr); overflow: hidden; border-left: 1px solid var(--border); }
+.split-region > * { grid-row: 1; }
+.content-region[data-split="true"] > :is(.main-region, .split-region)[data-active="true"] { box-shadow: inset 0 2px 0 color-mix(in oklab, var(--primary) 55%, transparent); }
+.app-shell[data-sidebar-collapsed] .split-region .session-header { padding-left: var(--space-6); }
+.content-region[data-split="true"] .session-lines > span:not(.ui-badge) { display: none; }

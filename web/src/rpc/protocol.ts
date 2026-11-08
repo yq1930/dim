@@ -83,6 +83,8 @@ export type ToolResult = {
   isError: boolean
   /** The edit tool's display diff (`structuredContent.diff`). */
   diff?: string
+  /** The operator's decision on an `exit_plan_mode` plan (`structuredContent.approved`). */
+  approved?: boolean
   /** The files the call declared writing (`fileWritten` effects). */
   filesWritten?: string[]
 }

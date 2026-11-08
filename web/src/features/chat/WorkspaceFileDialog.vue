@@ -3,7 +3,7 @@ import { nextTick, onBeforeUnmount, ref, useId, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { FileText, Folder, Search } from "lucide-vue-next"
 import type { FileCandidate } from "../../rpc/protocol"
-const props = defineProps<{ search: (query: string) => Promise<FileCandidate[]> }>()
+const props = defineProps<{ search: (query: string) => Promise<FileCandidate[]>; title?: string }>()
 const emit = defineEmits<{ select: [file: FileCandidate] }>()
 const { t } = useI18n()
 const id = useId()
@@ -51,7 +51,7 @@ defineExpose({ open, close })
 
 <template>
   <dialog ref="dialog" class="ui-dialog file-dialog" data-size="lg" :aria-labelledby="id" @cancel.prevent="close" @close="close">
-    <header class="ui-dialog-header"><h2 :id="id" class="ui-dialog-title">{{ t("composer.workspaceFiles") }}</h2></header>
+    <header class="ui-dialog-header"><h2 :id="id" class="ui-dialog-title">{{ title ?? t("composer.workspaceFiles") }}</h2></header>
     <div class="file-search ui-field-wrap"><Search aria-hidden="true" /><input ref="field" v-model="query" class="ui-field" :placeholder="t('composer.searchFiles')" :aria-label="t('composer.searchFiles')" /></div>
     <div class="file-results">
       <p v-if="loading" role="status">{{ t("common.loading") }}</p>

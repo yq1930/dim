@@ -13,8 +13,9 @@ command's bounded tail preview. It also registers the namespace `session.files`
 with `sessionMethods`: `session.files.search` returns the files of the Session's
 workspace an `@` mention offers, ranked as the TUI picker ranks them
 (`workspace_tools/mentions.rs`); a query that names a path outside the workspace
-finds nothing. `session.files.changes` and `session.files.rewind` list and undo a
-turn's `write` and `edit` changes ([File rewind](#file-rewind)). The WorkspaceTools plugin registers this part
+finds nothing. `session.files.read` returns one of its files for the operator to
+read ([File view](#file-view)). `session.files.changes` and `session.files.rewind`
+list and undo a turn's `write` and `edit` changes ([File rewind](#file-rewind)). The WorkspaceTools plugin registers this part
 and the branch parts FileReads and BackgroundExec, and holds the file-write
 coordinator: one per-path FIFO admission domain shared by write and edit across
 every Session it serves, which it hands to each Session's part. The plugin keeps
@@ -240,6 +241,30 @@ It records what it did as one Append input on the branch and replies
 `{restored, removed, failed?, recorded}`. A turn the branch never started is
 `invalid_params` for both.
 
+### File view
+
+`session.files.read {sessionId, path}` serves the web workspace's file pane.
+`path` is absolute, `~/…` or relative to the cwd, resolved as the file tools
+resolve theirs. When no file has that name and the path ends in `:line`,
+`:line:column` or `:line-end`, the path without it is tried and the reply carries
+`line`, and `endLine` for a range. Only a path under the cwd or the Session's
+command output directory is served; any other is `file_outside_workspace`, a
+missing one `file_not_found` and an unreadable one `file_read_failed`.
+
+The reply has the resolved `path`, `relativePath` under the cwd, and `kind`:
+
+- `directory`, with nothing else;
+- `image` for a PNG, JPEG, WebP, GIF or TIFF of at most 10 MiB, with `mime` and
+  base64 `data`;
+- `binary` for any other image, a PDF, a known binary extension, or content with
+  a NUL byte outside UTF-16;
+- `text`, decoded by its BOM or as UTF-8, with `truncated` when the file is over
+  2 MiB and the text ends at its last whole line, and `lossy` when bytes could not
+  be decoded and were replaced.
+
+A file's reply also has `size` and `modified` (milliseconds since the epoch). The
+read registers nothing with FileReads, so it never stands for the model's read.
+
 ### Display diff
 
 `edit` reports the hunks it applied in `structuredContent.diff`: unified hunks in
@@ -290,8 +315,8 @@ is written to.
 
 ### Rule check
 
-`session.files.changes` reads the branch's committed facts and the files; it
-writes nothing. `session.files.rewind` changes only workspace files the turn's
+`session.files.changes` reads the branch's committed facts and the files, and
+`session.files.read` reads one file; neither writes anything. `session.files.rewind` changes only workspace files the turn's
 own `write` and `edit` changed, under the same admission they take, and writes
 one ordinary Append input through the branch facade; InputQueue and Loop handle
 it as any input. Neither starts background work or reads another plugin's state.

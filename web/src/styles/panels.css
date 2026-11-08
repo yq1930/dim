@@ -1,4 +1,4 @@
-/* Tabs of the right detail panel (web-workspace §4) and of its terminal panel. */
+/* Tabs of the right detail panel (web-workspace §4) and of its terminal and file views. */
 .detail-panel { display: flex; min-width: 0; min-height: 0; flex-direction: column; background: var(--background); }
 .detail-panel-body { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; }
 .detail-panel-body > * { min-height: 0; flex: 1; }
@@ -20,6 +20,20 @@
 .panel-tab-close:hover { background: var(--hover); color: var(--foreground); }
 .panel-tab-actions { display: flex; flex: none; align-items: center; gap: 1px; }
 .panel-empty { margin: auto; color: var(--muted-foreground); font-size: var(--text-sm); }
+.panel-tab[data-preview="true"] .panel-tab-title { font-style: italic; }
+.panel-tab-detail { max-width: 90px; overflow: hidden; color: var(--muted-foreground); font-size: var(--text-xs); text-overflow: ellipsis; }
+
+/* The file view's numbered lines, rendered as HTML from Shiki's tokens. */
+.file-code { --line-bg: var(--background); padding: var(--space-2) 0; font: var(--text-sm)/20px var(--font-mono); tab-size: 4; }
+.file-code:not([data-wrap="true"]) { width: max-content; min-width: 100%; }
+.file-line { display: flex; min-height: 20px; background: var(--line-bg); }
+.file-code[data-long] .file-line { content-visibility: auto; contain-intrinsic-size: auto 20px; }
+.file-line[data-target] { --line-bg: color-mix(in oklab, var(--warning) 16%, var(--background)); }
+.file-line::before { content: attr(data-n); position: sticky; left: 0; box-sizing: content-box; width: var(--gutter); flex: none; padding: 0 var(--space-3); background: var(--line-bg); color: color-mix(in oklab, var(--muted-foreground) 70%, transparent); text-align: right; }
+.file-text { min-width: 0; flex: 1; padding-right: var(--space-3); white-space: pre; }
+.file-code[data-wrap="true"] .file-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.file-text span { color: var(--shiki-light); font-style: var(--shiki-light-font-style); }
+.dark .file-text span { color: var(--shiki-dark); font-style: var(--shiki-dark-font-style); }
 
 /* Split view: a second Session beside the routed one, before the detail panel. */
 .content-region[data-split="true"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }

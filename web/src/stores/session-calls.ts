@@ -1,9 +1,9 @@
 import { alwaysCommand, alwaysRule, fileGrant, sameRule } from "../approvals"
 import { RpcError } from "../rpc/client"
 import type { GoalCall } from "../goal"
-import { MAIN_BRANCH, type ApprovalDecision, type ApprovalRequest, type DraftAttachments, type FileCandidate, type ModelId, type PendingPlan, type PendingQuestion, type PermissionPolicy, type PermissionPreset, type QuestionAnswer, type RewindResult, type TurnChanges, type UserInput, type WithdrawResult } from "../rpc/protocol"
+import { MAIN_BRANCH, type ApprovalDecision, type ApprovalRequest, type DraftAttachments, type FileCandidate, type FileView, type ModelId, type PendingPlan, type PendingQuestion, type PermissionPolicy, type PermissionPreset, type QuestionAnswer, type RewindResult, type TurnChanges, type UserInput, type WithdrawResult } from "../rpc/protocol"
 import { readRevision, readRules } from "../rpc/general-settings"
-import { readAck, readAttachmentPath, readBranchCreate, readCompactResult, readConfigurationOutcome, readContextUsage, readExecOutput, readFileCandidates, readForkedSessionId, readMemberApproval, readModelUpdate, readPermissionState, readPermissionVersion, readRewindResult, readSessionMethods, readTurnChanges, readWithdrawResult } from "../rpc/read"
+import { readAck, readAttachmentPath, readBranchCreate, readCompactResult, readConfigurationOutcome, readContextUsage, readExecOutput, readFileCandidates, readFileView, readForkedSessionId, readMemberApproval, readModelUpdate, readPermissionState, readPermissionVersion, readRewindResult, readSessionMethods, readTurnChanges, readWithdrawResult } from "../rpc/read"
 import type { PermissionOutcome, SessionView } from "./chat"
 
 /** The part of the connection's client the calls use. */
@@ -167,6 +167,11 @@ export function sessionCalls(deps: {
     return client().call("session.files.search", { sessionId, query, limit: 20 }, readFileCandidates)
   }
 
+  /** A file of the Session's workspace (absolute, `~/…` or relative to it) for the file pane. */
+  async function readFile(sessionId: string, path: string): Promise<FileView> {
+    return client().call("session.files.read", { sessionId, path }, readFileView)
+  }
+
   /** The files a turn's `write` and `edit` changed, with their status now, and the commands it ran. */
   async function turnChanges(sessionId: string, branchId: string, turnId: string): Promise<TurnChanges> {
     return client().call("session.files.changes", { sessionId, branchId, turnId }, readTurnChanges)
@@ -228,5 +233,5 @@ export function sessionCalls(deps: {
     adoptModel(sessionId, result.model)
   }
 
-  return { submit, stop, createLine, endLine, memberApproval, respond, allowAlways, allowForSession, answerQuestion, setPlanning, reviewPlan, sessionMethods, compact, writeGoal, usage, fork, searchFiles, turnChanges, rewindTurn, withdrawInput, sessionPermission, setPermission, setEffort, setModel, taskOutput, stopTask }
+  return { submit, stop, createLine, endLine, memberApproval, respond, allowAlways, allowForSession, answerQuestion, setPlanning, reviewPlan, sessionMethods, compact, writeGoal, usage, fork, searchFiles, readFile, turnChanges, rewindTurn, withdrawInput, sessionPermission, setPermission, setEffort, setModel, taskOutput, stopTask }
 }

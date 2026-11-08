@@ -11,6 +11,7 @@ mod edit;
 mod read;
 pub mod rewind;
 mod search;
+pub(crate) mod view;
 mod write;
 
 use super::file_reads::FileReads;

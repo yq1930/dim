@@ -1332,6 +1332,17 @@
       ]
     },
     {
+      "id": "dim_agent_capabilities::workspace_tools::files::view",
+      "crate": "dim_agent_capabilities",
+      "parent": "dim_agent_capabilities::workspace_tools::files",
+      "file": "crates/dim-agent-capabilities/src/workspace_tools/files/view.rs",
+      "unexpandedMacros": [
+        "format",
+        "json",
+        "matches"
+      ]
+    },
+    {
       "id": "dim_agent_capabilities::workspace_tools::files::write",
       "crate": "dim_agent_capabilities",
       "parent": "dim_agent_capabilities::workspace_tools::files",
@@ -14227,6 +14238,13 @@
     },
     {
       "from": "dim_agent_capabilities::workspace_tools",
+      "to": "dim_agent_capabilities::workspace_tools::files::view",
+      "references": [
+        "path files::view::view"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools",
       "to": "dim_agent_capabilities::workspace_tools::mentions",
       "references": [
         "mod mentions",
@@ -14691,6 +14709,13 @@
         "path search::glob_definition",
         "path search::grep",
         "path search::grep_definition"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files",
+      "to": "dim_agent_capabilities::workspace_tools::files::view",
+      "references": [
+        "mod view"
       ]
     },
     {
@@ -15208,6 +15233,61 @@
       "references": [
         "path ToolResult",
         "use dim_agent_types::ToolResult"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::view",
+      "to": "dim_agent_capabilities::images",
+      "references": [
+        "path Sniffed::Image",
+        "path images::sniff",
+        "use crate::images",
+        "use crate::images::Sniffed"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::view",
+      "to": "dim_agent_capabilities::methods",
+      "references": [
+        "path RpcError",
+        "path RpcError::app",
+        "use crate::methods::RpcError"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::view",
+      "to": "dim_agent_capabilities::workspace_tools::file_reads",
+      "references": [
+        "use super::super::file_reads::TextEncoding"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::view",
+      "to": "dim_agent_capabilities::workspace_tools::files",
+      "references": [
+        "path open_regular",
+        "path resolve_path",
+        "use super::NotRegular",
+        "use super::open_regular",
+        "use super::resolve_path"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::view",
+      "to": "dim_agent_capabilities::workspace_tools::files::codec",
+      "references": [
+        "path codec::bom_bytes",
+        "path codec::encoding_rs_of",
+        "path codec::resolve_encoding",
+        "use super::codec"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::view",
+      "to": "dim_agent_capabilities::workspace_tools::files::read",
+      "references": [
+        "path BINARY_EXTENSIONS",
+        "use super::read::BINARY_EXTENSIONS"
       ]
     },
     {

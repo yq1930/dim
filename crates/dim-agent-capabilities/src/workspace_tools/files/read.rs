@@ -42,7 +42,7 @@ const PDF_PARSE_STACK_BYTES: usize = 64 * 1024 * 1024;
 
 /// Known binary extensions, refused once the head shows the content is not an
 /// image.
-const BINARY_EXTENSIONS: &[&str] = &[
+pub(super) const BINARY_EXTENSIONS: &[&str] = &[
     "zip", "gz", "tar", "bz2", "xz", "7z", "rar", "exe", "dll", "so", "dylib", "bin", "wasm",
     "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "class", "pyc", "pyo", "o", "obj", "a",
     "lib", "ttf", "otf", "woff", "woff2", "eot", "ico", "sqlite", "db",

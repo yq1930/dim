@@ -533,6 +533,6 @@ export const useChatStore = defineStore("chat", () => {
   }
 
 
-  const { submit, stop, createLine, endLine, respond, allowAlways, allowForSession, answerQuestion, setPlanning, reviewPlan, compact, usage, fork, writeGoal, setEffort, setPermission, withdrawInput, searchFiles, turnChanges, rewindTurn, memberApproval, setModel } = calls
-  return { views, open, resync, receive, ensureLine, retryLine, submit, stop, createLine, endLine, respond, allowAlways, allowForSession, answerQuestion, setPlanning, reviewPlan, compact, usage, fork, writeGoal, setEffort, setPermission, withdrawInput, searchFiles, turnChanges, rewindTurn, memberApproval, setModel, taskOutput: calls.taskOutput, stopTask: calls.stopTask }
+  const { submit, stop, createLine, endLine, respond, allowAlways, allowForSession, answerQuestion, setPlanning, reviewPlan, compact, usage, fork, writeGoal, setEffort, setPermission, withdrawInput, searchFiles, readFile, turnChanges, rewindTurn, memberApproval, setModel } = calls
+  return { views, open, resync, receive, ensureLine, retryLine, submit, stop, createLine, endLine, respond, allowAlways, allowForSession, answerQuestion, setPlanning, reviewPlan, compact, usage, fork, writeGoal, setEffort, setPermission, withdrawInput, searchFiles, readFile, turnChanges, rewindTurn, memberApproval, setModel, taskOutput: calls.taskOutput, stopTask: calls.stopTask }
 })

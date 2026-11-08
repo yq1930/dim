@@ -21,3 +21,13 @@ export function markdownLinkPath(href: string): string | undefined {
   if (URL_SCHEME.test(href)) return undefined
   return decodePath(href.split(/[?#]/)[0] ?? href)
 }
+
+/** The lines a link's `#L12` or `#L12-L20` fragment names. */
+export function markdownLinkLines(href: string): { line: number; endLine?: number } | undefined {
+  const match = /#L(\d+)(?:-L?(\d+))?$/.exec(href)
+  if (match === null) return undefined
+  const line = Number(match[1])
+  const end = match[2] === undefined ? undefined : Number(match[2])
+  if (line < 1) return undefined
+  return end !== undefined && end > line ? { line, endLine: end } : { line }
+}

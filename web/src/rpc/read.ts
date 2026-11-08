@@ -4,7 +4,7 @@
  * throws a ProtocolError here; nothing past these files re-checks shapes. This
  * module reads Session replies and re-exports the Provider and event readers.
  */
-import type { CompactResult, ContextUsage, FileCandidate, PermissionState, BranchCreateResult, CreateResult, HelloResult, HistoryPage, ModelUpdateResult, SessionSummary, TurnChanges, RewindResult } from "./protocol"
+import type { CompactResult, ContextUsage, FileCandidate, FileView, PermissionState, BranchCreateResult, CreateResult, HelloResult, HistoryPage, ModelUpdateResult, SessionSummary, TurnChanges, RewindResult } from "./protocol"
 import { fail, obj, arr, str, optStr, num, finite, bool, modelId, readPermissionPolicy } from "./read-core"
 import { readEvent } from "./read-events"
 
@@ -144,6 +144,26 @@ export function readFileCandidates(value: unknown): FileCandidate[] {
     const source = obj(item, entry)
     return { relativePath: str(source, "relativePath", entry), absolutePath: str(source, "absolutePath", entry), dir: bool(source, "dir", entry) }
   })
+}
+
+/** `session.files.read`: the file, or that the path is a directory. */
+export function readFileView(value: unknown): FileView {
+  const at = "session.files.read"
+  const source = obj(value, at)
+  const place = {
+    path: str(source, "path", at),
+    ...(source.relativePath === undefined ? {} : { relativePath: str(source, "relativePath", at) }),
+    ...(source.line === undefined ? {} : { line: num(source, "line", at) }),
+    ...(source.endLine === undefined ? {} : { endLine: num(source, "endLine", at) }),
+  }
+  if (source.kind === "directory") return { ...place, kind: "directory" }
+  const file = { size: num(source, "size", at), ...(source.modified === undefined ? {} : { modified: num(source, "modified", at) }) }
+  switch (source.kind) {
+    case "binary": return { ...place, ...file, kind: "binary" }
+    case "image": return { ...place, ...file, kind: "image", mime: str(source, "mime", at), data: str(source, "data", at) }
+    case "text": return { ...place, ...file, kind: "text", text: str(source, "text", at), truncated: bool(source, "truncated", at), lossy: bool(source, "lossy", at) }
+    default: return fail(`${at}.kind`, "directory, binary, image or text")
+  }
 }
 
 /** `session.files.changes`: a turn's file changes, each with its status now, and its commands. */

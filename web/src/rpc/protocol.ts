@@ -107,6 +107,19 @@ export type DraftAttachments = { images: ImageBlock[]; pastes: string[]; files?:
 /** A file or directory the `@` mention picker offers: its path under the workspace and its absolute path. */
 export type FileCandidate = { relativePath: string; absolutePath: string; dir: boolean }
 
+/** `session.files.read`: a file of the Session's workspace as the file pane shows it, with the line its link named. */
+export type FileView = {
+  path: string
+  relativePath?: string
+  line?: number
+  endLine?: number
+} & (
+  | { kind: "directory" }
+  | { kind: "binary"; size: number; modified?: number }
+  | { kind: "image"; size: number; modified?: number; mime: string; data: string }
+  | { kind: "text"; size: number; modified?: number; text: string; truncated: boolean; lossy: boolean }
+)
+
 /** The session permission presets, named as the server's `PermissionPreset` serializes them. */
 export type PermissionPreset = "read-only" | "ask" | "workspace-write" | "full-access"
 

@@ -13,9 +13,10 @@ import { canChooseWorkspace, openWorkspacePath } from "../../desktop"
 import { loadMarkdownRenderer } from "./markdown-renderer"
 import { inject, onBeforeUnmount, onMounted, ref, shallowRef } from "vue"
 import { useI18n } from "vue-i18n"
+import { useFilesStore } from "../../stores/files"
 import { useToastStore } from "../../stores/toast"
-import { LINK_BASE } from "./link-base"
-import { markdownLinkPath } from "./markdown-links"
+import { LINK_CONTEXT } from "./link-context"
+import { markdownLinkLines, markdownLinkPath } from "./markdown-links"
 
 defineProps<{
   content: string
@@ -25,7 +26,8 @@ defineProps<{
 
 const { t } = useI18n()
 const toast = useToastStore()
-const linkBase = inject(LINK_BASE, undefined)
+const files = useFilesStore()
+const link = inject(LINK_CONTEXT, undefined)
 /** markstream sizes code from a number, not CSS: 13px on 20px lines, the 14px type scale's code size. */
 const codeBlockOptions = { fontSize: 13, lineHeight: 20 }
 const MarkdownRender = shallowRef(renderer)
@@ -48,16 +50,27 @@ onMounted(async () => {
 onBeforeUnmount(() => observer?.disconnect())
 
 /**
- * A workspace path is not a page. The desktop app opens it (⌘-click shows it
- * in Finder); a browser copies it instead of letting the click leave the session.
+ * A workspace path is not a page. A file of the Session's workspace opens in the
+ * detail panel's file view, at the line the link names; the desktop app opens
+ * any other path, and ⌘-click shows it in Finder; a browser copies it instead of
+ * letting the click leave the session.
  */
 async function onLinkClick(event: MouseEvent): Promise<void> {
   const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null
-  const path = anchor === null ? undefined : markdownLinkPath(anchor.getAttribute("href") ?? "")
+  const href = anchor?.getAttribute("href") ?? ""
+  const path = anchor === null ? undefined : markdownLinkPath(href)
   if (path === undefined) return
   event.preventDefault()
-  const base = linkBase?.value
-  const absolute = path.startsWith("/") ? path : base === undefined ? undefined : `${base.replace(/\/+$/, "")}/${path}`
+  const context = link?.value
+  const absolute = /^[/~]/.test(path) ? path : context === undefined ? undefined : `${context.base.replace(/\/+$/, "")}/${path}`
+  if (absolute !== undefined && context?.filePane === true && !event.metaKey && files.readable(context.sessionId)) {
+    try {
+      if (await files.open(context.sessionId, absolute, markdownLinkLines(href))) return
+    } catch (cause) {
+      toast.push({ tone: "danger", title: t("chat.openFailed"), description: cause instanceof Error ? cause.message : String(cause) })
+      return
+    }
+  }
   if (canChooseWorkspace && absolute !== undefined) {
     try {
       await openWorkspacePath(absolute, event.metaKey)

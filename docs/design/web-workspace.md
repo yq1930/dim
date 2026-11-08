@@ -352,6 +352,16 @@ Provider creation and detail use route-addressable dialogs over the provider lis
 matching the reference implementation. Unsaved changes require confirmation when
 leaving. English and Chinese labels follow the existing locale choice.
 
+As in Claude Code's settings, the pages and the browser's preferences are
+declarations in `features/settings/registry.ts`: each page with its icon, whether
+it works without the service, and search keywords; each preference row with its
+page, label, description, control (switch, buttons, cards or drop-down), where it
+applies and how it reads and writes its store. Appearance and General render
+their rows from it. A search field heads the category navigation (⌘F focuses it):
+it finds rows, then pages, by their words in either language; ↑ and ↓ choose,
+Enter opens the page, and a row opened this way scrolls into view and flashes.
+Host-backed pages are found by their names and keywords.
+
 Forms use the shared page-content width and control size ladder. Action buttons
 fit their labels with horizontal padding rather than stretching with a grid;
 action groups wrap on narrow screens. Checkbox labels stay beside their controls.
@@ -376,6 +386,7 @@ authorization attempt rather than starting another login.
 ```text
 ┌──────────────────────┬────────────────────────────────────────────┐
 │ ← Back               │ Providers                    [+ Add]       │
+│ [Search settings   ] │                                            │
 │ Account              │ ┌────────────────────────────────────────┐ │
 │ Appearance           │ │ Dim account        OAuth     Connected │ │
 │ General              │ │ Custom provider    API key   3 models  │ │
@@ -807,7 +818,7 @@ The macOS desktop window lets a frame show an origin only after the page announc
 
 ### 4.10 Keyboard shortcuts
 
-The page's shortcuts are one table, `app/shortcuts.ts`, in the shape of Claude Code's keybindings: each binding names a command, its keys (`cmd` reads as Ctrl off the Mac), whether it matches the character the key types (so letters follow the keyboard layout) or the physical key (punctuation), and where it applies (the Mac, the desktop app, or a browser, which keeps some keys for itself). The shell runs the commands; while a dialog is open the keyboard stays with it. ⌘/, or the keyboard button at the foot of the sidebar, opens the Keyboard shortcuts dialog: the table's commands and the keys components handle themselves (Enter, Shift+Enter, Esc, ↑, Shift+Tab, ⌘S, and an approval's Enter or Y and Esc or N), in three groups, filtered by what is typed. The tooltips of controls a command also runs name its keys.
+The page's shortcuts are one table, `app/shortcuts.ts`, in the shape of Claude Code's keybindings: each binding names a command, its keys (`cmd` reads as Ctrl off the Mac), whether it matches the character the key types (so letters follow the keyboard layout) or the physical key (punctuation), and where it applies (the Mac, the desktop app, or a browser, which keeps some keys for itself). The shell runs the commands; while a dialog is open the keyboard stays with it. ⌘/, or the keyboard button at the foot of the sidebar, opens the Keyboard shortcuts dialog: the table's commands and the keys components handle themselves (Enter, Shift+Enter, Esc, ↑, Shift+Tab, ⌘S, ⌘F in Settings, and an approval's Enter or Y and Esc or N), in three groups, filtered by what is typed. The tooltips of controls a command also runs name its keys.
 
 | Group | Command | Desktop app | Browser |
 | --- | --- | --- | --- |

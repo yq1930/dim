@@ -127,6 +127,7 @@ export const SHORTCUT_HELP: readonly ShortcutHelp[] = [
   { group: "general", label: "shortcuts.newSession", command: "newSession" },
   { group: "general", label: "shortcuts.toggleSidebar", command: "toggleSidebar" },
   { group: "general", label: "shortcuts.openSettings", command: "openSettings" },
+  { group: "general", label: "shortcuts.searchSettings", keys: ["cmd+f"] },
   { group: "general", label: "shortcuts.title", command: "showShortcuts" },
   { group: "general", label: "shortcuts.transcriptView", command: "cycleTranscriptMode" },
   { group: "general", label: "shortcuts.interrupt", keys: ["esc"] },

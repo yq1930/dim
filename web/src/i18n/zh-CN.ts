@@ -567,6 +567,7 @@ const zhCN: Messages = {
   "shortcuts.newSession": "新会话",
   "shortcuts.toggleSidebar": "显示或隐藏侧栏",
   "shortcuts.openSettings": "设置",
+  "shortcuts.searchSettings": "在设置中搜索",
   "shortcuts.transcriptView": "切换对话视图",
   "shortcuts.interrupt": "中断运行",
   "shortcuts.allow": "批准权限请求",

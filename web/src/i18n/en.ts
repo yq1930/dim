@@ -565,6 +565,7 @@ const en = {
   "shortcuts.newSession": "New session",
   "shortcuts.toggleSidebar": "Toggle sidebar",
   "shortcuts.openSettings": "Settings",
+  "shortcuts.searchSettings": "Search settings",
   "shortcuts.transcriptView": "Transcript view",
   "shortcuts.interrupt": "Interrupt the run",
   "shortcuts.allow": "Allow a permission request",

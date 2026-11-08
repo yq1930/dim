@@ -1,5 +1,3 @@
-import "@fontsource-variable/geist"
-import "@fontsource-variable/geist-mono"
 import "markstream-vue/index.css"
 import "./styles/global.css"
 import "./styles/controls.css"

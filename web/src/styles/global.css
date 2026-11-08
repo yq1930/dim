@@ -49,24 +49,21 @@
   --duration-hover: 160ms;
   --duration-popover: 180ms;
   --duration-slow: 300ms; /* grow/meter/progress fills */
-  /* Fonts */
-  /* Fonts — Geist and Geist Mono ship with the UI (main.ts) as variable woff2 split by
-     unicode-range, so a page only fetches the scripts it shows. Neither has CJK glyphs:
-     Chinese falls through to the shared CJK list, which mono repeats so code and paths
-     pick the same face as prose. Emoji come last in both. */
+  /* Fonts — the system's, as Claude Code's system font setting: SF Pro and SF Mono on the Mac.
+     Neither has CJK glyphs: Chinese falls through to the shared CJK list, which mono repeats
+     so code and paths pick the same face as prose. Emoji come last in both. */
   --font-cjk: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", "Noto Sans CJK SC", "Source Han Sans SC", "WenQuanYi Micro Hei";
   --font-emoji: "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-  --font-sans: "Geist Variable", "Helvetica Neue", Arial, var(--font-cjk), -apple-system, system-ui, "Segoe UI", Roboto, Ubuntu, sans-serif, var(--font-emoji);
-  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", var(--font-cjk), monospace, var(--font-emoji);
-  /* Font weights — the variable faces cover 100–900, so the scale can sit between the named steps
-     (as Kimi Code's does): 400 reading text · 450 list, menu and nav rows · 500 controls, headers, the
-     open row · 600 page titles, table headers and markdown emphasis only. Everything else that used
-     to be bold is 500; weight is not how a row says it matters, size and colour are.
-     font-synthesis: none keeps italics upright, since no italic face is loaded. */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, var(--font-cjk), sans-serif, var(--font-emoji);
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", var(--font-cjk), monospace, var(--font-emoji);
+  /* Font weights — the system faces are variable, so the scale can sit between the named steps:
+     400 reading text · 450 list, menu and nav rows · 500 controls, headers, the open row · 580
+     (Claude Code's semibold) page titles, table headers and markdown emphasis only. Weight is not
+     how a row says it matters, size and colour are. */
   --weight-regular: 400;
   --weight-ui: 450;
   --weight-medium: 500;
-  --weight-semibold: 600;
+  --weight-semibold: 580;
   /* Line height — 4-step scale; --leading-mono is the fixed mono output block
      metric (Desktop leading-5), not a ratio. */
   --leading-tight: 1.15;   /* display and page headings */
@@ -95,7 +92,7 @@
   --radius-lg: 12px;   /* containers: menus, cards, code panels */
   --radius-xl: 16px;   /* dialogs, settings groups, large blended surfaces */
   --radius-pill: 999px;
-  --radius-2xl: 20px;  /* composer surface */
+  --radius-2xl: 14px;  /* composer surface (Claude Code's composer radius) */
   /* Control ladder (spec v1) — pick a height; radius, icon size and font size follow it.
      xs 24 → r6 · icon 12 · --text-xs;  sm 28 → r8 · icon 14 · --text-sm;
      md 32 → r8 · icon 14 · --text-md;  lg 36 → r10 · icon 16 · --text-md.
@@ -109,11 +106,11 @@
   --control-sm-radius: 8px;
   --control-md-radius: 8px;
   --control-lg-radius: 10px;
-  /* Elevation — cards are bordered and flat; only these four shadows are allowed */
-  --shadow-xs: 0 1px 2px oklch(0 0 0 / 5%);                                          /* secondary buttons, inputs, selected segment */
-  --shadow-sm: 0 1px 3px oklch(0 0 0 / 8%), 0 1px 2px -1px oklch(0 0 0 / 6%);        /* composer, floating jump button */
-  --shadow-pop: 0 12px 32px -6px oklch(0 0 0 / 16%), 0 2px 6px oklch(0 0 0 / 5%);   /* menus, popovers, tooltips, toasts */
-  --shadow-dialog: 0 24px 64px -12px oklch(0 0 0 / 28%);                             /* dialogs, command palette, drawer */
+  /* Elevation — cards are bordered and flat; only these four shadows are allowed, Claude Code's */
+  --shadow-xs: 0 1px 2px rgb(11 11 11 / 5%);                                          /* secondary buttons, inputs, selected segment */
+  --shadow-sm: 0 1px 2px rgb(11 11 11 / 6%), 0 2px 8px rgb(11 11 11 / 8%);            /* composer, floating jump button */
+  --shadow-pop: 0 8px 24px rgb(0 0 0 / 12%), 0 2px 6px rgb(0 0 0 / 8%);               /* menus, popovers, tooltips, toasts */
+  --shadow-dialog: 0 12px 28px -2px rgb(11 11 11 / 14%), 0 4px 8px rgb(11 11 11 / 8%); /* dialogs, command palette, drawer */
   --backdrop: oklch(0.08 0 0 / 55%); /* ::backdrop literals keep the value: older engines do not inherit custom properties there */
   /* Layers */
   --z-sticky: 10;
@@ -126,26 +123,27 @@
   /* Content columns — one width per context, shared by every layer of that page */
   --content-page: 760px;  /* settings and generic route pages */
   --content-chat: 760px;  /* chat stack: timeline, runtime stack, composer column */
-  /* Warm neutrals after Claude Code's desktop app: an ivory page, a darker sidebar and white
-     cards; the Lacus green stays the accent. Lightness matches the neutral set it replaced. */
-  --background: oklch(0.985 0.004 95);
-  --foreground: oklch(0.17 0.004 95);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.17 0.004 95);
+  /* Claude Code's warm grays (its design system's gray scale and surfaces): the sidebar on
+     surface 0, the transcript on surface 1, cards and popovers white; borders and hovers are the
+     ink at 10% and 5%. The Lacus green stays the accent. */
+  --background: #fcfcfb;
+  --foreground: #0b0b0b;
+  --card: #fff;
+  --card-foreground: #0b0b0b;
   --primary: oklch(0.6 0.138 150);
   --primary-foreground: oklch(1 0 0);
-  --muted: oklch(0.96 0.006 95);
-  --muted-foreground: oklch(0.51 0.01 95); /* small text passes AA on --muted */
-  --fg-2: oklch(0.37 0.008 95); /* secondary text: ghost/chip labels, descriptions, neutral banners */
-  --accent: oklch(0.96 0.006 95);
-  --accent-foreground: oklch(0.2 0.006 95);
-  --border: oklch(0.91 0.009 95);
+  --muted: #f3f3f0;
+  --muted-foreground: #6d6b67; /* a step darker than Claude Code's muted, so small text passes AA */
+  --fg-2: #52514e; /* secondary text: ghost/chip labels, descriptions, neutral banners */
+  --accent: #f0efec;
+  --accent-foreground: #0b0b0b;
+  --border: rgb(11 11 11 / 10%);
   --ring: var(--primary);
   --accent-strong: var(--primary);
   --surface: transparent;
-  --sidebar: oklch(0.955 0.008 95);
-  --sidebar-foreground: oklch(0.17 0.004 95 / 92%);
-  --danger: oklch(0.577 0.245 27.325);
+  --sidebar: #f9f9f7;
+  --sidebar-foreground: rgb(11 11 11 / 92%);
+  --danger: #dc3c3d;
   --danger-foreground: oklch(0.99 0 0);
   --warning: oklch(0.577 0.179 58.318);
   --success: oklch(0.596 0.145 163.225); /* Desktop --activity-success */
@@ -162,10 +160,10 @@
   --primary-ink: oklch(0.45 0.11 150); /* green text on --background */
   --danger-hover: oklch(0.61 0.235 27.3); /* solid danger button states */
   --danger-press: oklch(0.52 0.22 27.3);
-  --border-strong: oklch(0.85 0.01 95);   /* hovered fields, unchecked boxes, off switch track */
-  --hover: oklch(0.3 0.02 85 / 6%);     /* every transparent control on hover / keyboard highlight */
-  --press: oklch(0.3 0.02 85 / 10%);
-  --muted-press: oklch(0.93 0.008 95); /* pressed fill of bordered controls (secondary button) */
+  --border-strong: rgb(11 11 11 / 20%);   /* hovered fields, unchecked boxes, off switch track */
+  --hover: rgb(11 11 11 / 5%);     /* every transparent control on hover / keyboard highlight */
+  --press: rgb(11 11 11 / 10%);
+  --muted-press: #edece8; /* pressed fill of bordered controls (secondary button) */
   --control-bg: var(--background); /* fill of bordered controls: secondary buttons, fields, chips, checkboxes */
   /* Tone tints — badge, banner and selected-card backgrounds; text keeps the solid tone.
      Declared on :root = <html>, which also carries .dark, so they follow the theme. */
@@ -174,28 +172,29 @@
   --warning-soft: color-mix(in oklab, var(--warning) 12%, transparent);
   --success-soft: color-mix(in oklab, var(--success) 12%, transparent);
   --info-soft: color-mix(in oklab, var(--info) 11%, transparent);
-  /* Focus rings for bordered/transparent controls; solid fills use a 2px gap + 2px ring instead. */
-  --focus-ring: 0 0 0 3px color-mix(in oklab, var(--primary) 22%, transparent);
-  --focus-ring-danger: 0 0 0 3px color-mix(in oklab, var(--danger) 20%, transparent);
+  /* Focus rings for bordered/transparent controls, as Claude Code's: a 1px ring and a soft glow;
+     solid fills use a 2px gap + 2px ring instead. */
+  --focus-ring: 0 0 0 1px var(--primary), 0 0 6px 1px color-mix(in oklab, var(--primary) 35%, transparent);
+  --focus-ring-danger: 0 0 0 1px var(--danger), 0 0 6px 1px color-mix(in oklab, var(--danger) 30%, transparent);
 }
 
 .dark {
   color-scheme: dark;
-  --background: oklch(0.235 0.003 95);
-  --foreground: oklch(0.95 0.004 95);
-  --card: oklch(0.28 0.004 95);
-  --card-foreground: oklch(0.95 0.004 95);
+  --background: #151515;
+  --foreground: #f0efec;
+  --card: #1e1e1d;
+  --card-foreground: #f0efec;
   --primary: oklch(0.76 0.15 149);
   --primary-foreground: oklch(0.11 0.024 150);
-  --muted: oklch(0.31 0.004 95);
-  --muted-foreground: oklch(0.68 0.008 95);
-  --fg-2: oklch(0.82 0.006 95);
-  --accent: oklch(0.31 0.004 95);
-  --accent-foreground: oklch(0.95 0.004 95);
-  --border: oklch(0.97 0.01 95 / 12%);
-  --sidebar: oklch(0.205 0.003 80);
-  --sidebar-foreground: oklch(0.97 0.004 95 / 92%);
-  --danger: oklch(0.704 0.191 22.216);
+  --muted: #20201f;
+  --muted-foreground: #898781;
+  --fg-2: #c3c2b7;
+  --accent: #2c2c2a;
+  --accent-foreground: #f0efec;
+  --border: rgb(255 255 255 / 10%);
+  --sidebar: #0b0b0b;
+  --sidebar-foreground: rgb(240 239 236 / 92%);
+  --danger: #f17778;
   --danger-foreground: oklch(0.11 0.02 22);
   --warning: oklch(0.78 0.14 75);
   --success: oklch(0.765 0.177 163.223);
@@ -209,15 +208,15 @@
   --danger-hover: oklch(0.74 0.18 22.2);
   --danger-press: oklch(0.65 0.19 22.2);
   --primary-ink: oklch(0.8 0.13 149);
-  --border-strong: oklch(0.97 0.01 95 / 20%);
-  --hover: oklch(0.97 0.01 95 / 7%);
-  --press: oklch(0.97 0.01 95 / 12%);
-  --muted-press: oklch(0.34 0.004 95);
-  --control-bg: oklch(0.97 0.01 95 / 4%); /* lifts off both --background and --card */
-  --shadow-xs: 0 1px 2px oklch(0 0 0 / 30%);
-  --shadow-sm: 0 1px 3px oklch(0 0 0 / 40%);
-  --shadow-pop: 0 12px 32px -6px oklch(0 0 0 / 50%), 0 0 0 1px oklch(1 0 0 / 6%);
-  --shadow-dialog: 0 24px 64px -12px oklch(0 0 0 / 60%);
+  --border-strong: rgb(255 255 255 / 20%);
+  --hover: rgb(255 255 255 / 5%);
+  --press: rgb(255 255 255 / 10%);
+  --muted-press: #2c2c2a;
+  --control-bg: rgb(255 255 255 / 4%); /* lifts off both --background and --card */
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 30%);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 30%), 0 2px 8px rgb(0 0 0 / 24%);
+  --shadow-pop: 0 8px 24px rgb(0 0 0 / 32%), 0 2px 6px rgb(0 0 0 / 20%), 0 0 0 1px rgb(255 255 255 / 6%);
+  --shadow-dialog: 0 12px 28px -2px rgb(0 0 0 / 40%), 0 4px 8px rgb(0 0 0 / 24%);
 }
 
 * { box-sizing: border-box; }

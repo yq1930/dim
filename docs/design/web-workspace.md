@@ -148,6 +148,8 @@ The frontend directory is fixed when the daemon starts (§2.4); a daemon started
 
 The source follows the window's regions, as Claude Code's does: `app/` holds the shell and what spans it (the shortcut table, keep-awake, auto-archive); `features/sidebar/`; `features/session/` with its `header/`, `transcript/` and `composer/`; `features/panes/` with the right panel and a folder per view; `features/settings/` and `features/schedules/`. `components/` holds what several regions share.
 
+The design tokens in `styles/global.css` follow Claude Code's design system: its warm gray surfaces (the sidebar on surface 0, the transcript on surface 1, cards and popovers above) and text colors in both themes, borders and hovers as the ink at 10% and 5%, the system fonts, its semibold weight, composer radius, shadows and focus ring. The Lacus green stays the accent.
+
 | Layer | Phase 1 |
 | --- | --- |
 | `rpc/client.ts` | JSON-RPC over `/ws`: `hello` v3 (`clientKind: "web"`), request timeout, heartbeat with `daemon.ping`, reconnect with backoff and re-attach. Strict readers at this boundary; the rest of the app uses typed data |

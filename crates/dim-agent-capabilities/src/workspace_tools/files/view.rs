@@ -1,9 +1,12 @@
 //! `session.files.read`: a file of the Session's workspace, or of its command
 //! output, as the web workspace's file pane shows it. The read is for display
-//! only and registers nothing with FileReads.
+//! only and registers nothing with FileReads. A whole UTF-8 file of the
+//! workspace is `editable`, with the `revision` `session.files.save` expects.
 
 use super::super::file_reads::TextEncoding;
-use super::{NotRegular, codec, open_regular, read::BINARY_EXTENSIONS, resolve_path};
+use super::{
+    NotRegular, codec, hex, open_regular, read::BINARY_EXTENSIONS, resolve_path, revision,
+};
 use crate::images::{self, Sniffed};
 use crate::methods::RpcError;
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -138,10 +141,15 @@ pub(crate) fn view(cwd: &Path, home: &Path, output: &Path, input: &str) -> Resul
     if truncated && let Some(end) = text.rfind('\n') {
         text.truncate(end + 1);
     }
+    let editable = root == 0 && !truncated && !lossy && !utf16;
+    if editable {
+        reply["revision"] = json!(hex(&revision(&bytes)));
+    }
     reply["kind"] = json!("text");
     reply["text"] = json!(text);
     reply["truncated"] = json!(truncated);
     reply["lossy"] = json!(lossy);
+    reply["editable"] = json!(editable);
     Ok(reply)
 }
 

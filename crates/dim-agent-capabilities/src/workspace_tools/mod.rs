@@ -36,11 +36,15 @@ use tokio_util::{sync::CancellationToken, task::TaskTracker};
 pub const TOOL_NAMES: [&str; 7] = ["read", "write", "edit", "glob", "grep", "exec", "exec_stop"];
 const OUTPUT_METHOD: &str = "session.exec.output";
 /// The `session.files` namespace: the files an `@` mention offers, a file
-/// shown to the operator, and a turn's `write` and `edit` changes and their
-/// undoing.
+/// shown to the operator, the folders and lines its file tree and search
+/// find, its edit of a file, and a turn's `write` and `edit` changes and
+/// their undoing.
 const FILES_NAMESPACE: &str = "session.files";
 const SEARCH_METHOD: &str = "session.files.search";
 const READ_METHOD: &str = "session.files.read";
+const LIST_METHOD: &str = "session.files.list";
+const GREP_METHOD: &str = "session.files.grep";
+const SAVE_METHOD: &str = "session.files.save";
 const CHANGES_METHOD: &str = "session.files.changes";
 const REWIND_METHOD: &str = "session.files.rewind";
 
@@ -167,6 +171,68 @@ impl WorkspaceTools {
         tokio::task::spawn_blocking(move || files::view::view(&cwd, &home, &output, &path))
             .await
             .map_err(|error| RpcError::app(-32000, "file_read_failed", error.to_string()))?
+    }
+
+    async fn list(&self, value: serde_json::Value) -> Result<serde_json::Value, RpcError> {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        struct Params {
+            session_id: String,
+            #[serde(default)]
+            path: String,
+        }
+        let Params { session_id, path } = params(value)?;
+        if session_id.is_empty() {
+            return Err(RpcError::invalid("sessionId must not be empty"));
+        }
+        let (cwd, home) = (self.cwd.clone(), self.platform.home.clone());
+        tokio::task::spawn_blocking(move || files::tree::list(&cwd, &home, &path))
+            .await
+            .map_err(|error| RpcError::app(-32000, "file_list_failed", error.to_string()))?
+    }
+
+    async fn grep(
+        &self,
+        value: serde_json::Value,
+        cancel: CancellationToken,
+    ) -> Result<serde_json::Value, RpcError> {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        struct Params {
+            session_id: String,
+            query: String,
+        }
+        let Params { session_id, query } = params(value)?;
+        if session_id.is_empty() || query.trim().is_empty() {
+            return Err(RpcError::invalid("sessionId and query must not be empty"));
+        }
+        self.files.find_text(&query, cancel).await
+    }
+
+    async fn save(
+        &self,
+        value: serde_json::Value,
+        cancel: CancellationToken,
+    ) -> Result<serde_json::Value, RpcError> {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        struct Params {
+            session_id: String,
+            path: String,
+            text: String,
+            /// The revision `session.files.read` gave; absent overwrites whatever is there.
+            revision: Option<String>,
+        }
+        let Params {
+            session_id,
+            path,
+            text,
+            revision,
+        } = params(value)?;
+        if session_id.is_empty() || path.is_empty() {
+            return Err(RpcError::invalid("sessionId and path must not be empty"));
+        }
+        self.files.save(path, text, revision, cancel).await
     }
 
     async fn turn_changes(&self, value: serde_json::Value) -> Result<serde_json::Value, RpcError> {
@@ -452,6 +518,9 @@ impl DynPlugin for WorkspaceToolsPlugin {
                 vec![
                     MethodDecl::new(SEARCH_METHOD, false, Interruption::Report),
                     MethodDecl::new(READ_METHOD, false, Interruption::Report),
+                    MethodDecl::new(LIST_METHOD, false, Interruption::Report),
+                    MethodDecl::new(GREP_METHOD, false, Interruption::Report),
+                    MethodDecl::new(SAVE_METHOD, true, Interruption::Drain),
                     MethodDecl::new(CHANGES_METHOD, false, Interruption::Report),
                     MethodDecl::new(REWIND_METHOD, true, Interruption::Drain),
                 ],
@@ -462,6 +531,9 @@ impl DynPlugin for WorkspaceToolsPlugin {
                         match method.as_str() {
                             SEARCH_METHOD => search(mentions, root, value).await,
                             READ_METHOD => tools.view(value).await,
+                            LIST_METHOD => tools.list(value).await,
+                            GREP_METHOD => tools.grep(value, cancel).await,
+                            SAVE_METHOD => tools.save(value, cancel).await,
                             CHANGES_METHOD => tools.turn_changes(value).await,
                             REWIND_METHOD => tools.rewind(value, cancel).await,
                             _ => Err(RpcError::unknown_method()),

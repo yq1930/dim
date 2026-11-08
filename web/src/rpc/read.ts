@@ -161,7 +161,10 @@ export function readFileView(value: unknown): FileView {
   switch (source.kind) {
     case "binary": return { ...place, ...file, kind: "binary" }
     case "image": return { ...place, ...file, kind: "image", mime: str(source, "mime", at), data: str(source, "data", at) }
-    case "text": return { ...place, ...file, kind: "text", text: str(source, "text", at), truncated: bool(source, "truncated", at), lossy: bool(source, "lossy", at) }
+    case "text": {
+      const revision = optStr(source, "revision", at)
+      return { ...place, ...file, kind: "text", text: str(source, "text", at), truncated: bool(source, "truncated", at), lossy: bool(source, "lossy", at), editable: source.editable === true, ...(revision === undefined ? {} : { revision }) }
+    }
     default: return fail(`${at}.kind`, "directory, binary, image or text")
   }
 }

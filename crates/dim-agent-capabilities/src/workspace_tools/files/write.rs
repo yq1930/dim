@@ -533,6 +533,9 @@ fn preserve_metadata(source: &std::fs::File, target: &std::fs::File) -> std::io:
         {
             return Err(std::io::Error::last_os_error());
         }
+        // COPYFILE_STAT copies the times as well; the content is new, so is its
+        // modification time, or tools that compare times miss the change.
+        target.set_modified(std::time::SystemTime::now())?;
     }
     #[cfg(target_os = "linux")]
     {

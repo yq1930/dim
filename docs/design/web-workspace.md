@@ -722,24 +722,28 @@ Other errors: `git_not_repository`, `git_missing` and `git_failed` with Git's me
 
 ### 4.6 Files
 
-The Files tab shows a file of the Session's workspace beside the conversation, as Claude Code's desktop app does. The Session method `session.files.read` of WorkspaceTools reads it ([WorkspaceTools, File view](../architecture/rust-agent/plugins/WorkspaceTools.md#file-view)); a path outside the workspace or a directory is left to the link's other handling (Links in §4).
+The Files tab shows the Session's workspace and its files beside the conversation, as Claude Code's desktop app does. The Session methods of WorkspaceTools read a file (`session.files.read`), list a folder (`session.files.list`), search the files' contents (`session.files.grep`) and save an edit (`session.files.save`) ([WorkspaceTools, File view](../architecture/rust-agent/plugins/WorkspaceTools.md#file-view)); a path outside the workspace or a directory is left to the link's other handling (Links in §4).
 
 ```text
-Files: [notes.md] [main.rs] [lib.ts*]                         [Go to file]
-  src/lib.ts                        [Wrap] [Reload] [Open] [Finder] [Copy]
-   5
-   6  export function titles(items: Item[]): string[] {   ← lines a link named
-   7    return items.map((item) => item.title)
+[Tree] [notes.md] [main.rs ●] [lib.ts*]                               [Go to file]
+ ws          [Collapse] [Refresh] │ src/lib.ts      [Wrap] [Edit] [Reload] [Open] [Finder] [Copy]
+ ▾ src                           │  5
+     lib.ts                      │  6  export function titles(items: Item[]): string[] {   ← lines a link named
+   ▸ util                        │  7    return items.map((item) => item.title)     [Add to message]
+   notes.md                      │
 ```
 
 | Surface | Behavior |
 | --- | --- |
 | Tabs | One per open file, per Session, for this page load. A link opens its file in the preview tab (italic), which the next link reuses; a double-click, or opening the file from Go to file, keeps it. A tab closes with its button or a middle click. Tabs with the same file name also show their folder |
-| Go to file | Searches the workspace with `session.files.search` and keeps the chosen file open |
+| Tree | The workspace's folders and files, each folder read when first opened: dotfiles are listed, what ignore files leave out is not. A file opens in the preview tab and a double-click keeps it. A panel at least 600 px wide shows the tree beside the file, shown or hidden as this browser remembers; a narrower one shows it over the file until a file opens. With no file open the tree fills the tab. It is read again after each run and with Refresh |
+| Go to file | Searches the workspace with `session.files.search` and keeps the chosen file open. A query that starts with `?` searches the files' contents instead (`session.files.grep`, smart case): the lines found, grouped by file with the text marked, open their file at that line |
+| Edit | An `editable` file can be edited in place: a text field lies over the numbered, highlighted lines, which follow the typing as plain text and are highlighted again when it pauses. Tab inserts the file's indent and Enter keeps the line's indent. Save or ⌘S writes the text with `session.files.save` over the revision the edit started from; the file keeps its BOM and CRLF line ends. A tab with unsaved changes is marked and never reused as the preview tab; closing it or leaving editing asks first; the changes last for the page load. When the file changed on disk meanwhile, seen on saving or when its tab is shown again, the edit stays and a banner offers to save anyway or discard it |
+| Add to message | Lines selected in the file, read or being edited, are added to the Session's composer as a link to them and their text in a fence |
 | Text | Numbered lines highlighted by the bundled Shiki grammars (a file over 256 KiB, or in another language, is plain), with the lines a link named marked and scrolled to the middle. Word wrap is on by default and remembered in this browser. A file over 2 MiB shows its beginning and says so; one that is not UTF-8 says some characters may be wrong |
 | Preview | Markdown renders like a reply, its relative links resolving against its folder; SVG renders as an image. A preview is the default unless a link named lines; the toolbar switches to the source |
 | Other files | An image shows; another binary file says it cannot be shown here |
-| Freshness | The shown file is read again when its tab is shown and after each run; the view changes only when its size or modification time does |
+| Freshness | The shown file is read again when its tab is shown and after each run; the view changes only when its content does (its revision, else its size or modification time) |
 | Toolbar | The path under the workspace, Reload, Copy path, and in the macOS desktop app "Open with default app" and "Show in Finder" through `open_workspace_path` |
 
 ### 4.7 Scheduled tasks

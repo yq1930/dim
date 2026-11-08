@@ -10,7 +10,9 @@ mod codec;
 mod edit;
 mod read;
 pub mod rewind;
+mod save;
 mod search;
+pub(crate) mod tree;
 pub(crate) mod view;
 mod write;
 
@@ -173,6 +175,52 @@ impl FileTools {
 
     pub fn handles(name: &str) -> bool {
         TOOL_NAMES.contains(&name)
+    }
+
+    /// `session.files.grep`: the lines of the workspace's files that contain
+    /// `query`, as `grep` finds them with `literal` and smart case: at most 5
+    /// per file and 100 in all, paths relative to the workspace.
+    pub(crate) async fn find_text(
+        &self,
+        query: &str,
+        cancel: CancellationToken,
+    ) -> Result<Value, crate::methods::RpcError> {
+        let failed =
+            |message: String| crate::methods::RpcError::app(-32000, "file_search_failed", message);
+        let mut input = JsonObject::new();
+        input.insert("pattern".into(), json!(query));
+        input.insert("literal".into(), json!(true));
+        input.insert("limit".into(), json!(100));
+        let result = search::grep(self, &input, cancel)
+            .await
+            .map_err(|error| failed(error.to_string()))?;
+        let fields = result.structured_content.unwrap_or_default();
+        if result.is_error == Some(true) {
+            return Err(failed(match result.content {
+                dim_agent_types::ToolContent::Text(text) => text,
+                _ => "The search failed".into(),
+            }));
+        }
+        let matches = fields
+            .get("matches")
+            .and_then(Value::as_array)
+            .map(|matches| {
+                matches
+                    .iter()
+                    .map(|found| {
+                        json!({
+                            "path": found.get("file"),
+                            "line": found.get("line"),
+                            "column": found.get("column"),
+                            "text": found.get("content"),
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        Ok(
+            json!({ "matches": matches, "truncated": fields.get("truncated").and_then(Value::as_bool).unwrap_or(false) }),
+        )
     }
 
     pub async fn execute(

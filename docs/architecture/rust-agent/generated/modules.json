@@ -1321,6 +1321,17 @@
       ]
     },
     {
+      "id": "dim_agent_capabilities::workspace_tools::files::save",
+      "crate": "dim_agent_capabilities",
+      "parent": "dim_agent_capabilities::workspace_tools::files",
+      "file": "crates/dim-agent-capabilities/src/workspace_tools/files/save.rs",
+      "unexpandedMacros": [
+        "format",
+        "json",
+        "matches"
+      ]
+    },
+    {
       "id": "dim_agent_capabilities::workspace_tools::files::search",
       "crate": "dim_agent_capabilities",
       "parent": "dim_agent_capabilities::workspace_tools::files",
@@ -1329,6 +1340,16 @@
         "format",
         "json",
         "matches"
+      ]
+    },
+    {
+      "id": "dim_agent_capabilities::workspace_tools::files::tree",
+      "crate": "dim_agent_capabilities",
+      "parent": "dim_agent_capabilities::workspace_tools::files",
+      "file": "crates/dim-agent-capabilities/src/workspace_tools/files/tree.rs",
+      "unexpandedMacros": [
+        "format",
+        "json"
       ]
     },
     {
@@ -14238,6 +14259,13 @@
     },
     {
       "from": "dim_agent_capabilities::workspace_tools",
+      "to": "dim_agent_capabilities::workspace_tools::files::tree",
+      "references": [
+        "path files::tree::list"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools",
       "to": "dim_agent_capabilities::workspace_tools::files::view",
       "references": [
         "path files::view::view"
@@ -14655,6 +14683,14 @@
     },
     {
       "from": "dim_agent_capabilities::workspace_tools::files",
+      "to": "dim_agent_capabilities::methods",
+      "references": [
+        "path crate::methods::RpcError",
+        "path crate::methods::RpcError::app"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files",
       "to": "dim_agent_capabilities::workspace_tools::file_reads",
       "references": [
         "path FileReads",
@@ -14702,6 +14738,13 @@
     },
     {
       "from": "dim_agent_capabilities::workspace_tools::files",
+      "to": "dim_agent_capabilities::workspace_tools::files::save",
+      "references": [
+        "mod save"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files",
       "to": "dim_agent_capabilities::workspace_tools::files::search",
       "references": [
         "mod search",
@@ -14709,6 +14752,13 @@
         "path search::glob_definition",
         "path search::grep",
         "path search::grep_definition"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files",
+      "to": "dim_agent_capabilities::workspace_tools::files::tree",
+      "references": [
+        "mod tree"
       ]
     },
     {
@@ -14732,7 +14782,15 @@
       "to": "dim_agent_types",
       "references": [
         "path JsonObject",
+        "path JsonObject::new",
         "use dim_agent_types::JsonObject"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files",
+      "to": "dim_agent_types::content",
+      "references": [
+        "path dim_agent_types::ToolContent::Text"
       ]
     },
     {
@@ -15190,6 +15248,73 @@
       ]
     },
     {
+      "from": "dim_agent_capabilities::workspace_tools::files::save",
+      "to": "dim_agent_capabilities::methods",
+      "references": [
+        "path RpcError",
+        "path RpcError::app",
+        "use crate::methods::RpcError"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::save",
+      "to": "dim_agent_capabilities::workspace_tools::file_reads",
+      "references": [
+        "use super::super::file_reads::TextEncoding"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::save",
+      "to": "dim_agent_capabilities::workspace_tools::files",
+      "references": [
+        "path FileTools",
+        "path hex",
+        "path open_regular",
+        "path resolve_path",
+        "path revision",
+        "use super::Cancelled",
+        "use super::FileTools",
+        "use super::NotRegular",
+        "use super::hex",
+        "use super::open_regular",
+        "use super::resolve_path",
+        "use super::revision"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::save",
+      "to": "dim_agent_capabilities::workspace_tools::files::codec",
+      "references": [
+        "path codec::bom_bytes",
+        "path codec::resolve_encoding",
+        "use super::codec"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::save",
+      "to": "dim_agent_capabilities::workspace_tools::files::write",
+      "references": [
+        "path write_target",
+        "use super::write::write_target"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::save",
+      "to": "dim_agent_types::content",
+      "references": [
+        "path ToolContent::Text",
+        "use dim_agent_types::ToolContent"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::save",
+      "to": "dim_agent_types::tool",
+      "references": [
+        "path ToolResult",
+        "use dim_agent_types::ToolResult"
+      ]
+    },
+    {
       "from": "dim_agent_capabilities::workspace_tools::files::search",
       "to": "dim_agent_capabilities::host",
       "references": [
@@ -15236,6 +15361,23 @@
       ]
     },
     {
+      "from": "dim_agent_capabilities::workspace_tools::files::tree",
+      "to": "dim_agent_capabilities::methods",
+      "references": [
+        "path RpcError",
+        "path RpcError::app",
+        "use crate::methods::RpcError"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::tree",
+      "to": "dim_agent_capabilities::workspace_tools::files",
+      "references": [
+        "path resolve_path",
+        "use super::resolve_path"
+      ]
+    },
+    {
       "from": "dim_agent_capabilities::workspace_tools::files::view",
       "to": "dim_agent_capabilities::images",
       "references": [
@@ -15268,8 +15410,10 @@
         "path open_regular",
         "path resolve_path",
         "use super::NotRegular",
+        "use super::hex",
         "use super::open_regular",
-        "use super::resolve_path"
+        "use super::resolve_path",
+        "use super::revision"
       ]
     },
     {

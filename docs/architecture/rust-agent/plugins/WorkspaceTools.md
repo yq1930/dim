@@ -14,7 +14,9 @@ with `sessionMethods`: `session.files.search` returns the files of the Session's
 workspace an `@` mention offers, ranked as the TUI picker ranks them
 (`workspace_tools/mentions.rs`); a query that names a path outside the workspace
 finds nothing. `session.files.read` returns one of its files for the operator to
-read ([File view](#file-view)). `session.files.changes` and `session.files.rewind`
+read, `session.files.list` one of its folders, `session.files.grep` the lines that
+contain a text, and `session.files.save` writes the operator's edit of a file
+([File view](#file-view)). `session.files.changes` and `session.files.rewind`
 list and undo a turn's `write` and `edit` changes ([File rewind](#file-rewind)). The WorkspaceTools plugin registers this part
 and the branch parts FileReads and BackgroundExec, and holds the file-write
 coordinator: one per-path FIFO admission domain shared by write and edit across
@@ -58,7 +60,9 @@ uses it for approval and execution; the original model call remains in history.
 Resolution only reads metadata, honors cancellation and rejects unresolvable or
 non-UTF-8 paths. Permissions/approvals occur upstream of execution: these native tools are not sandboxed.
 Unsupported metadata preservation fails unchanged; post-install errors require
-re-reading before retry.
+re-reading before retry. A replaced file keeps its owner, permissions and extended
+attributes, but its modification time is the replacement's, so tools that compare
+times see the change.
 
 ### Shared command construction and output
 
@@ -264,6 +268,30 @@ The reply has the resolved `path`, `relativePath` under the cwd, and `kind`:
 
 A file's reply also has `size` and `modified` (milliseconds since the epoch). The
 read registers nothing with FileReads, so it never stands for the model's read.
+A text file of the cwd that is read whole and decodes as UTF-8 without loss is
+`editable` and has the `revision` of its bytes (SHA-256, hex).
+
+`session.files.list {sessionId, path?}` lists a folder under the cwd for the file
+tree: `path` is resolved as above and empty for the cwd itself. The reply has
+`path`, `relativePath` and `entries`, each `{name, dir}` with folders first, then
+by name. Ignore files apply as they do to an `@` mention, dotfiles are listed and
+`.git` and `.DS_Store` are not; past 2,000 entries the list stops and has
+`truncated`. A folder outside the cwd is `file_outside_workspace`.
+
+`session.files.grep {sessionId, query}` searches the cwd's files for the lines that
+contain `query`, as `grep` does with `literal` and smart case: at most 5 matches
+per file and 100 in all. Each match is `{path, line, column, text}`, `path`
+relative to the cwd; the reply has `truncated` when matches were left out.
+
+`session.files.save {sessionId, path, text, revision?}` replaces a file of the cwd
+with the operator's edit. It takes the same per-path admission as `write`, and
+replaces the file only while its bytes have `revision`, the one the edit started
+from; otherwise it is `file_changed` (no `revision` overwrites any). Only an
+existing UTF-8 text file of at most 2 MiB is written (else `file_not_editable`).
+The file keeps a UTF-8 BOM, and its CRLF line endings when `text` has no CR. The
+reply has the new `size`, `modified` and `revision`. Nothing is recorded with
+FileReads or for file rewind, so the model's next `write` or `edit` of the file
+finds it changed since its read.
 
 ### Display diff
 
@@ -316,7 +344,9 @@ is written to.
 ### Rule check
 
 `session.files.changes` reads the branch's committed facts and the files, and
-`session.files.read` reads one file; neither writes anything. `session.files.rewind` changes only workspace files the turn's
+`session.files.read`, `session.files.list` and `session.files.grep` read the
+workspace; none of them writes anything. `session.files.save` writes the one file
+the operator edited, under the admission `write` takes. `session.files.rewind` changes only workspace files the turn's
 own `write` and `edit` changed, under the same admission they take, and writes
 one ordinary Append input through the branch facade; InputQueue and Loop handle
 it as any input. Neither starts background work or reads another plugin's state.

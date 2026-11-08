@@ -117,7 +117,7 @@ export type FileView = {
   | { kind: "directory" }
   | { kind: "binary"; size: number; modified?: number }
   | { kind: "image"; size: number; modified?: number; mime: string; data: string }
-  | { kind: "text"; size: number; modified?: number; text: string; truncated: boolean; lossy: boolean }
+  | { kind: "text"; size: number; modified?: number; text: string; truncated: boolean; lossy: boolean; editable: boolean; revision?: string }
 )
 
 /** The session permission presets, named as the server's `PermissionPreset` serializes them. */

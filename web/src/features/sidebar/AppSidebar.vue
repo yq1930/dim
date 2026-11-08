@@ -11,14 +11,16 @@ import SidebarWorkspaceGroup from "./SidebarWorkspaceGroup.vue"
 import SidebarSessionRow from "./SidebarSessionRow.vue"
 import { useSessionsStore } from "../../stores/sessions"
 import { useUiStore } from "../../stores/ui"
-import { useToastStore } from "../../stores/toast"
-import { copyText } from "../../clipboard"
 import type { SessionSummary } from "../../rpc/protocol"
-import { useComposerDrafts } from "../session/composer/composer-drafts"
 import { withKeys } from "../../app/shortcuts"
 import WorkspaceOpenDialog from "./WorkspaceOpenDialog.vue"
 import SessionRenameDialog from "./SessionRenameDialog.vue"
 import ConfirmDialog from "../../components/ConfirmDialog.vue"
+import SidebarSessionGroup from "./SidebarSessionGroup.vue"
+import SidebarViewMenu from "./SidebarViewMenu.vue"
+import { useSessionActions } from "./session-actions"
+import { useSessionState } from "./session-state"
+import { groupByDate, groupByState, sortSessions } from "./sidebar-list"
 
 const emit = defineEmits<{ navigate: [] }>()
 const { t } = useI18n()
@@ -32,30 +34,23 @@ const search = ref("")
 const workspaceDialog = ref<InstanceType<typeof WorkspaceOpenDialog>>()
 const renameDialog = ref<InstanceType<typeof SessionRenameDialog>>()
 const confirm = ref<InstanceType<typeof ConfirmDialog>>()
-const busy = ref(false)
-const drafts = useComposerDrafts()
+const actions = useSessionActions()
+const busy = actions.busy
+const stateOf = useSessionState()
 
 async function openWorkspace(cwd: string): Promise<void> {
   sessions.rememberWorkspace(cwd)
   await router.push({ name: "chat-new", query: { cwd } })
   emit("navigate")
 }
-async function copyPath(path: string): Promise<void> {
-  try { await copyText(path); useToastStore().push({ tone: "success", title: t("chat.pathCopied") }) }
-  catch { useToastStore().push({ tone: "danger", title: t("chat.copyFailed") }) }
+function copyPath(path: string): Promise<void> {
+  return actions.copy(path, "chat.pathCopied")
 }
 async function action(kind: "rename" | "archive" | "delete", session: SessionSummary): Promise<void> {
   if (busy.value) return
   if (kind === "rename") { await renameDialog.value?.open(session); return }
   if (kind === "delete" && !await confirm.value?.open(t("sidebar.deleteConfirm", { name: session.title ?? session.preview ?? t("sidebar.untitled") }), { confirmLabel: t("sidebar.delete") })) return
-  busy.value = true
-  try {
-    if (kind === "archive") await sessions.setArchived(session.sessionId, true)
-    else { await sessions.remove(session.sessionId); drafts.discardSession(session.sessionId); ui.unpin(session.sessionId) }
-    if (ui.lastSessionId === session.sessionId) ui.lastSessionId = undefined
-    if (route.params.sessionId === session.sessionId) await router.replace({ name: "chat-new", query: { cwd: session.cwd } })
-  } catch (cause) { useToastStore().push({ tone: "danger", title: t("sidebar.actionFailed"), description: cause instanceof Error ? cause.message : String(cause) }) }
-  finally { busy.value = false }
+  await actions.dispose(kind, session)
 }
 // Relative times re-render each minute without a reload.
 const nowMs = ref(Date.now())
@@ -76,13 +71,23 @@ const pinned = computed(() => ui.pinnedSessions
   .filter((session): session is SessionSummary => session !== undefined && (query.value === "" || titled(session) || session.cwd.toLocaleLowerCase().includes(query.value))))
 const pinnedCwds = computed(() => new Set(ui.pinnedSessions.flatMap((sessionId) => sessions.byId.get(sessionId)?.cwd ?? [])))
 /** The filter matches the workspace name or path, or the session preview. */
-const visible = computed(() => sessions.workspaces.flatMap((workspace) => {
-  const unpinned = workspace.sessions.filter((session) => !ui.pinnedSessions.includes(session.sessionId))
-  if (query.value === "") return [{ ...workspace, sessions: unpinned }]
-  const matched = workspace.name.toLocaleLowerCase().includes(query.value) || workspace.cwd.toLocaleLowerCase().includes(query.value)
-  const matching = matched ? unpinned : unpinned.filter(titled)
-  return !matched && matching.length === 0 ? [] : [{ ...workspace, sessions: matching }]
-}))
+const visible = computed(() => {
+  const groups = sessions.workspaces.flatMap((workspace) => {
+    const unpinned = sortSessions(workspace.sessions.filter((session) => !ui.pinnedSessions.includes(session.sessionId)), ui.sidebarSortBy)
+    if (query.value === "") return [{ ...workspace, sessions: unpinned }]
+    const matched = workspace.name.toLocaleLowerCase().includes(query.value) || workspace.cwd.toLocaleLowerCase().includes(query.value)
+    const matching = matched ? unpinned : unpinned.filter(titled)
+    return !matched && matching.length === 0 ? [] : [{ ...workspace, sessions: matching }]
+  })
+  return ui.sidebarSortBy === "alpha" ? [...groups].sort((left, right) => left.name.localeCompare(right.name)) : groups
+})
+/** The unpinned Sessions of every workspace in one list, grouped by day or state, or not at all. */
+const flat = computed(() => {
+  const all = visible.value.flatMap((workspace) => workspace.sessions)
+  if (ui.sidebarGroupBy === "date") return groupByDate(all, ui.sidebarSortBy, new Date(nowMs.value)).map((group) => ({ key: group.key, label: t(group.label), sessions: group.sessions }))
+  if (ui.sidebarGroupBy === "state") return groupByState(all, ui.sidebarSortBy, stateOf).map((group) => ({ key: group.key, label: t(group.label), sessions: group.sessions }))
+  return [{ key: "all", label: undefined, sessions: sortSessions(all, ui.sidebarSortBy) }]
+})
 </script>
 
 <template>
@@ -125,11 +130,28 @@ const visible = computed(() => sessions.workspaces.flatMap((workspace) => {
           />
         </ul>
       </template>
-      <p class="section-label">{{ t("sidebar.workspaces") }}</p>
+      <div class="section-head">
+        <p class="section-label">{{ t("sidebar.sessions") }}</p>
+        <SidebarViewMenu />
+      </div>
       <p v-if="sessions.error && !sessions.loaded" class="sidebar-empty" role="alert">{{ sessions.error }}</p>
       <p v-else-if="sessions.loaded && visible.length === 0" class="sidebar-empty">{{ t(query ? "sidebar.noMatches" : "sidebar.noWorkspaces") }}</p>
+      <template v-if="ui.sidebarGroupBy !== 'project'">
+        <SidebarSessionGroup
+          v-for="group in flat"
+          :key="group.key"
+          :label="group.label"
+          :sessions="group.sessions"
+          :active-session-id="activeSessionId"
+          :now-ms="nowMs"
+          :busy="busy"
+          @navigate="$emit('navigate')"
+          @action="action"
+          @copy="copyPath"
+        />
+      </template>
       <SidebarWorkspaceGroup
-        v-for="workspace in visible"
+        v-for="workspace in ui.sidebarGroupBy === 'project' ? visible : []"
         :key="workspace.cwd"
         :workspace="workspace"
         :expanded="query !== '' || ui.isWorkspaceExpanded(workspace.cwd)"
@@ -145,18 +167,16 @@ const visible = computed(() => sessions.workspaces.flatMap((workspace) => {
     </div>
 
     <footer class="sidebar-footer">
-      <RouterLink v-if="connection.supports('session.archive')" class="ui-button" data-variant="ghost" data-size="md" to="/settings/archived" @click="$emit('navigate')">
-        <Archive aria-hidden="true" />{{ settingsText("archived") }}
+      <ConnectionBadge />
+      <RouterLink v-if="connection.supports('session.archive')" class="ui-icon-button" data-variant="ghost" data-size="sm" to="/settings/archived" :aria-label="settingsText('archived')" v-tooltip="settingsText('archived')" @click="$emit('navigate')">
+        <Archive aria-hidden="true" />
       </RouterLink>
-      <RouterLink class="ui-button" data-variant="ghost" data-size="md" to="/settings" @click="$emit('navigate')">
-        <Settings aria-hidden="true" />{{ settingsText("settings") }}
+      <button type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="t('shortcuts.title')" v-tooltip="withKeys(t('shortcuts.title'), 'showShortcuts')" @click="ui.shortcutsOpen = true">
+        <Keyboard aria-hidden="true" />
+      </button>
+      <RouterLink class="ui-icon-button" data-variant="ghost" data-size="sm" to="/settings" :aria-label="settingsText('settings')" v-tooltip="withKeys(settingsText('settings'), 'openSettings')" @click="$emit('navigate')">
+        <Settings aria-hidden="true" />
       </RouterLink>
-      <div class="sidebar-footer-row">
-        <ConnectionBadge />
-        <button type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="t('shortcuts.title')" v-tooltip="withKeys(t('shortcuts.title'), 'showShortcuts')" @click="ui.shortcutsOpen = true">
-          <Keyboard aria-hidden="true" />
-        </button>
-      </div>
     </footer>
   </aside>
   <WorkspaceOpenDialog ref="workspaceDialog" @select="openWorkspace" />
@@ -167,5 +187,8 @@ const visible = computed(() => sessions.workspaces.flatMap((workspace) => {
 <style scoped>
 .sidebar-new { width: 100%; justify-content: flex-start; }
 .sidebar-new-label { flex: 1; text-align: left; }
-.sidebar-footer-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding-right: var(--space-1); }
+.section-head { display: flex; align-items: center; justify-content: space-between; padding-right: var(--space-1); }
+.section-head .section-label { margin-block: var(--space-1); }
+.sidebar-footer { display: flex; align-items: center; gap: 2px; }
+.sidebar-footer > .connection-badge { min-width: 0; flex: 1; }
 </style>

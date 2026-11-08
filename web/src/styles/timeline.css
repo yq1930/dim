@@ -50,7 +50,6 @@
 .app-shell[data-mode="compact"] .chat-page .branch-chip { grid-area: chip; justify-self: start; }
 .app-shell[data-mode="compact"] .chat-page .session-running { justify-self: start; }
 .app-shell[data-mode="compact"] .chat-page .session-tools { grid-area: panel; gap: var(--space-1); margin-left: var(--space-2); }
-.app-shell[data-mode="compact"] .chat-page .session-tools .session-lines > span:not(.ui-badge) { display: none; }
 /* 32px buttons 12px apart: their 44px touch areas meet without overlapping. */
 .app-shell[data-mode="compact"] .session-title-menu { grid-area: more; margin-left: var(--space-3); }
 /* Flipped above the trigger when the list below would clip it (menu-placement.ts). */

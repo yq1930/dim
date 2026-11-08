@@ -58,9 +58,6 @@
 .brand-row strong { font-size: var(--text-sm); font-weight: var(--weight-medium); letter-spacing: -.01em; }
 .primary-actions { display: grid; gap: 1px; padding: var(--space-3) var(--space-3) 0; }
 /* Footer Settings link: a sidebar nav row on the md rung (32 · r8). */
-.sidebar-footer > a { display: flex; height: var(--control-md); align-items: center; gap: var(--space-2); padding: 0 var(--space-3); border-radius: var(--control-md-radius); font-size: var(--text-md); font-weight: var(--weight-ui); transition: background-color var(--duration-hover) ease; }
-.sidebar-footer > a:hover { background: var(--hover); }
-.sidebar-footer > a:active { background: var(--press); }
 .sidebar-search { margin: var(--space-3) var(--space-3) var(--space-1); }
 /* Sidebar search: a .ui-field md (32 · r8) that rests borderless on the sidebar
    tint; hover and focus take the kit's field states. */

@@ -12,6 +12,7 @@ import QueuedInputs from "./composer/QueuedInputs.vue"
 import PlanReview from "./composer/PlanReview.vue"
 import QuestionPrompt from "./composer/QuestionPrompt.vue"
 import SessionPaneButtons from "./header/SessionPaneButtons.vue"
+import SessionTitleMenu from "./header/SessionTitleMenu.vue"
 import TimelineView from "./transcript/TimelineView.vue"
 import TranscriptViewMenu from "./header/TranscriptViewMenu.vue"
 import SessionOutline from "./header/SessionOutline.vue"
@@ -223,7 +224,8 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
         <button v-if="ui.shellMode === 'compact'" class="ui-icon-button session-nav" data-variant="ghost" data-size="md" type="button" :aria-label="t('sidebar.openMenu')" @click="ui.drawerOpen = true"><Menu aria-hidden="true" /></button>
         <div class="session-heading">
           <SessionCrumb v-if="summary" :session-id="sessionId" :cwd="summary.cwd" :interactive="!split" />
-          <h1 data-route-heading tabindex="-1" :title="title">{{ title }}</h1>
+          <SessionTitleMenu v-if="!split && summary" :session-id="sessionId" :title="title" />
+          <h1 v-else data-route-heading tabindex="-1" :title="title">{{ title }}</h1>
         </div>
         <div class="session-tools">
           <SessionOutline v-if="outline.length > 1" :markers="outline" @jump="timeline?.jumpTo($event)" />
@@ -299,5 +301,5 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
 <style scoped>
 .session-running { gap: 6px; }
 .session-running > .status-dot { border: 0; }
-.session-tools { display: flex; flex: none; align-items: center; gap: var(--space-3); }
+.session-tools { display: flex; flex: none; align-items: center; gap: var(--space-1); }
 </style>

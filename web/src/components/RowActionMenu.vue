@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, type Component } from "vue"
 import { MoreHorizontal } from "lucide-vue-next"
-/** `icon` replaces the trigger's ⋯; `triggerClass` styles the trigger, since the menu has two roots. */
+/**
+ * `icon` replaces the trigger's ⋯; `triggerClass` styles the trigger, since the menu has two roots.
+ * The `trigger` slot draws a trigger of its own, which opens the menu under itself with `open(element)`.
+ */
 defineProps<{ label: string; icon?: Component; triggerClass?: string }>()
 const trigger = ref<HTMLButtonElement>()
 const dialog = ref<HTMLDialogElement>()
@@ -9,12 +12,14 @@ const expanded = ref(false)
 const left = ref(0)
 const top = ref(0)
 function close(): void { dialog.value?.close(); expanded.value = false }
-async function open(event?: MouseEvent): Promise<void> {
+async function open(from?: MouseEvent | HTMLElement): Promise<void> {
   const element = dialog.value
   if (!element) return
-  const anchor = trigger.value!.getBoundingClientRect()
-  left.value = Math.max(8, Math.min(event?.clientX ?? anchor.right - 208, window.innerWidth - 216))
-  top.value = event?.clientY ?? anchor.bottom + 4
+  const below = from instanceof HTMLElement ? from.getBoundingClientRect() : undefined
+  const anchor = below ?? trigger.value?.getBoundingClientRect()
+  const event = from instanceof MouseEvent ? from : undefined
+  left.value = Math.max(8, Math.min(below?.left ?? event?.clientX ?? (anchor?.right ?? 0) - 208, window.innerWidth - 216))
+  top.value = event?.clientY ?? (anchor?.bottom ?? 0) + 4
   element.showModal()
   expanded.value = true
   await nextTick()
@@ -34,7 +39,9 @@ defineExpose({ open })
 </script>
 
 <template>
-  <button ref="trigger" type="button" class="ui-icon-button" :class="triggerClass" data-variant="ghost" data-size="sm" :aria-label="label" aria-haspopup="dialog" :aria-expanded="expanded" v-tooltip="label" @click.stop="open()"><component :is="icon ?? MoreHorizontal" aria-hidden="true" /></button>
+  <slot name="trigger" :open="open" :expanded="expanded">
+    <button ref="trigger" type="button" class="ui-icon-button" :class="triggerClass" data-variant="ghost" data-size="sm" :aria-label="label" aria-haspopup="dialog" :aria-expanded="expanded" v-tooltip="label" @click.stop="open()"><component :is="icon ?? MoreHorizontal" aria-hidden="true" /></button>
+  </slot>
   <dialog ref="dialog" class="row-action-menu ui-popover" :style="{ left: `${left}px`, top: `${top}px` }" :aria-label="label" @cancel="expanded = false" @close="expanded = false" @keydown="key" @click="($event.target === dialog || ($event.target as HTMLElement).closest('button')) && close()">
     <slot />
   </dialog>

@@ -6,6 +6,12 @@ import { usePanesStore } from "./panes"
 
 export type ShellMode = "compact" | "regular" | "wide"
 
+/** How the sidebar lists Sessions, as Claude Code's sidebar filter: grouped by project (workspace), day, state or not at all. */
+export type SidebarGroupBy = "project" | "date" | "state" | "none"
+export type SidebarSortBy = "recency" | "alpha" | "created"
+const GROUP_BY: readonly SidebarGroupBy[] = ["project", "date", "state", "none"]
+const SORT_BY: readonly SidebarSortBy[] = ["recency", "alpha", "created"]
+
 /** The pane a Session shows in: the routed one, or the one beside it in split view. */
 export type Pane = "main" | "split"
 
@@ -56,11 +62,13 @@ type Persisted = {
   /** Sessions shown first in the sidebar, in the order they were pinned. */
   pinnedSessions: string[]
   splitSessionId: string | undefined
+  sidebarGroupBy: SidebarGroupBy
+  sidebarSortBy: SidebarSortBy
 }
 
 /** localStorage is outside the app: read it once, keeping only well-formed fields. */
 function readPersisted(): Persisted {
-  const fallback: Persisted = { sidebarCollapsed: false, collapsedWorkspaces: [], lastSessionId: undefined, detailWidth: 420, pinnedSessions: [], splitSessionId: undefined }
+  const fallback: Persisted = { sidebarCollapsed: false, collapsedWorkspaces: [], lastSessionId: undefined, detailWidth: 420, pinnedSessions: [], splitSessionId: undefined, sidebarGroupBy: "project", sidebarSortBy: "recency" }
   try {
     const value: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")
     if (value === null || typeof value !== "object") return fallback
@@ -75,6 +83,8 @@ function readPersisted(): Persisted {
       detailWidth: width,
       pinnedSessions: Array.isArray(stored.pinnedSessions) ? stored.pinnedSessions.filter((item): item is string => typeof item === "string") : [],
       splitSessionId: typeof stored.splitSessionId === "string" ? stored.splitSessionId : undefined,
+      sidebarGroupBy: GROUP_BY.find((value) => value === stored.sidebarGroupBy) ?? fallback.sidebarGroupBy,
+      sidebarSortBy: SORT_BY.find((value) => value === stored.sidebarSortBy) ?? fallback.sidebarSortBy,
     }
   } catch {
     return fallback
@@ -92,6 +102,8 @@ export const useUiStore = defineStore("ui", () => {
   const shellMode = computed<ShellMode>(() => shellWidth.value < 720 ? "compact" : shellWidth.value < 960 ? "regular" : "wide")
   const detailWidth = ref(persisted.detailWidth)
   const pinnedSessions = ref(persisted.pinnedSessions)
+  const sidebarGroupBy = ref(persisted.sidebarGroupBy)
+  const sidebarSortBy = ref(persisted.sidebarSortBy)
   const newLine = ref<NewLineRequest | undefined>()
   const endingLine = ref<EndLineRequest | undefined>()
   /** The Session on screen, if any; a run that ends elsewhere leaves its Session unread. */
@@ -111,7 +123,7 @@ export const useUiStore = defineStore("ui", () => {
   /** The pane the operator last pressed or focused; it takes the keyboard's approvals. */
   const activePane = ref<Pane>("main")
 
-  watch([sidebarCollapsed, collapsedWorkspaces, lastSessionId, detailWidth, pinnedSessions, splitSessionId], () => {
+  watch([sidebarCollapsed, collapsedWorkspaces, lastSessionId, detailWidth, pinnedSessions, splitSessionId, sidebarGroupBy, sidebarSortBy], () => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         sidebarCollapsed: sidebarCollapsed.value,
@@ -120,6 +132,8 @@ export const useUiStore = defineStore("ui", () => {
         detailWidth: detailWidth.value,
         pinnedSessions: pinnedSessions.value,
         splitSessionId: splitSessionId.value,
+        sidebarGroupBy: sidebarGroupBy.value,
+        sidebarSortBy: sidebarSortBy.value,
       }))
     } catch {
     }
@@ -163,6 +177,12 @@ export const useUiStore = defineStore("ui", () => {
 
   function markUnread(sessionId: string): void {
     if (sessionId !== viewingSessionId.value && sessionId !== splitSessionId.value && !unread.value.includes(sessionId)) unread.value = [...unread.value, sessionId]
+  }
+
+  /** Marks a Session unread or read from its menu, as Claude Code's "Mark as unread". */
+  function setUnread(sessionId: string, value: boolean): void {
+    const others = unread.value.filter((id) => id !== sessionId)
+    unread.value = value ? [...others, sessionId] : others
   }
 
   function openSplit(sessionId: string): void {
@@ -240,7 +260,8 @@ export const useUiStore = defineStore("ui", () => {
     sidebarCollapsed, lastSessionId, drawerOpen, shellWidth, shellMode, setShellWidth,
     isWorkspaceExpanded, toggleWorkspace, pinnedSessions, togglePinned, unpin,
     detailWidth, newLine, endingLine, setDetailWidth,
-    viewingSessionId, unread, viewSession, markUnread, splitSessionId, splitAvailable, activePane, openSplit, closeSplit,
+    sidebarGroupBy, sidebarSortBy,
+    viewingSessionId, unread, viewSession, markUnread, setUnread, splitSessionId, splitAvailable, activePane, openSplit, closeSplit,
     reviewNotes, addReviewNote, removeReviewNote, clearReviewNotes, composerInsert, requestComposerInsert, composerMenu, requestComposerMenu, shortcutsOpen,
     approvalKeyboard,
     requestNewLine, closeNewLine, requestEndLine, closeEndLine, resetSessionTabs,

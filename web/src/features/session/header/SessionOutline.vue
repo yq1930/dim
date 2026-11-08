@@ -41,8 +41,8 @@ onBeforeUnmount(close)
 </script>
 
 <template>
-  <button ref="trigger" type="button" class="ui-button session-lines" data-variant="ghost" data-size="sm" :aria-label="t('outline.title')" aria-haspopup="dialog" :aria-expanded="expanded" @click="open">
-    <TableOfContents aria-hidden="true" /><span>{{ t("outline.title") }}</span>
+  <button ref="trigger" type="button" class="ui-icon-button" data-variant="ghost" data-size="sm" :aria-label="t('outline.title')" aria-haspopup="dialog" :aria-expanded="expanded" v-tooltip="t('outline.title')" @click="open">
+    <TableOfContents aria-hidden="true" />
   </button>
   <dialog ref="dialog" class="session-outline ui-popover" :style="{ left: `${left}px`, top: `${top}px` }" :aria-label="t('outline.title')" @cancel="expanded = false" @close="expanded = false" @keydown="key" @click="$event.target === dialog && close()">
     <ol>

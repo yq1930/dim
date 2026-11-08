@@ -102,7 +102,7 @@ For development against the repository checkout, and for a build that must carry
 | Item | Rule |
 | --- | --- |
 | Version | `hello` v3 with `clientKind: "web"`; v1/v2 → `protocol_version` |
-| Methods | Rpc Session built-ins and execution Session methods on every Session of the host, plus the explicit settings methods in §4.3, the terminal methods in §4.4 and the Git methods in §4.5. Other management methods, including `daemon.shutdown` and Web-entry controls, return `-32601 unknown_method` |
+| Methods | Rpc Session built-ins and execution Session methods on every Session of the host, plus the explicit settings methods in §4.3, the terminal methods in §4.4, the Git methods in §4.5 and the scheduled-task methods in §4.7. Other management methods, including `daemon.shutdown` and Web-entry controls, return `-32601 unknown_method` |
 | Model list | The read-only management methods `provider.list`, `provider.catalog`, `provider.selection` and `account.providers` are also served (decision Q1); their replies carry no credentials (`provider.list` reports only `credentialConfigured` and header names). Managed Provider discovery follows §4.2. Switching uses the Session method `session.model.update` |
 
 Compatibility: the bare `/ws` keeps today's rules (`hello` and `daemon.ping` only in protected profiles). Execution Session methods become reachable from the web entry; this is the same widening RemoteGateway records as E3, limited here to loopback connections authenticated by the local user's token.
@@ -739,6 +739,25 @@ Files: [notes.md] [main.rs] [lib.ts*]                         [Go to file]
 | Other files | An image shows; another binary file says it cannot be shown here |
 | Freshness | The shown file is read again when its tab is shown and after each run; the view changes only when its size or modification time does |
 | Toolbar | The path under the workspace, Reload, Copy path, and in the macOS desktop app "Open with default app" and "Show in Finder" through `open_workspace_path` |
+
+### 4.7 Scheduled tasks
+
+A scheduled task sends a prompt to a Session on a schedule, as Claude Code's desktop app does with its routines. The Scheduler process row owns the jobs and their runs ([Scheduler](plugins/Scheduler.md)); the Web entry admits its six management methods `schedule.list`, `schedule.save`, `schedule.delete`, `schedule.set_enabled`, `schedule.history` and `schedule.run_now` (A.3), with their replies and errors unchanged. A save from the page is a management save: the job's authority becomes the host's configured maximum, and a job without a policy runs read-only (§3.3).
+
+```text
+Sidebar: [New session] [Open workspace] [Scheduled tasks]
+Scheduled tasks                                        [New task]
+  Daily summary        Every day at 09:00 · dim · Next tomorrow 09:00   [on] [Run now] [⋯]
+                       Completed today 09:00
+```
+
+| Surface | Behavior |
+| --- | --- |
+| Sidebar | "Scheduled tasks" opens the page where the entry admits `schedule.list` |
+| List | Each job with its schedule in words, its workspace, its next window (or that it is paused, or why its schedule has none) and its latest run; read on opening, every 30 s and after each action |
+| Actions | A switch pauses and resumes (`schedule.set_enabled`); "Run now" starts a run (`schedule.run_now`) of an enabled job, since the Scheduler skips one of a paused job, and says when the run is skipped; Edit, Run history and Delete are in the job's menu. Delete asks first and says that the Sessions its runs created go with it (Scheduler A.7) |
+| Editor | Name, prompt, workspace (a known workspace, a typed path or, in the desktop app, the native folder picker), schedule, permission, model, Session mode and time limit, and whether it is enabled. Schedules are every day, weekdays or one day of the week at a time (a cron line in the server's zone), every N minutes or hours (`every_minutes`), once at a local time (`at`), or a custom cron line. Permission is read-only, edit the workspace or full access; runs answer no approvals, so `ask` is not offered. A model set on a job stays set, since a save cannot clear it. A new job starts in the workspace of the Session last shown |
+| Run history | The job's last 50 runs (`schedule.history`) with their state, window or manual start, duration and detail; a run's Session opens in the chat page |
 
 ## 5. Build and release
 

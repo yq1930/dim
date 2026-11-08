@@ -11,6 +11,7 @@ export const router = createRouter({
     { path: "/", name: "root", component: RootRedirect },
     { path: "/chat/new", name: "chat-new", component: NewSessionPage },
     { path: "/chat/:sessionId", name: "chat-session", component: ChatPage, props: true },
+    { path: "/schedules", name: "schedules", component: () => import("./features/schedules/SchedulesPage.vue") },
     {
       path: "/settings", component: () => import("./features/settings/SettingsPage.vue"), children: [
         { path: "", name: "settings-index", component: { render: () => null } },

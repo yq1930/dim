@@ -21,7 +21,7 @@
   .main-region { grid-template-rows: minmax(0, 1fr); }
   .main-region > .route-page, .main-region > .chat-page, .main-region > .new-session-page, .main-region > .chat-loading { grid-row: 1; }
   .app-shell[data-chat-route="true"] .main-region { grid-template-rows: auto minmax(0, 1fr); }
-  .app-shell[data-chat-route="true"] .main-region > :is(.chat-page, .new-session-page, .chat-loading, .removed-state) { grid-row: 2; }
+  .app-shell[data-chat-route="true"] .main-region > :is(.chat-page, .new-session-page, .chat-loading, .removed-state, .schedules-page) { grid-row: 2; }
   .session-header { min-height: 52px; padding-inline: var(--space-3); }
   .timeline { padding-inline: var(--space-4); }
   .composer-panel { padding-inline: var(--space-3); }

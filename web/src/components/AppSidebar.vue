@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import { RouterLink, useRoute, useRouter } from "vue-router"
 import { useI18n } from "vue-i18n"
-import { Archive, FolderOpen, PanelLeftClose, Plus, Search, Settings } from "lucide-vue-next"
+import { Archive, CalendarClock, FolderOpen, PanelLeftClose, Plus, Search, Settings } from "lucide-vue-next"
 import { useConnectionStore } from "../stores/connection"
 import { settingsMessages } from "../i18n/settings"
 import BrandMark from "./BrandMark.vue"
@@ -99,6 +99,7 @@ const visible = computed(() => sessions.workspaces.flatMap((workspace) => {
         <Plus aria-hidden="true" /><span class="sidebar-new-label">{{ t("sidebar.newSession") }}</span>
       </RouterLink>
       <button type="button" class="ui-button sidebar-new" data-variant="ghost" data-size="md" @click="workspaceDialog?.open(activeCwd ?? '')"><FolderOpen aria-hidden="true" /><span class="sidebar-new-label">{{ t("workspace.open") }}</span></button>
+      <RouterLink v-if="connection.supports('schedule.list')" class="ui-button sidebar-new" data-variant="ghost" data-size="md" to="/schedules" @click="$emit('navigate')"><CalendarClock aria-hidden="true" /><span class="sidebar-new-label">{{ t("schedules.title") }}</span></RouterLink>
     </nav>
 
     <div class="ui-field-wrap sidebar-search">

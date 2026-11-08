@@ -28,7 +28,8 @@ const drawer = ref<HTMLDialogElement>()
 let observer: ResizeObserver | undefined
 
 const settingsRoute = computed(() => route.path === "/settings" || route.path.startsWith("/settings/"))
-const chatRoute = computed(() => route.name === "chat-new" || route.name === "chat-session")
+/** Pages that draw their own header in place of the generic one. */
+const chatRoute = computed(() => route.name === "chat-new" || route.name === "chat-session" || route.name === "schedules")
 /** Pages without a top bar of their own get an empty one to drag the window by. */
 const titleBarStrip = computed(() => overlayTitleBar && (settingsRoute.value || route.name === "chat-new"))
 const sessionId = computed(() => typeof route.params.sessionId === "string" ? route.params.sessionId : undefined)
@@ -44,6 +45,7 @@ const pageTitle = computed(() => {
     const session = sessions.byId.get(route.params.sessionId)
     return session?.title ?? session?.preview ?? (session === undefined ? t("route.session") : workspaceName(session.cwd))
   }
+  if (route.name === "schedules") return t("schedules.title")
   if (route.name === "not-found") return t("route.notFound")
   return t("route.newSession")
 })

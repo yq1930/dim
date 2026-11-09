@@ -6,7 +6,7 @@ use super::{
 use crate::protocol::{Catalog, CatalogResult, SessionInfo, SessionSummary};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use dim_agent_runtime::{AgentError, Result};
-use dim_agent_types::{ContentBlock, InputMessageData, ModelId};
+use dim_agent_types::{ContentBlock, EventKind, InputMessageData, ModelId};
 use rusqlite::{Connection, OptionalExtension, params};
 use sha2::{Digest, Sha256};
 
@@ -35,25 +35,81 @@ pub(crate) fn truncate_preview(value: &str, limit: usize) -> String {
     result
 }
 
-pub(super) fn refresh(connection: &Connection, session: &str) -> Result<()> {
-    let last: Option<String> = connection.query_row(
-        "SELECT body FROM timeline_events WHERE session_id=?1 AND branch_id='main' ORDER BY sequence DESC LIMIT 1",
-        [session], |row| row.get(0),
-    ).optional().map_err(error)?;
-    if let Some(body) = last {
-        let row: Row = serde_json::from_str(&body).map_err(error)?;
-        let time = row
-            .wires()
-            .last()
-            .and_then(|wire| wire.event["create_at"].as_u64())
-            .ok_or_else(|| error("catalog activity event has no timestamp"))?;
-        connection
-            .execute(
-                "UPDATE session_catalog SET updated_at_ms=?2 WHERE session_id=?1",
-                params![session, i64::try_from(time).map_err(error)?],
-            )
-            .map_err(error)?;
+/// Kinds whose presence on `main` is a Session's own activity (issue #1099):
+/// a user message, a completed turn, a `branch/create` (it records the branch
+/// prompt on the parent) and a `session/forked`. Every other kind — the rest
+/// of the branch events, and the `context`, `prompt`, `model`, `step`,
+/// `tool`, `approval`, `stop`, `exec`, `permission`, `collaboration` and
+/// extension events — is housekeeping, and does not move a Session's activity
+/// time. This is the only place the kinds are listed: the writers and the
+/// SQL selection build on it.
+pub(crate) const ACTIVITY_KINDS: &[&str] = &[
+    "input/message",
+    "turn/end",
+    "branch/create",
+    "session/forked",
+];
+
+/// Whether `kind` is Session activity: one of [`ACTIVITY_KINDS`], except that
+/// an `input/message` without a user message (a host-injected one) is
+/// housekeeping.
+pub(crate) fn activity(kind: &EventKind) -> bool {
+    match kind {
+        EventKind::InputMessage(input) => input.user.is_some(),
+        other => ACTIVITY_KINDS.contains(&other.key()),
     }
+}
+
+/// The SQL selection of the newest activity event on `main`: the kinds of
+/// [`ACTIVITY_KINDS`], with the host-injected messages excluded, so the first
+/// row of the primary key scan is the answer.
+fn activity_selection() -> String {
+    let kinds = ACTIVITY_KINDS
+        .iter()
+        .map(|kind| format!("'{kind}'"))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "(kind IN ({kinds}) AND NOT (kind = 'input/message' AND json_extract(body, '$.record.event.data.user') IS NULL))"
+    )
+}
+
+pub(super) fn refresh(connection: &Connection, session: &str) -> Result<()> {
+    let last: Option<String> = connection
+        .query_row(
+            &format!(
+                "SELECT body FROM timeline_events WHERE session_id=?1 AND branch_id='main' AND {} ORDER BY sequence DESC LIMIT 1",
+                activity_selection()
+            ),
+            [session],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(error)?;
+    let updated_at = match last {
+        Some(body) => {
+            let row: Row = serde_json::from_str(&body).map_err(error)?;
+            row.wires()
+                .last()
+                .and_then(|wire| wire.event["create_at"].as_u64())
+                .ok_or_else(|| error("catalog activity event has no timestamp"))?
+        }
+        None => connection
+            .query_row(
+                "SELECT created_at_ms FROM agent_sessions WHERE session_id=?1",
+                [session],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()
+            .map_err(error)?
+            .ok_or_else(|| error("catalog Session has no creation time"))? as u64,
+    };
+    connection
+        .execute(
+            "UPDATE session_catalog SET updated_at_ms=?2 WHERE session_id=?1",
+            params![session, i64::try_from(updated_at).map_err(error)?],
+        )
+        .map_err(error)?;
     let preview: Option<String> = connection
         .query_row(
             "SELECT preview FROM session_catalog WHERE session_id=?1",
@@ -125,7 +181,19 @@ pub(super) fn backfill(connection: &Connection) -> Result<()> {
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(error)?;
     for session in sessions {
-        create(connection, &session)?;
+        // A store that predates the catalog has no row yet; one that has it
+        // keeps it, and `refresh` rewrites the derived column (#1099).
+        let present: bool = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM session_catalog WHERE session_id=?1)",
+                [&session],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(error)?
+            != 0;
+        if !present {
+            create(connection, &session)?;
+        }
         refresh(connection, &session)?;
     }
     Ok(())

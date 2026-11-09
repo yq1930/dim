@@ -1048,37 +1048,11 @@ impl AgentIndex {
         let loaded = match self.session(id) {
             Some((_, session)) => match async {
                 let events = session.query("main", inputs.clone()).await?.events;
-                let last = if through == 0 {
-                    None
-                } else {
-                    session
-                        .query(
-                            "main",
-                            TimelineQuery {
-                                scope: TimelineQueryScope::Branch,
-                                include_publishing: false,
-                                from_event: None,
-                                from_sequence: Some(through),
-                                order_by: TimelineQueryOrderBy::Sequence,
-                                direction: TimelineQueryDirection::Ascending,
-                                kinds: Vec::new(),
-                                flags: Vec::new(),
-                                event_id: None,
-                                predicate: None,
-                                limit: NonZeroU64::MIN,
-                                offset: 0,
-                            },
-                        )
-                        .await?
-                        .events
-                        .into_iter()
-                        .next()
-                };
-                Ok::<_, AgentError>((events, last))
+                Ok::<_, AgentError>(events)
             }
             .await
             {
-                Ok(read) => Some(read),
+                Ok(events) => Some(events),
                 // Released under the read: the store holds every event it
                 // published (idle unload D8).
                 Err(_) if session.is_unloading() => None,
@@ -1086,8 +1060,8 @@ impl AgentIndex {
             },
             None => None,
         };
-        let (events, last) = if let Some(read) = loaded {
-            read
+        let events = if let Some(events) = loaded {
+            events
         } else {
             let store = self
                 .session_store
@@ -1097,18 +1071,11 @@ impl AgentIndex {
                 session_id: id.into(),
                 branch_id: "main".into(),
             };
-            let events = store
+            store
                 .timeline_store()
                 .query(&key, &inputs, 1, through)
                 .await?
-                .events;
-            let last = store
-                .timeline_store()
-                .read(&key, through..=through)
-                .await?
-                .pop()
-                .map(|record| record.event);
-            (events, last)
+                .events
         };
         let preview = events
             .iter()
@@ -1134,8 +1101,89 @@ impl AgentIndex {
                 (!text.is_empty())
                     .then(|| crate::storage::truncate_preview(&text, Self::SUMMARY_PREVIEW_CHARS))
             });
-        let updated_at = last.map_or(created_at, |event| event.create_at);
+        let updated_at = self
+            .latest_activity(id, through)
+            .await?
+            .map_or(created_at, |event| event.create_at);
         Ok((preview, updated_at))
+    }
+
+    /// The newest Session-activity event on `main` at or before `through`,
+    /// or `None` when the branch holds none (issue #1099): the value the
+    /// summary's `updatedAt` derives from, selected by the same predicate
+    /// and kinds as the storage catalog, so the two listings cannot
+    /// disagree. A Session in memory answers from its published facts; an
+    /// unloading or absent one is read from the store.
+    ///
+    /// The query asks for the activity kinds descending, and rows whose kind
+    /// is activity but whose message is host-injected are skipped, so the
+    /// read walks only as far as the candidate run that trails the answer.
+    async fn latest_activity(
+        &self,
+        id: &str,
+        through: u64,
+    ) -> dim_agent_runtime::Result<Option<Arc<dim_agent_types::AgentEvent>>> {
+        let mut to = through;
+        loop {
+            if to == 0 {
+                return Ok(None);
+            }
+            let query = |from_sequence: Option<u64>| TimelineQuery {
+                scope: TimelineQueryScope::Branch,
+                include_publishing: false,
+                from_event: None,
+                from_sequence,
+                order_by: TimelineQueryOrderBy::Sequence,
+                direction: TimelineQueryDirection::Descending,
+                kinds: crate::storage::ACTIVITY_KINDS
+                    .iter()
+                    .map(|kind| (*kind).into())
+                    .collect(),
+                flags: Vec::new(),
+                event_id: None,
+                predicate: None,
+                limit: NonZeroU64::new(Self::SUMMARY_SCAN_LIMIT)
+                    .expect("an activity page keeps at least one event"),
+                offset: 0,
+            };
+            let events = match self.session(id) {
+                Some((_, session)) => match session.query("main", query(Some(to))).await {
+                    Ok(page) => Some(page.events),
+                    // Released under the read: the store holds every event
+                    // it published (idle unload D8).
+                    Err(_) if session.is_unloading() => None,
+                    Err(error) => return Err(error),
+                },
+                None => None,
+            };
+            let events = if let Some(events) = events {
+                events
+            } else {
+                let store = self
+                    .session_store
+                    .as_ref()
+                    .ok_or_else(|| AgentError::Closed(id.into()))?;
+                let key = TimelineKey {
+                    session_id: id.into(),
+                    branch_id: "main".into(),
+                };
+                store
+                    .timeline_store()
+                    .query(&key, &query(None), 1, to)
+                    .await?
+                    .events
+            };
+            if let Some(event) = events
+                .iter()
+                .find(|event| crate::storage::activity(&event.kind))
+            {
+                return Ok(Some(event.clone()));
+            }
+            let Some(last) = events.last() else {
+                return Ok(None);
+            };
+            to = last.sequence.saturating_sub(1);
+        }
     }
 
     pub(crate) async fn prepare_session(

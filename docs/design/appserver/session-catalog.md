@@ -18,8 +18,9 @@ complete `context/compaction`, so a listing decodes the whole catalog's history,
 of it before it can draw a row.
 
 The catalog read becomes bounded work. SessionStore keeps a projection of what a listing needs — per Session its last
-activity time, its first user input as the preview, and its workspace — written by the creating transaction and then
-by the transaction that commits each `main` batch. A new built-in, `session.catalog`, pages that projection: 50 rows
+activity time (the time of the newest `main` event that is the Session's own activity, §3.2), its first user input as
+the preview, and its workspace — written by the creating transaction and then by the transaction that commits each
+`main` batch that carries activity. A new built-in, `session.catalog`, pages that projection: 50 rows
 by default, an opaque keyset cursor, and `query`, `cwd` and `withPreview` applied in the query before the page
 boundary. `session.summaries` keeps its contract and reads the same projection, so neither method reads history.
 
@@ -90,6 +91,15 @@ repeat nor skip any other Session. It also carries the filters it was taken unde
 continued only by the same `query`, `cwd`, `withPreview`, `withInternal` and `withAcpSessions`. A set of workspaces
 pages across its Sessions in that one order; its cursor continues under the same set in any order, and under no other
 set or single workspace. A single workspace's cursor continues under that workspace written as a one-element list.
+
+**The activity time is the Session's own activity on `main`.** It is the `create_at` of the newest `main` event that
+is the Session's own activity: a user `input/message`, a `turn/end`, a `branch/create` (it records the branch prompt
+on the parent) or a `session/forked`. Everything else is housekeeping — a host-injected `input/message` (no user
+part), `branch/resume`, `branch/start`, `branch/ended`, `branch/end`, `branch/create-failed`, every
+`context`/`prompt`/`model`/`step`/`tool`/`approval`/`stop`/`exec`/`permission`/`collaboration` event, and extension
+events — and does not move the row. A Session with no activity event sits at its creation time. The judgement lives
+once, beside the projection code, and every writer of the projection uses it; a daemon without a store applies the
+same selection in `session.summaries` (§3.3), so the two listings cannot disagree.
 
 ### 3.3 `session.summaries`
 
@@ -186,7 +196,7 @@ Timeline: the catalog is display data for a picker, which
 
 | Dependency | What this part requires |
 | --- | --- |
-| SessionStore catalog projection | One row per Session with the last activity time, the preview and the workspace, written by the creation transaction with the creation time and no preview, kept by the transaction of every later `main` batch, and absent for a Session that does not exist: the row is 1:1 with `agent_sessions` from creation, so a new Session lists as `session.summaries` lists it today |
+| SessionStore catalog projection | One row per Session with the last activity time, the preview and the workspace, written by the creation transaction with the creation time and no preview, kept by the transaction of every later `main` batch that carries activity (§3.2), and absent for a Session that does not exist: the row is 1:1 with `agent_sessions` from creation, so a new Session lists as `session.summaries` lists it today |
 | Stored Session record (`agent_sessions`) | The creation origin and the leader link of every listed Session, read from the row the query joins, and the filter of §3.5 ([Session classification](session-classification.md#31-the-origin)) |
 | [Title metadata](session-title-metadata.md) | The stored title of a Session, joined for display and for `query`, never read from a Session |
 | `hello.features` (App Server) | The method list a client discovers the catalog through: the catalog is listed under the conditions that list `session.summaries`, plus the native-store condition `session.fork` also requires |
@@ -236,7 +246,7 @@ page boundary. The CLI's `/resume` owns its scopes and the key that cycles them
 | --- | --- | --- | --- |
 | C1 | The cursor is opaque and pages by keyset on `(updatedAt, sessionId)` | Offset paging with `offset` or `skip` | An insert shifts every later row, so an offset page repeats or skips Sessions the client already showed |
 | C2 | A new built-in, `session.catalog` | Adding `limit` and `cursor` to `session.summaries` in place | Its reply is an array; changing it breaks every protocol v3 client of that method, and an array has no page boundary to keep |
-| C3 | The preview and the activity time are read from the projection | Computing them per request from history | That is the cost this design removes: it reads every Session's history, and an imported Session's last event is a complete compaction replacement |
+| C3 | The preview and the activity time are read from the projection, the activity time as the newest `main` event of the Session's own activity (§3.2) | Computing them per request from history | That is the cost this design removes: it reads every Session's history, and an imported Session's last event is a complete compaction replacement |
 | C4 | `query` and `cwd` are applied in the catalog query | Filtering the rows the client already loaded | It hides matches on pages the client has not fetched |
 | C5 | `session.summaries` keeps its contract and reads the same projection | Leaving it on the history read; removing it | It is how a client lists without the new method, and once the projection answers both, keeping its contract costs nothing |
 | C6 | Neither method takes a Session lease | One lease per listed Session | A lease restores and pins every listed Session; the projection, and the process's live state for `running` and `attachedClients`, answer without one |

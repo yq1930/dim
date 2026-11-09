@@ -187,7 +187,7 @@ SessionStore 是唯一写入者；存在一行表示已归档，没有行表示�
 | `agents.is_default` | `INTEGER` | 否 | — | `CHECK(is_default IN (0, 1))`；唯一的 1 由 `agents_default_unique` 保证至多一个，至少一个由目录校验保证 |
 | `agents.owner_session_id` | `TEXT` | 是 | — | 外键到 `agent_sessions(session_id)`；非空表示该 leader Session 拥有这个私有 Agent，NULL 表示公开 Agent；写入后不变 |
 | `session_catalog.session_id` | `TEXT` | No | — | Primary key, foreign key to `agent_sessions`; one row from creation |
-| `session_catalog.updated_at_ms` | `INTEGER` | No | — | Last committed `main` event time, or creation time for an empty Session |
+| `session_catalog.updated_at_ms` | `INTEGER` | No | — | Time of the newest Session-activity event on `main` (issue #1099), or creation time for a Session with none; a store written before the rule keeps a Session's earlier value until its next activity |
 | `session_catalog.preview` | `TEXT` | Yes | — | First user text in the batch-complete preview window |
 | `session_catalog.cwd` | `TEXT` | No | — | Creation configuration workspace |
 | `agent_sessions.session_id` | `TEXT` | 否 | — | 主键，原 Session ID |

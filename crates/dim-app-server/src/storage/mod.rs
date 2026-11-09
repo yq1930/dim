@@ -7,7 +7,7 @@ mod sqlite;
 mod timeline;
 
 pub use catalog::initialize_session_catalog;
-pub(crate) use catalog::truncate_preview;
+pub(crate) use catalog::{ACTIVITY_KINDS, activity, truncate_preview};
 #[cfg(feature = "testing")]
 pub use codec::NodeLoads;
 pub use dim_agent_capabilities::file_access::WorktreeDirectory;

@@ -1791,7 +1791,14 @@ fn write_batch(
         ])
         .map_err(error)?;
     if batch.key.branch_id == "main" {
-        if let Some(last) = batch.events.last() {
+        // The batch's own activity, newest first: a housekeeping batch does
+        // not touch the stored activity time (issue #1099).
+        if let Some(last) = batch
+            .events
+            .iter()
+            .rev()
+            .find(|record| super::catalog::activity(&record.event.kind))
+        {
             connection
                 .execute(
                     "UPDATE session_catalog SET updated_at_ms=?2 WHERE session_id=?1",

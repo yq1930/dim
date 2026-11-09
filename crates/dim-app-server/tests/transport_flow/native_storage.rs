@@ -48,7 +48,9 @@ async fn summaries_read_dormant_sessions_without_loading_them() {
     assert_eq!(reply["result"].as_array().unwrap().len(), 64);
     for row in reply["result"].as_array().unwrap() {
         let id = row["sessionId"].as_str().unwrap();
-        let body: String = database.query_row("SELECT body FROM timeline_events WHERE session_id=?1 AND branch_id='main' ORDER BY sequence DESC LIMIT 1", [id], |r| r.get(0)).unwrap();
+        // The projection's activity time: the newest Session-activity event
+        // on `main` (issue #1099), not the last event of any kind.
+        let body: String = database.query_row("SELECT body FROM timeline_events WHERE session_id=?1 AND branch_id='main' AND kind IN ('input/message','turn/end','branch/create','session/forked') AND NOT (kind='input/message' AND json_extract(body,'$.record.event.data.user') IS NULL) ORDER BY sequence DESC LIMIT 1", [id], |r| r.get(0)).unwrap();
         let stored: Value = serde_json::from_str(&body).unwrap();
         assert_eq!(row["preview"], expected[id]);
         assert_eq!(row["updatedAt"], stored["record"]["event"]["create_at"]);
@@ -392,9 +394,20 @@ async fn summaries_read_atomic_configuration_tails_and_survive_restart() {
     let reply = client.rpc("session.summaries", json!({})).await;
     assert_ok(&reply);
     assert_eq!(reply["result"][0]["sequence"], through);
+    // #1099: the trailing configuration batch is housekeeping, so the row
+    // holds the newest activity event, or the stored creation time when
+    // there is none — not the last event.
+    let created_at_ms: i64 = Connection::open(directory.join("dimcode.sqlite"))
+        .unwrap()
+        .query_row(
+            "SELECT created_at_ms FROM agent_sessions WHERE session_id=?1",
+            [id],
+            |row| row.get(0),
+        )
+        .unwrap();
     assert_eq!(
         reply["result"][0]["updatedAt"],
-        history.last().unwrap().create_at
+        activity_time(&history).unwrap_or(created_at_ms as u64)
     );
     drop(session);
     drop(client);
@@ -402,19 +415,24 @@ async fn summaries_read_atomic_configuration_tails_and_survive_restart() {
     server.join().await.unwrap();
 
     let database = Connection::open(directory.join("dimcode.sqlite")).unwrap();
-    let body: String = database.query_row(
-        "SELECT body FROM timeline_events WHERE session_id=?1 AND branch_id='main' ORDER BY sequence DESC LIMIT 1",
-        [id], |row| row.get(0),
-    ).unwrap();
-    let stored: Value = serde_json::from_str(&body).unwrap();
+    let updated: i64 = database
+        .query_row(
+            "SELECT COALESCE(
+                (SELECT json_extract(body, '$.record.event.create_at') FROM timeline_events
+                 WHERE session_id=?1 AND branch_id='main'
+                   AND kind IN ('input/message','turn/end','branch/create','session/forked')
+                   AND NOT (kind='input/message' AND json_extract(body,'$.record.event.data.user') IS NULL)
+                 ORDER BY sequence DESC LIMIT 1),
+                (SELECT created_at_ms FROM agent_sessions WHERE session_id=?1))",
+            [id],
+            |row| row.get(0),
+        )
+        .unwrap();
     let server = serve(build(), config).await.unwrap();
     let mut client = Client::new_version(&server, true, 3).await;
     let reply = client.rpc("session.summaries", json!({})).await;
     assert_ok(&reply);
-    assert_eq!(
-        reply["result"][0]["updatedAt"],
-        stored["record"]["event"]["create_at"]
-    );
+    assert_eq!(reply["result"][0]["updatedAt"], updated);
     assert!(server.agent().unwrap().sessions().is_empty());
     drop(client);
     server.shutdown();

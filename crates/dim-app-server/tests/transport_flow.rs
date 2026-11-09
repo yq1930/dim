@@ -2443,3 +2443,25 @@ async fn unmounted_management_preserves_mock_sessions_and_wire_admission() {
 
 #[path = "transport_flow/worktrees.rs"]
 mod worktrees;
+
+/// The `create_at` of the newest Session-activity event in `events`, `None`
+/// when the list holds none (issue #1099): the value the stored
+/// `updated_at_ms` and the listings' `updatedAt` derive from. Each module
+/// that states the rule in raw SQL keeps its own copy of the SQL on
+/// purpose; the in-memory expectation lives here, shared.
+pub(crate) fn activity_time(events: &[Arc<dim_agent_types::AgentEvent>]) -> Option<u64> {
+    const KINDS: [&str; 4] = [
+        "input/message",
+        "turn/end",
+        "branch/create",
+        "session/forked",
+    ];
+    events
+        .iter()
+        .rev()
+        .find(|event| {
+            KINDS.contains(&event.kind.key())
+                && !matches!(&event.kind, EventKind::InputMessage(data) if data.user.is_none())
+        })
+        .map(|event| event.create_at)
+}

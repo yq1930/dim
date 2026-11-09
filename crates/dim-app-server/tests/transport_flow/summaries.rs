@@ -104,9 +104,7 @@ async fn summaries_are_v3_filtered_and_bounded() {
     .unwrap();
     assert_eq!(
         empty_row["updatedAt"],
-        initial
-            .last()
-            .map_or(empty_session.created_at(), |event| event.create_at)
+        activity_time(&initial).unwrap_or(empty_session.created_at())
     );
     assert!(empty_row.get("preview").is_none());
     let row = rows
@@ -117,10 +115,13 @@ async fn summaries_are_v3_filtered_and_bounded() {
     assert_eq!(preview.chars().count(), 120);
     assert!(preview.ends_with('…'));
     let through = row["sequence"].as_u64().unwrap();
-    let last = read_branch_events(&session, "main", through..=through)
+    let all = read_branch_events(&session, "main", ..=through)
         .await
         .unwrap();
-    assert_eq!(row["updatedAt"], last[0].create_at);
+    assert_eq!(
+        row["updatedAt"],
+        activity_time(&all).unwrap_or(session.created_at())
+    );
     assert!(
         rows.iter()
             .find(|row| row["sessionId"] == image_id)

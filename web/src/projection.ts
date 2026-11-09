@@ -38,6 +38,8 @@ export type TimelineRow =
   | { kind: "turn-summary"; key: string; turnId: string; outcome: "completed" | "failed" | "cancelled"; files: number; durationMs?: number }
   | { kind: "files-rewound"; key: string; count: number }
 
+type UserRow = Extract<TimelineRow, { kind: "user" }>
+
 /** A request's reasoning or answer while it is still arriving. */
 type Stream = {
   index: number
@@ -70,8 +72,12 @@ export class Projection {
   private lines = new Map<string, number>()
   /** `ask_user` calls whose batch has no `step/tool-result` yet, oldest first. */
   private asks: Array<{ requestId: string; callId: string; questions: AskQuestion[] }> = []
-  /** Messages the server holds in the queue: written, not yet adopted, not withdrawn. */
-  private held = new Map<string, QueuedInput>()
+  /**
+   * Messages the server holds in the queue: written, not yet adopted, not withdrawn.
+   * Each enters the transcript at its `input/applied`, as the TUI's does, so the
+   * transcript keeps the order the model reads and a withdrawn one never shows.
+   */
+  private held = new Map<string, { input: QueuedInput; row: UserRow }>()
   /** The branch's goal, folded from its events (goal.ts). */
   readonly goalFold = new GoalFold()
   /** The branch's task list and plan mode, folded from its events (planning.ts). */
@@ -86,7 +92,7 @@ export class Projection {
 
   /** The messages still queued on this branch, oldest first. */
   queued(): readonly QueuedInput[] {
-    return [...this.held.values()]
+    return [...this.held.values()].map((entry) => entry.input)
   }
 
   /** The waiting `ask_user` calls of this branch: named by batch `requestId` and call id. */
@@ -124,20 +130,28 @@ export class Projection {
         break
       }
       case "input":
-        if (content.user !== undefined) this.held.set(event.id, { id: event.id, text: content.text ?? "", skills: content.skills, user: content.user })
-        if (content.text !== undefined) {
-          this.push({
-            kind: "user",
-            key: `user-${event.sequence}`,
-            text: content.text,
-            skills: content.skills,
-            at: event.createAt,
-            sequence: event.sequence,
-            cut: Math.max(0, event.sequence - 1),
+        if (content.user !== undefined) {
+          const text = content.text ?? ""
+          this.held.set(event.id, {
+            input: { id: event.id, text, skills: content.skills, user: content.user },
+            row: {
+              kind: "user",
+              key: `user-${event.sequence}`,
+              text,
+              skills: content.skills,
+              at: event.createAt,
+              sequence: event.sequence,
+              cut: Math.max(0, event.sequence - 1),
+            },
           })
         }
         break
-      case "input-applied":
+      case "input-applied": {
+        const entry = this.held.get(content.inputId)
+        this.held.delete(content.inputId)
+        if (entry !== undefined) this.push(entry.row)
+        break
+      }
       case "input-deleted":
         this.held.delete(content.inputId)
         break

@@ -21,10 +21,15 @@ function event(sequence, content) {
   return { id: `e${sequence}`, sequence, createAt: 1_000 + sequence, content }
 }
 
+function input(text, extra = {}) {
+  return { kind: "input", text, user: { content: [{ type: "text", text }] }, blocks: [], ...extra }
+}
+
 test("a user message carries the cut a child line opens at", () => {
   const projection = new Projection()
-  projection.apply(event(5, { kind: "input", text: "try RwLock\nfor the cache lock", blocks: [] }))
-  projection.apply(event(6, {
+  projection.apply(event(5, input("try RwLock\nfor the cache lock")))
+  projection.apply(event(6, { kind: "input-applied", inputId: "e5" }))
+  projection.apply(event(7, {
     kind: "branch-create",
     branchId: "b-7c",
     at: 4,
@@ -42,7 +47,7 @@ test("a user message carries the cut a child line opens at", () => {
   assert.equal(line.before, "try RwLock")
   assert.equal(line.failed, undefined)
 
-  projection.apply(event(7, {
+  projection.apply(event(8, {
     kind: "branch-create-failed",
     branchId: "b-7c",
     status: "failed",
@@ -81,15 +86,19 @@ test("branch messages, ends and the last turn end become rows", () => {
 
 test("replayed events do not duplicate rows", () => {
   const projection = new Projection()
-  const input = event(1, { kind: "input", text: "hello", blocks: [] })
-  assert.equal(projection.apply(input), true)
-  assert.equal(projection.apply(input), false)
+  const written = event(1, input("hello"))
+  const applied = event(2, { kind: "input-applied", inputId: "e1" })
+  assert.equal(projection.apply(written), true)
+  assert.equal(projection.apply(applied), true)
+  assert.equal(projection.apply(written), false)
+  assert.equal(projection.apply(applied), false)
   assert.equal(projection.rows.length, 1)
 })
 
 test("a user row carries the Skills its message loaded", () => {
   const projection = new Projection()
-  projection.apply(event(5, { kind: "input", text: "check the build", skills: ["checkin"], blocks: [] }))
+  projection.apply(event(5, input("check the build", { skills: ["checkin"] })))
+  projection.apply(event(6, { kind: "input-applied", inputId: "e5" }))
   assert.deepEqual(projection.rows, [{
     kind: "user",
     key: "user-5",

@@ -71,8 +71,11 @@ const changesDialog = ref<InstanceType<typeof TurnChangesDialog>>()
 const timeline = ref<InstanceType<typeof TimelineView>>()
 const outline = computed(() => timeline.value?.markers ?? [])
 const split = computed(() => props.pane === "split")
-/** The main line's messages, oldest first, for the composer's ↑ recall. */
-const sentMessages = computed(() => (view.value?.rows ?? []).flatMap((row) => row.kind === "user" && row.text.trim() !== "" ? [row.text] : []))
+/** The main line's messages, oldest first and the queued ones last, for the composer's ↑ recall. */
+const sentMessages = computed(() => [
+  ...(view.value?.rows ?? []).flatMap((row) => row.kind === "user" ? [row.text] : []),
+  ...(view.value?.queued ?? []).map((input) => input.text),
+].filter((text) => text.trim() !== ""))
 /** The App Server serves the permission methods on the connection; a Session may also list them. */
 const permissionControl = computed(() => {
   const session = view.value

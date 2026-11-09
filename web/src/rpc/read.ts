@@ -86,6 +86,7 @@ export function readSummaries(value: unknown): SessionSummary[] {
       ...(source.titleRevision === undefined ? {} : { titleRevision: num(source, "titleRevision", at) }),
       updatedAt: num(source, "updatedAt", at),
       ...(source.archived === undefined ? {} : { archived: bool(source, "archived", at) }),
+      ...(typeof source.parentSessionId === "string" ? { parentSessionId: source.parentSessionId } : {}),
     }
   })
 }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, type Component } from "vue"
 import { useI18n } from "vue-i18n"
-import { Activity, AppWindow, FileDiff, Files, GitBranch, List, ListChecks, SquareTerminal } from "lucide-vue-next"
+import { Activity, AppWindow, FileDiff, Files, GitBranch, List, ListChecks, SquareTerminal, Users } from "lucide-vue-next"
 import { withKeys, type ShortcutCommand } from "../../../app/shortcuts"
 import { MAIN_BRANCH } from "../../../rpc/protocol"
 import { useChatStore } from "../../../stores/chat"
@@ -9,6 +9,7 @@ import { useConnectionStore } from "../../../stores/connection"
 import { useFilesStore } from "../../../stores/files"
 import { usePanesStore, type DetailView } from "../../../stores/panes"
 import { useSessionsStore } from "../../../stores/sessions"
+import { useUiStore } from "../../../stores/ui"
 import { changedFileCount } from "../../panes/changes/session-changes"
 
 type PaneButton = { view: DetailView; icon: Component; label: string; command?: ShortcutCommand; count?: number; tone?: "primary" | "warning" }
@@ -24,6 +25,7 @@ const connection = useConnectionStore()
 const files = useFilesStore()
 const panes = usePanesStore()
 const sessions = useSessionsStore()
+const ui = useUiStore()
 
 const view = computed(() => chat.views[props.sessionId])
 const layout = computed(() => panes.of(props.sessionId))
@@ -33,6 +35,8 @@ const buttons = computed<PaneButton[]>(() => {
   const changed = changedFileCount(view.value?.rows ?? [], sessions.byId.get(props.sessionId)?.cwd)
   const hasPlan = view.value?.planning === true || (view.value?.todos.length ?? 0) > 0 || view.value?.rows.some((row) => row.kind === "tool" && row.name === "exit_plan_mode") === true
   const tasks = view.value?.backgroundTasks.filter((task) => !task.finish).length ?? 0
+  const members = view.value?.members ?? []
+  const working = members.filter((member) => !member.finish).length
   const lines = view.value?.lines.filter((line) => line.id !== MAIN_BRANCH) ?? []
   const linesBusy = lines.some((line) => line.state.kind === "working" || view.value?.approvals.some((request) => request.branchId === line.id))
   return [
@@ -43,12 +47,14 @@ const buttons = computed<PaneButton[]>(() => {
     ...(connection.supports("terminal.open") ? [{ view: "terminal" as const, icon: SquareTerminal, label: t("terminal.title"), command: "toggleTerminal" as const }] : []),
     ...(hasPlan || shown("plan") ? [{ view: "plan" as const, icon: ListChecks, label: t("plan.panel") }] : []),
     { view: "tasks", icon: Activity, label: t("tasks.title"), ...(tasks > 0 ? { count: tasks, tone: "primary" as const } : {}) },
+    ...(members.length > 0 || ui.coordinatorSessions.includes(props.sessionId) || shown("members") ? [{ view: "members" as const, icon: Users, label: t("members.title"), ...(working > 0 ? { count: working, tone: "primary" as const } : {}) }] : []),
     ...(connection.supports("session.branch_end") ? [{ view: "lines" as const, icon: GitBranch, label: t("lines.title"), ...(lines.length > 0 ? { count: lines.length, ...(linesBusy ? { tone: "warning" as const } : {}) } : {}) }] : []),
   ]
 })
 
 function toggle(button: PaneButton): void {
   if (button.view === "lines") panes.toggleLines(props.sessionId)
+  else if (button.view === "members" && !shown("members")) panes.openMember(props.sessionId, undefined)
   else panes.toggle(props.sessionId, button.view)
 }
 </script>

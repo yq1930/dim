@@ -93,6 +93,17 @@ function branchSource(value: unknown, at: string): BranchSource {
   return fail(at, "a branch source")
 }
 
+/** The member Session a request addresses, when it goes to one already on the team rather than a new one. */
+function requestedSession(value: unknown, at: string): string | undefined {
+  const target = obj(value, at)
+  switch (str(target, "kind", at)) {
+    case "agent":
+    case "temporary": return undefined
+    case "member": return str(target, "session_id", at)
+    default: return fail(`${at}.kind`, "a member target")
+  }
+}
+
 function branchCut(value: unknown, at: string): number | undefined {
   const source = obj(value, at)
   switch (str(source, "kind", at)) {
@@ -166,6 +177,29 @@ function content(type: string, name: string, data: Json, at: string): EventConte
       }
     case "turn/start":
       return { kind: "turn-start", turnId: str(data, "turn_id", at) }
+    case "collaboration/request": {
+      const sessionId = requestedSession(data.target, `${at}.target`)
+      return { kind: "member-request", prompt: str(data, "prompt", at), ...(sessionId === undefined ? {} : { sessionId }) }
+    }
+    case "collaboration/delivered": {
+      const opEventId = str(data, "op_event_id", at)
+      const status = str(data, "status", at)
+      if (status === "ok") return { kind: "member-delivered", opEventId, sessionId: str(data, "session_id", at) }
+      if (status === "error") return { kind: "member-delivered", opEventId, error: str(data, "error", at) }
+      return fail(`${at}.status`, "a delivery status")
+    }
+    case "collaboration/result": {
+      const status = str(data, "status", at)
+      if (status !== "completed" && status !== "failed" && status !== "cancelled") fail(`${at}.status`, "a member outcome")
+      return {
+        kind: "member-result",
+        requestEventId: str(data, "request_event_id", at),
+        sessionId: str(data, "session_id", at),
+        text: str(data, "text", at),
+        status,
+        ...(status === "completed" ? {} : { reason: str(data, "reason", at) }),
+      }
+    }
     case "turn/end": {
       const status = str(data, "status", at)
       if (status !== "completed" && status !== "failed" && status !== "cancelled") fail(`${at}.status`, "a turn outcome")

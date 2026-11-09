@@ -258,6 +258,7 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
       @commit="commit"
       @branch="branch"
       @open-line="openLine"
+      @open-member="(requestId) => panes.openMember(sessionId, requestId)"
       @quote="composer?.quote($event)"
     />
     <div v-if="view.running && view.queued.length" class="composer-panel">

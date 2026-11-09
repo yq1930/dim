@@ -36,6 +36,8 @@ export type SessionSummary = {
   /** Unix milliseconds of the last main-branch event. */
   updatedAt: number
   archived?: boolean
+  /** The leader of a Collaboration member, which Dim created for its own work. */
+  parentSessionId?: string
 }
 
 export type CreateResult = { sessionId: string; model: ModelId; sequence: number }
@@ -139,6 +141,8 @@ export type QueuedInput = { id: string; text: string; skills?: string[]; user: U
 /** `session.input.withdraw`: the queued input was removed, or the server had already adopted it. */
 export type WithdrawResult = { status: "deleted" } | { status: "notHeld" }
 
+export type MemberOutcome = "completed" | "failed" | "cancelled"
+
 /** The Timeline facts the projection folds; every other kind is `other`. */
 export type EventContent =
   | { kind: "input"; text?: string; user?: UserInput; skills?: string[]; blocks: RawBlock[] }
@@ -165,6 +169,11 @@ export type EventContent =
   | { kind: "context-configured"; model: ModelId; reasoningEffort?: string }
   | { kind: "exec-started"; taskId: string; callId: string; description: string }
   | { kind: "exec-ended"; taskId: string; status: ExecStatus; result: ToolResult }
+  /** Work handed to a team member; `sessionId` when it goes to a member already on the team. */
+  | { kind: "member-request"; prompt: string; sessionId?: string }
+  /** The outcome of a `collaboration/*` operation, by the operation's event id: the member's Session, or why not. */
+  | { kind: "member-delivered"; opEventId: string; sessionId?: string; error?: string }
+  | { kind: "member-result"; requestEventId: string; sessionId: string; text: string; status: MemberOutcome; reason?: string }
   | { kind: "other" }
 
 export type SessionEvent = {

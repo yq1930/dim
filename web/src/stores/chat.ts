@@ -1,6 +1,6 @@
 import { shallowReactive } from "vue"
 import { defineStore } from "pinia"
-import { Projection, type BackgroundTask, type TimelineRow } from "../projection"
+import { Projection, type BackgroundTask, type MemberTask, type TimelineRow } from "../projection"
 import { Lines, type LineView } from "../lines"
 import { ConnectionLost, RpcError } from "../rpc/client"
 import type { Goal } from "../goal"
@@ -17,6 +17,7 @@ import { useUiStore } from "./ui"
 export type PermissionOutcome = "updated" | "unchanged" | "conflict"
 
 export type SessionTask = BackgroundTask & { branchId: string }
+export type SessionMember = MemberTask & { branchId: string }
 
 /** One line's transcript and history state. */
 export type BranchView = {
@@ -54,6 +55,8 @@ export type SessionView = {
   /** The main line's task list. */
   todos: TodoItem[]
   backgroundTasks: SessionTask[]
+  /** Work every line handed to team members, unfinished first. */
+  members: SessionMember[]
   /** The method names this Session serves (`session.methods`); empty when the daemon offers no table. */
   methods: readonly string[]
   /** The policy of `main`: read after history loads, then kept current by `permission/changed`. */
@@ -158,6 +161,7 @@ export const useChatStore = defineStore("chat", () => {
       planning: false,
       todos: [],
       backgroundTasks: [],
+      members: [],
       methods: [],
       permission: undefined,
       goal: undefined,
@@ -509,6 +513,10 @@ export const useChatStore = defineStore("chat", () => {
       ...[...channel.main.projection.backgroundTasks.values()].map((task) => ({ ...task, branchId: MAIN_BRANCH })),
       ...[...channel.branches].flatMap(([branchId, branch]) => [...branch.projection.backgroundTasks.values()].map((task) => ({ ...task, branchId }))),
     ].sort((left, right) => Number(!!left.finish) - Number(!!right.finish) || right.startedAt - left.startedAt || left.branchId.localeCompare(right.branchId) || left.taskId.localeCompare(right.taskId))
+    view.members = [
+      ...[...channel.main.projection.members.values()].map((member) => ({ ...member, branchId: MAIN_BRANCH })),
+      ...[...channel.branches].flatMap(([branchId, branch]) => [...branch.projection.members.values()].map((member) => ({ ...member, branchId }))),
+    ].sort((left, right) => Number(!!left.finish) - Number(!!right.finish) || right.startedAt - left.startedAt)
     const branches: Record<string, BranchView> = {}
     for (const [id, branch] of channel.branches) {
       const state = stateOf(channel, id)

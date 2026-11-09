@@ -2,10 +2,11 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import { useI18n } from "vue-i18n"
-import { Check, ChevronDown, Folder, FolderOpen, GitFork } from "lucide-vue-next"
+import { Check, ChevronDown, Folder, FolderOpen, GitFork, Network } from "lucide-vue-next"
 import { canChooseWorkspace, chooseWorkspace } from "../../desktop"
 import BrandMark from "../../components/BrandMark.vue"
 import ComposerPanel from "./composer/ComposerPanel.vue"
+import { COORDINATOR_PROMPT, COORDINATOR_TOOLS } from "./coordinator"
 import { readSkills } from "../../rpc/general-settings"
 import { MAIN_BRANCH, type DraftAttachments, type ModelId, type PermissionPreset } from "../../rpc/protocol"
 import { useChatStore } from "../../stores/chat"
@@ -53,6 +54,8 @@ const cwd = ref(typeof route.query.cwd === "string" ? route.query.cwd : "")
 const inRepository = computed(() => git.places[cwd.value]?.root !== undefined)
 const worktree = ref(false)
 const branch = ref("")
+/** Start a coordinator, which delegates every piece of work to team members. */
+const coordinator = ref(false)
 /** The branch a new worktree gets when none is typed. */
 const suggestedBranch = (() => {
   const now = new Date()
@@ -131,7 +134,8 @@ async function send(text: string, attachments: DraftAttachments): Promise<void> 
   // A worktree Session is listed under its main repository, which replaces a typed alias of it.
   if (directory !== chosen) sessions.rememberWorkspace(git.places[chosen]?.main ?? chosen, chosen)
   const selected = picked.value ?? (reasoningEffort.value === undefined ? undefined : model.value)
-  const sessionId = await sessions.create(directory, selected, reasoningEffort.value)
+  const sessionId = await sessions.create(directory, selected, reasoningEffort.value, coordinator.value ? { tools: COORDINATOR_TOOLS, appendSystemPrompt: COORDINATOR_PROMPT } : undefined)
+  if (coordinator.value) ui.markCoordinator(sessionId)
   chat.open(sessionId)
   // The preset first: plan mode keeps the preset it replaces to restore on approval.
   if (permissionControl.value !== undefined) await chat.setPermission(sessionId, preset.value)
@@ -183,6 +187,9 @@ async function send(text: string, attachments: DraftAttachments): Promise<void> 
             </div>
           </div>
         </details>
+        <button type="button" class="ui-button" data-variant="ghost" data-size="xs" :aria-pressed="coordinator" v-tooltip="t('coordinator.hint')" @click="coordinator = !coordinator">
+          <Network aria-hidden="true" /><span>{{ t("coordinator.label") }}</span>
+        </button>
         <template v-if="inRepository">
           <button type="button" class="ui-button" data-variant="ghost" data-size="xs" :aria-pressed="worktree" v-tooltip="t('git.newWorktreeHint')" @click="worktree = !worktree">
             <GitFork aria-hidden="true" /><span>{{ t("git.newWorktree") }}</span>

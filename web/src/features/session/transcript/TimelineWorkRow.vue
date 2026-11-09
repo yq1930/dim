@@ -25,6 +25,7 @@ const CATEGORY_KEYS = {
   search: "work.search",
   web_search: "work.webSearch",
   web_fetch: "work.webFetch",
+  delegate: "work.delegate",
   unknown: "work.unknown",
 } as const satisfies Record<ToolCategory, TranslationKey>
 const CATEGORY_ORDER = Object.keys(CATEGORY_KEYS) as ToolCategory[]

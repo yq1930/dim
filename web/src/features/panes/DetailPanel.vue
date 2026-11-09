@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, provide, useId, type Component } from "vue"
 import { useI18n } from "vue-i18n"
-import { Activity, AppWindow, ChevronDown, FileDiff, Files, GitBranch, GitPullRequest, List, ListChecks, Maximize2, Minimize2, SquareTerminal, X } from "lucide-vue-next"
+import { Activity, AppWindow, ChevronDown, FileDiff, Files, GitBranch, GitPullRequest, List, ListChecks, Maximize2, Minimize2, SquareTerminal, Users, X } from "lucide-vue-next"
 import RowActionMenu from "../../components/RowActionMenu.vue"
 import LinesPanel from "./lines/LinesPanel.vue"
+import MembersPanel from "./members/MembersPanel.vue"
 import PlanPanel from "./plan/PlanPanel.vue"
 import SessionChangesPanel from "./changes/SessionChangesPanel.vue"
 import TasksPanel from "./tasks/TasksPanel.vue"
@@ -18,6 +19,7 @@ import { useGitStore } from "../../stores/git"
 import { useSessionsStore } from "../../stores/sessions"
 import { useTerminalsStore } from "../../stores/terminals"
 import { usePanesStore, type DetailView } from "../../stores/panes"
+import { useUiStore } from "../../stores/ui"
 import { shortcutText, withKeys, type ShortcutCommand } from "../../app/shortcuts"
 
 /** xterm.js loads only once a terminal is shown, and the file view's highlighter once a file is. */
@@ -42,6 +44,7 @@ const sessions = useSessionsStore()
 const terminals = useTerminalsStore()
 const git = useGitStore()
 const panes = usePanesStore()
+const ui = useUiStore()
 const id = useId()
 provide(LINK_CONTEXT, computed(() => {
   const cwd = sessions.byId.get(props.sessionId)?.cwd
@@ -54,6 +57,8 @@ const tabs = computed<Tab[]>(() => {
   const changed = changedFileCount(view?.rows ?? [], cwd)
   const todos = view?.todos ?? []
   const running = view?.backgroundTasks.filter((task) => !task.finish).length ?? 0
+  const members = view?.members ?? []
+  const working = members.filter((member) => !member.finish).length
   const lines = view?.lines.filter((line) => line.id !== MAIN_BRANCH) ?? []
   const linesBusy = lines.some((line) => line.state.kind === "working" || view?.approvals.some((request) => request.branchId === line.id))
   return [
@@ -63,6 +68,7 @@ const tabs = computed<Tab[]>(() => {
     { view: "preview", icon: AppWindow, label: t("preview.title"), command: "togglePreview" },
     { view: "plan", icon: ListChecks, label: t("plan.panel"), ...(todos.length > 0 ? { badge: `${todos.filter((todo) => todo.status === "completed").length}/${todos.length}` } : {}) },
     { view: "tasks", icon: Activity, label: t("tasks.title"), ...(running > 0 ? { badge: running, tone: "primary" as const } : {}) },
+    ...(members.length > 0 || ui.coordinatorSessions.includes(props.sessionId) ? [{ view: "members" as const, icon: Users, label: t("members.title"), ...(working > 0 ? { badge: working, tone: "primary" as const } : {}) }] : []),
     ...(terminals.available ? [{ view: "terminal" as const, icon: SquareTerminal, label: t("terminal.title"), command: "toggleTerminal" as const }] : []),
     ...(git.available && cwd !== undefined && git.places[cwd]?.root !== undefined ? [{ view: "git" as const, icon: GitPullRequest, label: t("git.tab") }] : []),
     ...(connection.supports("session.branch_end") ? [{ view: "lines" as const, icon: GitBranch, label: t("lines.title"), ...(lines.length > 0 ? { badge: lines.length, ...(linesBusy ? { tone: "warning" as const } : {}) } : {}) }] : []),
@@ -109,6 +115,7 @@ const shown = computed(() => tabs.value.find((tab) => tab.view === current.value
       <PreviewPanel v-else-if="current === 'preview'" :session-id="sessionId" />
       <PlanPanel v-else-if="current === 'plan'" :session-id="sessionId" />
       <TasksPanel v-else-if="current === 'tasks'" :session-id="sessionId" />
+      <MembersPanel v-else-if="current === 'members'" :session-id="sessionId" />
       <TerminalPanel v-else-if="current === 'terminal'" :session-id="sessionId" />
       <GitPanel v-else-if="current === 'git'" :session-id="sessionId" />
       <LinesPanel v-else :session-id="sessionId" />

@@ -13,13 +13,24 @@
  */
 import { GoalFold, type Goal } from "./goal"
 import { PlanningFold } from "./planning"
-import type { AskQuestion, ExecStatus, ModelId, ModelProgress, QueuedInput, SessionEvent, ToolResult } from "./rpc/protocol"
+import type { AskQuestion, ExecStatus, MemberOutcome, ModelId, ModelProgress, QueuedInput, SessionEvent, ToolResult } from "./rpc/protocol"
 
 export type BackgroundTask = {
   taskId: string
   label: string
   startedAt: number
   finish?: { at: number; status: ExecStatus; result: ToolResult }
+}
+
+/** Work this line handed to a team member (`collaboration/request`), and how it ended. */
+export type MemberTask = {
+  /** The request event's id. */
+  requestId: string
+  /** The member's own Session, once delivery names it. */
+  sessionId?: string
+  prompt: string
+  startedAt: number
+  finish?: { at: number; status: MemberOutcome; text: string }
 }
 
 export type TimelineRow =
@@ -37,6 +48,8 @@ export type TimelineRow =
   /** A turn that completed, or that wrote files: how long it took and how many files it wrote. */
   | { kind: "turn-summary"; key: string; turnId: string; outcome: "completed" | "failed" | "cancelled"; files: number; durationMs?: number }
   | { kind: "files-rewound"; key: string; count: number }
+  /** A member's result came back: the request it answers, by the task's first line. */
+  | { kind: "member-result"; key: string; requestId: string; task: string; status: MemberOutcome }
 
 type UserRow = Extract<TimelineRow, { kind: "user" }>
 
@@ -54,6 +67,8 @@ type Stream = {
 export class Projection {
   rows: TimelineRow[] = []
   readonly backgroundTasks = new Map<string, BackgroundTask>()
+  /** Work handed to team members, by request event id. */
+  readonly members = new Map<string, MemberTask>()
   /** Highest event sequence applied. */
   cursor = 0
   /** The newest turn end on this line, the cut `/branch` and `+` use. */
@@ -134,6 +149,25 @@ export class Projection {
       case "exec-ended": {
         const task = this.backgroundTasks.get(content.taskId)
         if (task) this.backgroundTasks.set(content.taskId, { ...task, finish: { at: event.createAt, status: content.status, result: content.result } })
+        break
+      }
+      case "member-request":
+        this.members.set(event.id, { requestId: event.id, prompt: content.prompt, startedAt: event.createAt, ...(content.sessionId === undefined ? {} : { sessionId: content.sessionId }) })
+        break
+      case "member-delivered": {
+        // Deliveries of a cancel, close or message name their own operation, not a request.
+        const task = this.members.get(content.opEventId)
+        if (task === undefined || task.finish !== undefined) break
+        this.members.set(content.opEventId, content.error === undefined
+          ? { ...task, sessionId: content.sessionId }
+          : { ...task, finish: { at: event.createAt, status: "failed", text: content.error } })
+        break
+      }
+      case "member-result": {
+        const task = this.members.get(content.requestEventId)
+        const text = content.reason === undefined ? content.text : `${content.reason}\n${content.text}`.trim()
+        if (task !== undefined) this.members.set(content.requestEventId, { ...task, sessionId: content.sessionId, finish: { at: event.createAt, status: content.status, text } })
+        this.push({ kind: "member-result", key: `member-result-${event.sequence}`, requestId: content.requestEventId, task: firstLine(task?.prompt ?? ""), status: content.status })
         break
       }
       case "input":

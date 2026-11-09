@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type ComponentPublicInstance } from "vue"
 import { useI18n } from "vue-i18n"
 import { useVirtualizer } from "@tanstack/vue-virtual"
-import { ChevronDown, CircleCheck, FileDiff, GitBranch, LoaderCircle } from "lucide-vue-next"
+import { ChevronDown, CircleCheck, FileDiff, GitBranch, LoaderCircle, Users } from "lucide-vue-next"
 import type { TimelineRow } from "../../../projection"
 import ChatMarkdown from "../../../components/ChatMarkdown.vue"
 import TimelineUserMessage from "./TimelineUserMessage.vue"
@@ -35,7 +35,7 @@ const props = defineProps<{
   variant?: "main" | "panel"
   sessionId?: string
 }>()
-const emit = defineEmits<{ quote: [text: string]; branch: [text: string, cut: number]; openLine: [branchId: string]; changes: [turnId: string]; review: []; commit: [] }>()
+const emit = defineEmits<{ quote: [text: string]; branch: [text: string, cut: number]; openLine: [branchId: string]; openMember: [requestId: string]; changes: [turnId: string]; review: []; commit: [] }>()
 const { t } = useI18n()
 const viewport = ref<HTMLElement>()
 const list = ref<HTMLElement>()
@@ -217,6 +217,11 @@ onMounted(() => void toEnd())
               <code>{{ shortId(entry.row.branchId) }}</code>
               <span v-if="entry.row.failed" class="timeline-line-failed">{{ t("lines.state.creationFailed") }}</span>
               <span v-else-if="entry.row.before" class="timeline-line-cut">{{ t("timeline.beforeMessage", { message: entry.row.before }) }}</span>
+            </button>
+            <button v-else-if="entry.row.kind === 'member-result'" type="button" class="timeline-member-result" :data-status="entry.row.status" @click="emit('openMember', entry.row.requestId)">
+              <Users :size="14" aria-hidden="true" />
+              <span class="timeline-member-status">{{ t(`members.status.${entry.row.status}`) }}</span>
+              <span class="timeline-member-task">{{ entry.row.task || t("members.member") }}</span>
             </button>
             <p v-else-if="entry.row.kind === 'line-ended'" class="timeline-notice">
               {{ entry.row.issuer === "itself" ? t("timeline.lineEndedItself") : entry.row.issuer === "operation" ? t("timeline.lineEndedByOperation") : t("timeline.lineEndedWith", { id: entry.row.ancestor ?? "" }) }}

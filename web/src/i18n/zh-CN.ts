@@ -1,6 +1,19 @@
 import type { Messages } from "./en"
 
 const zhCN: Messages = {
+  "coordinator.label": "调度",
+  "coordinator.hint": "只负责和你对话、派活，具体工作交给成员",
+  "members.title": "成员",
+  "members.member": "成员",
+  "members.all": "全部成员",
+  "members.empty": "还没有派给成员的工作",
+  "members.noActivity": "暂无动态",
+  "members.starting": "正在启动成员…",
+  "members.stop": "停止",
+  "members.status.running": "进行中",
+  "members.status.completed": "已完成",
+  "members.status.failed": "失败",
+  "members.status.cancelled": "已取消",
   "tasks.title": "后台任务",
   "tasks.main": "主会话",
   "tasks.output": "命令输出",
@@ -673,6 +686,7 @@ const zhCN: Messages = {
   "work.thinking": "正在思考",
   "work.thinkingSteps": "思考{count}轮",
   "work.thoughtFor": "思考了 {duration}",
+  "work.delegate": "委派{count}次",
   "work.unknown": "其他{count}次",
   "work.webFetch": "抓取{count}次",
   "work.webSearch": "网络搜{count}次",

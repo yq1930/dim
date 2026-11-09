@@ -53,7 +53,8 @@ export const useSessionsStore = defineStore("sessions", () => {
     const connection = useConnectionStore()
     refreshing ??= connection.client.call("session.summaries", connection.supports("session.archive") ? { archived: false } : {}, readSummaries)
       .then((list) => {
-        summaries.value = list.map((session) => {
+        // A team member is listed under its leader's Members view, not among the user's Sessions.
+        summaries.value = list.filter((session) => session.parentSessionId === undefined).map((session) => {
           const current = byId.value.get(session.sessionId)
           return current && (current.titleRevision ?? -1) > (session.titleRevision ?? -1)
             ? { ...session, title: current.title, titleRevision: current.titleRevision } : session
@@ -69,11 +70,18 @@ export const useSessionsStore = defineStore("sessions", () => {
     return refreshing
   }
 
-  /** Creates a session in `cwd` (an absolute directory); `model` overrides the directory's default. */
-  async function create(cwd: string, model: ModelId | undefined, reasoningEffort?: string): Promise<string> {
+  /**
+   * Creates a session in `cwd` (an absolute directory); `model` overrides the directory's default.
+   * `role` fixes the tools it mounts and adds to its system prompt, as a coordinator's.
+   */
+  async function create(cwd: string, model: ModelId | undefined, reasoningEffort?: string, role?: { tools: readonly string[]; appendSystemPrompt: string }): Promise<string> {
     const params: Record<string, unknown> = { cwd }
     if (model !== undefined) params.model = { provider: model.providerId, modelId: model.modelId }
     if (reasoningEffort !== undefined) params.modelPreferences = { reasoningEffort }
+    if (role !== undefined) {
+      params.tools = role.tools
+      params.appendSystemPrompt = role.appendSystemPrompt
+    }
     const created = await useConnectionStore().client.call("session.create", params, readCreate)
     void refresh().then(() => rememberWorkspace(byId.value.get(created.sessionId)?.cwd ?? cwd, cwd))
     return created.sessionId

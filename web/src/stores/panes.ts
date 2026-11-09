@@ -3,8 +3,8 @@ import { defineStore } from "pinia"
 import { TRANSCRIPT_VIEWS, usePreferencesStore, type TranscriptView } from "./preferences"
 
 /** What the right panel shows for a Session. */
-export type DetailView = "details" | "changes" | "files" | "preview" | "plan" | "tasks" | "terminal" | "git" | "lines"
-const DETAIL_VIEWS: readonly DetailView[] = ["details", "changes", "files", "preview", "plan", "tasks", "terminal", "git", "lines"]
+export type DetailView = "details" | "changes" | "files" | "preview" | "plan" | "tasks" | "members" | "terminal" | "git" | "lines"
+const DETAIL_VIEWS: readonly DetailView[] = ["details", "changes", "files", "preview", "plan", "tasks", "members", "terminal", "git", "lines"]
 
 /**
  * A Session's panes, as Claude Code remembers each session's tiles: whether the
@@ -86,6 +86,8 @@ export const usePanesStore = defineStore("panes", () => {
   /** The lines open as tabs in each Session's Lines view, and the one shown (none: the lines tree). */
   const lineTabs = ref<Record<string, string[]>>({})
   const activeLine = ref<Record<string, string | undefined>>({})
+  /** The member each Session's Members view shows, by its request event id (none: the list). */
+  const activeMember = ref<Record<string, string | undefined>>({})
   /** Whether the operator last pressed or focused the right panel rather than a transcript. */
   const focused = ref(false)
   /** A command for a view, waiting until the view shows to take it. */
@@ -160,6 +162,12 @@ export const usePanesStore = defineStore("panes", () => {
     show(sessionId, "lines")
   }
 
+  /** Shows the Members view at one member's work, or at the list. */
+  function openMember(sessionId: string, requestId: string | undefined): void {
+    activeMember.value = { ...activeMember.value, [sessionId]: requestId }
+    show(sessionId, "members")
+  }
+
   function closeLineTab(sessionId: string, branchId: string): void {
     const tabs = (lineTabs.value[sessionId] ?? []).filter((id) => id !== branchId)
     lineTabs.value = { ...lineTabs.value, [sessionId]: tabs }
@@ -208,8 +216,8 @@ export const usePanesStore = defineStore("panes", () => {
   }
 
   return {
-    layouts, transcripts, lineTabs, activeLine, focused, request,
-    of, show, send, take, toggle, close, toggleExpanded, openLines, toggleLines, openLine, closeLineTab, reset, setFiles, setPreview,
+    layouts, transcripts, lineTabs, activeLine, activeMember, focused, request,
+    of, show, send, take, toggle, close, toggleExpanded, openLines, toggleLines, openLine, openMember, closeLineTab, reset, setFiles, setPreview,
     transcriptOf, setTranscript, cycleTranscript, makeTranscriptDefault,
   }
 })

@@ -149,6 +149,7 @@ function noModel(): void {
         @changes="changesDialog?.open($event)"
         @branch="branchHere"
         @open-line="openLine"
+        @open-member="(requestId) => panes.openMember(sessionId, requestId)"
         @quote="quote"
       />
       <div v-if="approval" class="line-approval">

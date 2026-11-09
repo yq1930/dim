@@ -9,7 +9,7 @@ import type { ToolResult } from "../../../rpc/protocol"
 import { resolveToolDisplay } from "./tool-display"
 
 /** What a work group's summary counts a tool call as. */
-export type ToolCategory = "read" | "edit" | "command" | "search" | "web_search" | "web_fetch" | "unknown"
+export type ToolCategory = "read" | "edit" | "command" | "search" | "web_search" | "web_fetch" | "delegate" | "unknown"
 
 export type WorkItem =
   | { id: string; kind: "thinking"; content: string; running: boolean; durationMs?: number }
@@ -64,6 +64,7 @@ export function groupRows(rows: readonly TimelineRow[], flat = false): DisplayRo
 }
 
 function toolCategory(name: string, input: Record<string, unknown>): ToolCategory {
+  if (name === "agent") return "delegate"
   const { renderer, labelKey } = resolveToolDisplay(name, input)
   switch (renderer) {
     case "command": return "command"
@@ -79,9 +80,12 @@ function toolPrimary(category: ToolCategory, input: Record<string, unknown>): st
     : category === "web_search" ? ["query"]
       : category === "web_fetch" ? ["url"]
         : category === "search" ? ["pattern", "path"]
-          : ["path"]
+          : category === "delegate" ? ["prompt", "content", "action"]
+            : ["path"]
   const value = keys.map((key) => input[key]).find((candidate): candidate is string => typeof candidate === "string" && candidate.trim() !== "")
   if (value === undefined) return undefined
-  const shown = category === "read" || category === "edit" ? value.replaceAll("\\", "/").split("/").at(-1) ?? value : value
+  const shown = category === "read" || category === "edit" ? value.replaceAll("\\", "/").split("/").at(-1) ?? value
+    : category === "delegate" ? value.split("\n")[0]!.trim()
+      : value
   return shown.length <= 80 ? shown : `${shown.slice(0, 79)}…`
 }

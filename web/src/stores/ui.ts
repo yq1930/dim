@@ -61,6 +61,8 @@ type Persisted = {
   detailWidth: number
   /** Sessions shown first in the sidebar, in the order they were pinned. */
   pinnedSessions: string[]
+  /** Sessions started as coordinators (`features/session/coordinator.ts`). */
+  coordinatorSessions: string[]
   splitSessionId: string | undefined
   sidebarGroupBy: SidebarGroupBy
   sidebarSortBy: SidebarSortBy
@@ -68,7 +70,7 @@ type Persisted = {
 
 /** localStorage is outside the app: read it once, keeping only well-formed fields. */
 function readPersisted(): Persisted {
-  const fallback: Persisted = { sidebarCollapsed: false, collapsedWorkspaces: [], lastSessionId: undefined, detailWidth: 420, pinnedSessions: [], splitSessionId: undefined, sidebarGroupBy: "project", sidebarSortBy: "recency" }
+  const fallback: Persisted = { sidebarCollapsed: false, collapsedWorkspaces: [], lastSessionId: undefined, detailWidth: 420, pinnedSessions: [], coordinatorSessions: [], splitSessionId: undefined, sidebarGroupBy: "project", sidebarSortBy: "recency" }
   try {
     const value: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")
     if (value === null || typeof value !== "object") return fallback
@@ -82,6 +84,7 @@ function readPersisted(): Persisted {
       lastSessionId: typeof stored.lastSessionId === "string" ? stored.lastSessionId : undefined,
       detailWidth: width,
       pinnedSessions: Array.isArray(stored.pinnedSessions) ? stored.pinnedSessions.filter((item): item is string => typeof item === "string") : [],
+      coordinatorSessions: Array.isArray(stored.coordinatorSessions) ? stored.coordinatorSessions.filter((item): item is string => typeof item === "string") : [],
       splitSessionId: typeof stored.splitSessionId === "string" ? stored.splitSessionId : undefined,
       sidebarGroupBy: GROUP_BY.find((value) => value === stored.sidebarGroupBy) ?? fallback.sidebarGroupBy,
       sidebarSortBy: SORT_BY.find((value) => value === stored.sidebarSortBy) ?? fallback.sidebarSortBy,
@@ -102,6 +105,7 @@ export const useUiStore = defineStore("ui", () => {
   const shellMode = computed<ShellMode>(() => shellWidth.value < 720 ? "compact" : shellWidth.value < 960 ? "regular" : "wide")
   const detailWidth = ref(persisted.detailWidth)
   const pinnedSessions = ref(persisted.pinnedSessions)
+  const coordinatorSessions = ref(persisted.coordinatorSessions)
   const sidebarGroupBy = ref(persisted.sidebarGroupBy)
   const sidebarSortBy = ref(persisted.sidebarSortBy)
   const newLine = ref<NewLineRequest | undefined>()
@@ -123,7 +127,7 @@ export const useUiStore = defineStore("ui", () => {
   /** The pane the operator last pressed or focused; it takes the keyboard's approvals. */
   const activePane = ref<Pane>("main")
 
-  watch([sidebarCollapsed, collapsedWorkspaces, lastSessionId, detailWidth, pinnedSessions, splitSessionId, sidebarGroupBy, sidebarSortBy], () => {
+  watch([sidebarCollapsed, collapsedWorkspaces, lastSessionId, detailWidth, pinnedSessions, coordinatorSessions, splitSessionId, sidebarGroupBy, sidebarSortBy], () => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         sidebarCollapsed: sidebarCollapsed.value,
@@ -131,6 +135,7 @@ export const useUiStore = defineStore("ui", () => {
         lastSessionId: lastSessionId.value,
         detailWidth: detailWidth.value,
         pinnedSessions: pinnedSessions.value,
+        coordinatorSessions: coordinatorSessions.value,
         splitSessionId: splitSessionId.value,
         sidebarGroupBy: sidebarGroupBy.value,
         sidebarSortBy: sidebarSortBy.value,
@@ -154,6 +159,12 @@ export const useUiStore = defineStore("ui", () => {
     pinnedSessions.value = pinnedSessions.value.includes(sessionId)
       ? pinnedSessions.value.filter((id) => id !== sessionId)
       : [...pinnedSessions.value, sessionId]
+  }
+
+  /** A coordinator Session is marked as one and pinned, so it stays at hand above the rest. */
+  function markCoordinator(sessionId: string): void {
+    if (!coordinatorSessions.value.includes(sessionId)) coordinatorSessions.value = [...coordinatorSessions.value, sessionId]
+    if (!pinnedSessions.value.includes(sessionId)) pinnedSessions.value = [...pinnedSessions.value, sessionId]
   }
 
   function unpin(sessionId: string): void {
@@ -258,7 +269,7 @@ export const useUiStore = defineStore("ui", () => {
 
   return {
     sidebarCollapsed, lastSessionId, drawerOpen, shellWidth, shellMode, setShellWidth,
-    isWorkspaceExpanded, toggleWorkspace, pinnedSessions, togglePinned, unpin,
+    isWorkspaceExpanded, toggleWorkspace, pinnedSessions, togglePinned, unpin, coordinatorSessions, markCoordinator,
     detailWidth, newLine, endingLine, setDetailWidth,
     sidebarGroupBy, sidebarSortBy,
     viewingSessionId, unread, viewSession, markUnread, setUnread, splitSessionId, splitAvailable, activePane, openSplit, closeSplit,

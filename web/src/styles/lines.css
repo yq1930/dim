@@ -21,3 +21,9 @@
   .app-shell:not([data-mode="compact"]) .detail-region { position: fixed; inset: 0; z-index: var(--z-dialog); width: 100%; border-left: 0; }
 }
 .timeline-line-notice > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.timeline-member-result { display: flex; width: 100%; min-width: 0; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-2); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--muted-foreground); font: inherit; font-size: var(--text-sm); text-align: left; cursor: pointer; }
+.timeline-member-result:hover { background: var(--hover); color: var(--foreground); }
+.timeline-member-result > svg { flex: none; }
+.timeline-member-result[data-status="failed"] > .timeline-member-status { color: var(--danger); }
+.timeline-member-status { flex: none; }
+.timeline-member-task { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

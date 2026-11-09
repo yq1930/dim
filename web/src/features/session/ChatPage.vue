@@ -247,6 +247,7 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
       ref="timeline"
       :rows="view.rows"
       :running="view.running"
+      :run-started-at="view.turnStartedAt"
       :session-id="sessionId"
       :quotable="!approval && questions.length === 0 && reviews.length === 0"
       :branchable="branchable && !approval && questions.length === 0 && reviews.length === 0"

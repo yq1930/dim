@@ -74,6 +74,8 @@ pub struct Projection {
     background: HashMap<TaskTarget, String>,
     /// The newest turn end: its sequence and how the turn ended.
     ended: Option<(u64, TurnEnd)>,
+    /// When the turn under way started (`turn/start`), until its end.
+    turn_started: Option<u64>,
     presented_failure: Option<String>,
     /// The call row carrying each delegation's card, by request event id.
     cards: HashMap<String, usize>,
@@ -607,8 +609,10 @@ impl Projection {
                     self.close_thinking(&request_id);
                 }
                 self.request_starts.clear();
+                self.turn_started = None;
                 self.turn_end(sequence, &data.outcome);
             }
+            EventContent::TurnStart(_) => self.turn_started = Some(event.create_at),
             EventContent::InputConsumed(data) => {
                 if let Some(index) = self.input_rows.remove(&data.input_id) {
                     self.row(index).pending = false;
@@ -622,7 +626,6 @@ impl Projection {
             | EventContent::BranchEnded(_)
             | EventContent::PermissionChanged(_)
             | EventContent::InputWithdraw(_)
-            | EventContent::TurnStart(_)
             | EventContent::ModelUsage(_)
             | EventContent::ToolUseStart(_)
             | EventContent::ToolStart(_)
@@ -783,6 +786,7 @@ impl Projection {
             },
             tasks: self.tasks.clone(),
             ended: self.ended,
+            turn_started_at: self.turn_started,
             goal: self.goal.goal(),
             ..ViewSnapshot::default()
         }

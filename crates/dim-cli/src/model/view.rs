@@ -352,6 +352,9 @@ pub struct ViewSnapshot {
     pub workflow_stop: bool,
     /// The newest turn that ended on main: its sequence and how it ended.
     pub ended: Option<(u64, TurnEnd)>,
+    /// When the shown line's turn under way started (`turn/start`, Unix
+    /// milliseconds): the working timer counts from it.
+    pub turn_started_at: Option<u64>,
     /// `main` followed by this Session's lines, as the lines panel lists them.
     pub lines: Vec<LineView>,
     pub focus: String,

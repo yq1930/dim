@@ -26,6 +26,8 @@ export type BranchView = {
   status: "loading" | "ready" | "failed"
   error: string
   lastTurnEnd: number | undefined
+  /** When the line's turn under way started. */
+  turnStartedAt: number | undefined
 }
 
 /** What the chat page shows of one attached session. */
@@ -67,6 +69,8 @@ export type SessionView = {
   /** Opened line transcripts, by branch id. */
   branches: Record<string, BranchView>
   lastTurnEnd: number | undefined
+  /** When the main line's turn under way started. */
+  turnStartedAt: number | undefined
 }
 
 type BranchStream = {
@@ -163,6 +167,7 @@ export const useChatStore = defineStore("chat", () => {
       lines: [],
       branches: {},
       lastTurnEnd: undefined,
+      turnStartedAt: undefined,
     })
     const channel: Channel = {
       view,
@@ -475,6 +480,7 @@ export const useChatStore = defineStore("chat", () => {
     const main = stateOf(channel, MAIN_BRANCH)
     view.rows = channel.main.projection.rows.slice()
     view.lastTurnEnd = channel.main.projection.lastTurnEnd
+    view.turnStartedAt = channel.main.projection.turnStartedAt
     view.running = main.running
     view.stopping = main.stopping
     view.sessionRunning = anyRunning(channel)
@@ -513,6 +519,7 @@ export const useChatStore = defineStore("chat", () => {
         status: branch.error !== "" ? "failed" : branch.done ? "ready" : "loading",
         error: branch.error,
         lastTurnEnd: branch.projection.lastTurnEnd,
+        turnStartedAt: branch.projection.turnStartedAt,
       }
     }
     view.branches = branches

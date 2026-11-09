@@ -139,6 +139,7 @@ function noModel(): void {
       <TimelineView
         :rows="rows"
         :running="running"
+        :run-started-at="branch?.turnStartedAt"
         :quotable="open && !approval && questions.length === 0"
         :branchable="open && !approval && questions.length === 0"
         :file-changes="fileChanges"

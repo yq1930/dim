@@ -164,6 +164,8 @@ function content(type: string, name: string, data: Json, at: string): EventConte
         source: branchSource(data.source, `${at}.source`),
         ...(data.ancestor === undefined || data.ancestor === null ? {} : { ancestor: str(data, "ancestor", at) }),
       }
+    case "turn/start":
+      return { kind: "turn-start", turnId: str(data, "turn_id", at) }
     case "turn/end": {
       const status = str(data, "status", at)
       if (status !== "completed" && status !== "failed" && status !== "cancelled") fail(`${at}.status`, "a turn outcome")

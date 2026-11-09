@@ -25,6 +25,8 @@ import { formatElapsedSeconds } from "./timeline-time"
 const props = defineProps<{
   rows: readonly TimelineRow[]
   running: boolean
+  /** When the turn under way started, so its elapsed time survives a reload or a switch of Session. */
+  runStartedAt?: number
   quotable: boolean
   branchable?: boolean
   fileChanges?: boolean
@@ -68,7 +70,10 @@ watch(() => props.running, (running) => {
   if (running) ticker = setInterval(() => { now.value = Date.now() }, 1000)
 }, { immediate: true })
 onBeforeUnmount(() => clearInterval(ticker))
-const elapsed = computed(() => runStart.value === undefined ? "" : formatElapsedSeconds(now.value - runStart.value))
+const elapsed = computed(() => {
+  const start = runStart.value === undefined ? undefined : props.runStartedAt ?? runStart.value
+  return start === undefined ? "" : formatElapsedSeconds(now.value - start)
+})
 
 function shortId(id: string): string {
   return id.slice(0, 8)

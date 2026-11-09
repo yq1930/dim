@@ -862,6 +862,8 @@ struct App {
     notice: Option<(String, Instant)>,
     exit_armed_until: Option<Instant>,
     run_started: Option<Instant>,
+    /// The turn start `run_started` was taken from, as the snapshot gave it.
+    run_turn: Option<u64>,
     last_pulse: u64,
     /// The most message rows the queue strip has shown in this run: the
     /// strip keeps that height as the queue drains, so the composer does
@@ -1245,6 +1247,7 @@ impl App {
             notice: None,
             exit_armed_until: None,
             run_started: None,
+            run_turn: None,
             queue_rows: 0,
             side_rows: 0,
             last_pulse: 0,
@@ -1846,14 +1849,21 @@ impl App {
                     }
                 }
                 self.runs.observe(&snapshot);
+                let turn = snapshot.turn_started_at;
                 self.snapshot = Some(*snapshot);
                 self.refresh_cards();
-                if self.running() && !was_running {
-                    self.run_started = Some(Instant::now());
+                // The timer counts from the turn's own start, so a run joined
+                // midway or a line switched to shows how long it has worked.
+                if self.running()
+                    && (!was_running || switched || (turn.is_some() && turn != self.run_turn))
+                {
+                    self.run_started = Some(turn.and_then(instant_at).unwrap_or_else(Instant::now));
+                    self.run_turn = turn;
                     self.last_pulse = 0;
                 }
                 if !self.running() {
                     self.run_started = None;
+                    self.run_turn = None;
                     self.queue_rows = 0;
                 }
                 self.sync_prompt();
@@ -5847,6 +5857,17 @@ impl Document for App {
             _ => None,
         }
     }
+}
+
+/// The local instant of a time the daemon stamped (Unix milliseconds); none
+/// for one ahead of this clock or older than its monotonic clock.
+fn instant_at(at: u64) -> Option<Instant> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_millis();
+    let ago = u64::try_from(now).ok()?.checked_sub(at)?;
+    Instant::now().checked_sub(Duration::from_millis(ago))
 }
 
 /// `<1s`, `42s`, `3m07s`.

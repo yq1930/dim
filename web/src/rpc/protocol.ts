@@ -152,6 +152,7 @@ export type EventContent =
   | { kind: "branch-create-failed"; branchId: string; status: "failed" | "cancelled"; error: string }
   | { kind: "branch-end"; source: BranchSource; ancestor?: string }
   | { kind: "branch-ended"; branchId: string; source: BranchSource; ancestor?: string }
+  | { kind: "turn-start"; turnId: string }
   | { kind: "turn-end"; turnId: string; outcome: "completed" | "failed" | "cancelled"; error?: string }
   | { kind: "model-start"; requestId: string }
   | { kind: "thinking"; requestId: string; delta: string }

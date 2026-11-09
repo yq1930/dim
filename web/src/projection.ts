@@ -67,8 +67,11 @@ export class Projection {
   private tools = new Map<string, number>()
   /** The files `write` and `edit` changed in the turn under way. */
   private turnWrites = new Set<string>()
-  /** When the turn under way took its first input or model step. */
-  private turnStartedAt: number | undefined
+  /**
+   * The turn under way and when its `turn/start` came. Inputs mark no start: an
+   * appended one, such as the client snapshot written on attach, opens no turn.
+   */
+  private turnStart: { turnId: string; at: number } | undefined
   private lines = new Map<string, number>()
   /** `ask_user` calls whose batch has no `step/tool-result` yet, oldest first. */
   private asks: Array<{ requestId: string; callId: string; questions: AskQuestion[] }> = []
@@ -88,6 +91,11 @@ export class Projection {
   /** The goal in force on this branch. */
   get goal(): Goal | undefined {
     return this.goalFold.goal()
+  }
+
+  /** When the turn under way started, by its `turn/start`. */
+  get turnStartedAt(): number | undefined {
+    return this.turnStart?.at
   }
 
   /** The messages still queued on this branch, oldest first. */
@@ -112,7 +120,6 @@ export class Projection {
     this.goalFold.apply(event)
     this.planningFold.apply(event)
     const content = event.content
-    if (content.kind === "input" || content.kind === "source-input" || content.kind === "model-start") this.turnStartedAt ??= event.createAt
     switch (content.kind) {
       case "exec-started": {
         const row = this.rows.find((item) => item.kind === "tool" && item.callId === content.callId)
@@ -229,7 +236,12 @@ export class Projection {
         this.requestStarts.delete(content.requestId)
         if (content.error !== undefined) this.push({ kind: "error", key: `error-${event.sequence}`, text: content.error })
         break
-      case "turn-end":
+      case "turn-start":
+        this.turnStart = { turnId: content.turnId, at: event.createAt }
+        break
+      case "turn-end": {
+        const start = this.turnStart
+        const startedAt = start !== undefined && start.turnId === content.turnId ? start.at : undefined
         this.lastTurnEnd = event.sequence
         for (const requestId of [...this.thoughts.keys()]) this.closeThinking(requestId)
         for (const requestId of [...this.answers.keys()]) this.closeAnswer(requestId)
@@ -243,12 +255,13 @@ export class Projection {
             turnId: content.turnId,
             outcome: content.outcome,
             files: this.turnWrites.size,
-            ...(this.turnStartedAt === undefined ? {} : { durationMs: event.createAt - this.turnStartedAt }),
+            ...(startedAt === undefined ? {} : { durationMs: event.createAt - startedAt }),
           })
         }
         this.turnWrites.clear()
-        this.turnStartedAt = undefined
+        this.turnStart = undefined
         break
+      }
       case "context-configured":
         this.model = content.model
         this.reasoningEffort = content.reasoningEffort

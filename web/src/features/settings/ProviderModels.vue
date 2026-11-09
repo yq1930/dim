@@ -85,12 +85,26 @@ async function toggle(model: ManagementModel): Promise<void> {
   finally { busy.value = false }
 }
 async function remove(model: ManagementModel, reset: boolean): Promise<void> {
-  if (busy.value || !await confirm.value?.open(t(reset ? "resetConfirm" : "modelDeleteConfirm"), { confirmLabel: t(reset ? "reset" : "remove") })) return
+  const question = reset ? "resetConfirm" : model.source === "user" ? "modelDeleteConfirm" : "defaultModelDeleteConfirm"
+  if (busy.value || !await confirm.value?.open(t(question), { confirmLabel: t(reset ? "reset" : "remove") })) return
   busy.value = true
   error.value = ""
   try { await mutate(reset ? "provider.models.reset" : "provider.models.delete", { modelId: model.model.modelId }) }
   catch (cause) { error.value = messageFrom(cause) }
   finally { busy.value = false }
+}
+/** A deleted default model comes back through a reset. */
+async function restore(modelId: string): Promise<void> {
+  if (busy.value) return
+  busy.value = true
+  error.value = ""
+  try { await mutate("provider.models.reset", { modelId }) }
+  catch (cause) { error.value = messageFrom(cause) }
+  finally { busy.value = false }
+}
+const REASONS: Record<string, string> = { provider_unavailable: "providerUnavailable", limits_undeclared: "limitsUndeclared" }
+function reason(code: string): string {
+  return REASONS[code] === undefined ? code : t(REASONS[code])
 }
 async function save(): Promise<void> {
   if (busy.value) return
@@ -155,11 +169,24 @@ async function save(): Promise<void> {
       <div class="provider-models">
         <div v-for="entry in models" :key="entry.model.modelId" class="settings-row">
           <input v-if="entry.actions.includes('set_enabled')" type="checkbox" :checked="entry.enabled" :aria-label="`${t('enabled')} ${entry.model.displayName}`" :disabled="busy || connection.phase !== 'connected'" @change="toggle(entry)" />
-          <div class="settings-row-main"><strong>{{ entry.model.displayName }}</strong><small>{{ entry.model.modelId }}</small><small v-if="entry.unavailableReason">{{ entry.unavailableReason }}</small><small v-else>{{ entry.model.capabilities.contextWindow?.toLocaleString() ?? t('unknownLimits') }} · {{ entry.source }}</small></div>
+          <div class="settings-row-main"><strong>{{ entry.model.displayName }}</strong><small>{{ entry.model.modelId }}</small><small v-if="entry.unavailableReason">{{ reason(entry.unavailableReason) }}</small><small v-else>{{ entry.model.capabilities.contextWindow?.toLocaleString() ?? t('unknownLimits') }} · {{ entry.source }}</small></div>
           <div class="settings-inline-actions"><button v-if="entry.actions.includes('edit')" class="ui-button" data-variant="ghost" data-size="sm" :disabled="busy" @click="open(entry)">{{ t("edit") }}</button><button v-if="entry.actions.includes('reset')" class="ui-button" data-variant="ghost" data-size="sm" :disabled="busy || connection.phase !== 'connected'" @click="remove(entry, true)">{{ t("reset") }}</button><button v-if="entry.actions.includes('delete')" class="ui-button" data-variant="danger-ghost" data-size="sm" :disabled="busy || connection.phase !== 'connected'" @click="remove(entry, false)">{{ t("remove") }}</button></div>
         </div>
       </div>
       <p v-if="!models.length" class="settings-empty">{{ t(query ? 'noResults' : 'noModels') }}</p>
+      <template v-if="provider.removedModels.length">
+        <h3 class="removed-models-title">{{ t("removedModels") }}</h3>
+        <div class="provider-models">
+          <div v-for="removed in provider.removedModels" :key="removed.modelId" class="settings-row">
+            <div class="settings-row-main"><strong>{{ removed.displayName }}</strong><small>{{ removed.modelId }}</small></div>
+            <div class="settings-inline-actions"><button class="ui-button" data-variant="ghost" data-size="sm" :disabled="busy || connection.phase !== 'connected'" @click="restore(removed.modelId)">{{ t("restore") }}</button></div>
+          </div>
+        </div>
+      </template>
     </template>
   </section>
 </template>
+
+<style scoped>
+.removed-models-title { margin: var(--space-6) 0 var(--space-2); font-size: var(--text-md); font-weight: var(--weight-medium); }
+</style>

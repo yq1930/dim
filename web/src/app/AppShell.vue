@@ -81,6 +81,8 @@ const POPOVERS = "details.session-menu[open], details.composer-popover[open]"
 
 function closeMenusOutside(event: PointerEvent): void {
   const target = event.target instanceof Node ? event.target : undefined
+  // A menu's submenu placed in <body> (`data-popover-part`) is still that menu.
+  if (target instanceof Element && target.closest("[data-popover-part]") !== null) return
   for (const menu of document.querySelectorAll<HTMLDetailsElement>(POPOVERS)) {
     if (target === undefined || !menu.contains(target)) menu.open = false
   }
@@ -179,6 +181,8 @@ const keys = shortcutContext()
 
 function onKey(event: KeyboardEvent): void {
   if (event.key === "Escape") {
+    // A menu that took the key itself, as a submenu closing, stays open.
+    if (event.defaultPrevented) return
     for (const menu of document.querySelectorAll<HTMLDetailsElement>(POPOVERS)) menu.open = false
     return
   }

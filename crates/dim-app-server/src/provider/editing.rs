@@ -175,6 +175,7 @@ impl ConnectionInput {
             model_preferences: BTreeMap::new(),
             endpoint_overrides: BTreeMap::new(),
             disabled_model_ids: Vec::new(),
+            removed_models: Vec::new(),
             enabled,
             definition_fingerprint: None,
             version: 1,
@@ -465,6 +466,7 @@ impl ProviderService {
                 }
                 if let Some(models) = models {
                     admitted.models = models;
+                    admitted.drop_removed_models();
                     admitted.remote_models = true;
                 }
                 admitted.version = admitted

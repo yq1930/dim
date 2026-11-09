@@ -15,6 +15,8 @@ export type ManagementProvider = {
   account?: { namespace: string; loginMethods: string[]; state: AccountState }
   connection: { driverKind: string; auth: StaticAuth; baseUrl: string; credentialConfigured: boolean; headerNames: string[]; proxyUrl: string | null; proxyAuthConfigured: boolean; timeoutMs: number | null } | null
   models: ManagementModel[] | null
+  /** Default models the user deleted; `provider.models.reset` restores one. */
+  removedModels: { modelId: string; displayName: string }[]
   preferences: Record<string, { reasoningEffort?: string; serviceTier?: string }>
 }
 export type ManagementView = { drivers: { driverKind: string; authTypes: string[]; remoteModelList: boolean }[]; providers: ManagementProvider[]; errors: { providerId: string; message: string }[] }
@@ -92,6 +94,7 @@ export function readManagementProvider(value: unknown): ManagementProvider {
       return { driverKind: string(c.driverKind), auth: { type: string(auth.type), headerName: optional(auth.headerName, string), prefix: optional(auth.prefix, string) }, baseUrl: string(c.baseUrl), credentialConfigured: boolean(c.credentialConfigured), headerNames: list(c.headerNames, string), proxyUrl: c.proxyUrl === null ? null : string(c.proxyUrl), proxyAuthConfigured: boolean(c.proxyAuthConfigured), timeoutMs: c.timeoutMs === null ? null : number(c.timeoutMs) }
     })(),
     models: v.models === null ? null : list(v.models, (item) => { const m = object(item); return { model: readModelEntry(m.model), source: string(m.source), enabled: boolean(m.enabled), endpoint: m.endpoint === null ? null : string(m.endpoint), endpointOverride: optional(m.endpointOverride, string), unavailableReason: m.unavailableReason === null ? null : string(m.unavailableReason), missingLimits: m.missingLimits === undefined ? [] : list(m.missingLimits, string), actions: list(m.actions, string) } }),
+    removedModels: v.removedModels === undefined ? [] : list(v.removedModels, (item) => { const r = object(item); return { modelId: string(r.modelId), displayName: string(r.displayName) } }),
     preferences: Object.fromEntries(Object.entries(preferences).map(([id, value]) => { const p = object(value); return [id, { reasoningEffort: optional(p.reasoningEffort, string), serviceTier: optional(p.serviceTier, string) }] })),
   }
 }

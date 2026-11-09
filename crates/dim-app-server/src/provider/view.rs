@@ -31,6 +31,10 @@ pub struct ManagementProvider {
     pub actions: Vec<&'static str>,
     pub connection: Option<ManagementConnection>,
     pub models: Option<Vec<ManagementModel>>,
+    /// Default models the user deleted, which `provider.models.reset`
+    /// restores; a static record's only.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub removed_models: Vec<RemovedModel>,
     pub preferences: BTreeMap<String, ModelPreferences>,
     /// What an update did with the record's models; absent from the reads and
     /// from a patch that did not change `baseUrl`, `credential` or `headers`.
@@ -80,6 +84,13 @@ pub struct ManagementConnection {
     pub proxy_url: Option<String>,
     pub proxy_auth_configured: bool,
     pub timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemovedModel {
+    pub model_id: String,
+    pub display_name: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -180,10 +191,13 @@ impl ProviderService {
                 } else {
                     vec!["edit"]
                 };
-                if user {
-                    actions.push("delete");
-                } else if overridden {
+                if !user && overridden {
                     actions.push("reset");
+                }
+                // A static record deletes its default models too; those wait in
+                // `removedModels` for a reset.
+                if user || authority == "static" {
+                    actions.push("delete");
                 }
                 ManagementModel {
                     enabled: !record.disabled_model_ids.contains(&model.model_id),
@@ -229,6 +243,14 @@ impl ProviderService {
             account,
             actions,
             models: Some(models),
+            removed_models: record
+                .removed_models
+                .into_iter()
+                .map(|entry| RemovedModel {
+                    model_id: entry.model_id,
+                    display_name: entry.display_name,
+                })
+                .collect(),
             preferences: record.model_preferences,
             connection: Some(ManagementConnection {
                 driver_kind: record.driver_kind,
@@ -340,6 +362,7 @@ impl ProviderService {
             actions,
             connection: None,
             models,
+            removed_models: Vec::new(),
             preferences,
             models_listed: None,
         }

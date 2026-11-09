@@ -2158,14 +2158,30 @@ async fn remote_catalog_refresh_preserves_edits_and_rejects_stale_or_partial_res
             .is_none()
     );
     assert!(!deleted.models.iter().any(|model| model.id == "gone"));
-    assert!(matches!(
-        provider
-            .delete_model(REMOTE.into(), deleted.version, "stable".into(), &cancel)
-            .await,
-        Err(dim_app_server::provider::ProviderError::Unsupported(_))
-    ));
+    // A default model deletes too, and a reset restores it.
+    let without_stable = provider
+        .delete_model(REMOTE.into(), deleted.version, "stable".into(), &cancel)
+        .await
+        .unwrap();
+    assert!(
+        !without_stable
+            .models
+            .iter()
+            .any(|model| model.id == "stable")
+    );
+    let restored = provider
+        .update_model_config(
+            REMOTE.into(),
+            without_stable.version,
+            "stable".into(),
+            None,
+            &cancel,
+        )
+        .await
+        .unwrap();
+    assert!(restored.models.iter().any(|model| model.id == "stable"));
     let recreated = provider
-        .create_model(REMOTE.into(), deleted.version, user, &cancel)
+        .create_model(REMOTE.into(), restored.version, user, &cancel)
         .await
         .unwrap();
     let gone = recreated

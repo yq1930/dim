@@ -581,6 +581,7 @@ pub fn convert_legacy_provider(
         model_preferences,
         endpoint_overrides: BTreeMap::new(),
         disabled_model_ids: disabled,
+        removed_models: Vec::new(),
         enabled: enabled == 1,
         definition_fingerprint: previous
             .as_ref()

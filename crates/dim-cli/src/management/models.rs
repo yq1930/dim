@@ -377,7 +377,7 @@ async fn remove(client: &mut Client, provider_id: &str, id: &str) -> Result<Answ
     };
     let (method, verb) = if model.actions.iter().any(|action| action == "reset") {
         ("provider.models.reset", RemoveVerb::Reset)
-    } else if model.actions.iter().any(|action| action == "delete") {
+    } else if model.source == "user" && model.actions.iter().any(|action| action == "delete") {
         ("provider.models.delete", RemoveVerb::Remove)
     } else {
         return Err(Failure::Refused(
@@ -639,7 +639,9 @@ fn entry(
                 kinds.push(ActionKind::Remove);
                 remove_verb = RemoveVerb::Reset;
             }
-            "delete" => {
+            // This area lists no deleted models to restore, so it deletes
+            // user models only, as `remove` does.
+            "delete" if model.source == "user" => {
                 kinds.push(ActionKind::Remove);
                 remove_verb = RemoveVerb::Remove;
             }

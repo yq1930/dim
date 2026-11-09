@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from "vue"
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue"
 import { useI18n } from "vue-i18n"
 import { RouterLink } from "vue-router"
 import { Check, ChevronRight, LoaderCircle, Search, Settings, Star } from "lucide-vue-next"
@@ -22,6 +22,10 @@ type Submenu = "effort" | "more"
 /** How many of the current provider's models the menu lists with number keys. */
 const PRIMARY = 9
 const SUBMENU_WIDTH = 280
+const SUBMENU_GAP = 6
+const SUBMENU_MAX_HEIGHT = 420
+/** The submenu keeps this far from the window's edges. */
+const VIEWPORT_MARGIN = 8
 const EFFORT_LABELS: Record<string, string> = {
   none: "composer.effortNone", minimal: "composer.effortMinimal", low: "composer.effortLow",
   medium: "composer.effortMedium", high: "composer.effortHigh", xhigh: "composer.effortXhigh",
@@ -47,8 +51,18 @@ const content = ref<HTMLElement>()
 const searchInput = ref<HTMLInputElement>()
 const query = ref("")
 const submenu = ref<Submenu>()
-/** Where the open submenu sits: beside the menu, or in it on a narrow window. */
-const placement = ref<{ side: "left" | "right" | "inline"; bottom: number }>({ side: "right", bottom: 0 })
+/**
+ * Where the open submenu sits: in the window, beside the menu with its bottom level with its row,
+ * above every pane as Claude Code's is (the chat page clips its own overflow); or in the menu on a
+ * window too narrow for either side.
+ */
+const placement = ref<{ side: "left" | "right" | "inline"; left: number; bottom: number; maxHeight: number }>({ side: "right", left: 0, bottom: 0, maxHeight: SUBMENU_MAX_HEIGHT })
+const panelStyle = computed(() => placement.value.side === "inline"
+  ? undefined
+  : { left: `${placement.value.left}px`, bottom: `${placement.value.bottom}px`, maxHeight: `${placement.value.maxHeight}px` })
+const closeSubmenu = () => { submenu.value = undefined }
+onMounted(() => window.addEventListener("resize", closeSubmenu))
+onBeforeUnmount(() => window.removeEventListener("resize", closeSubmenu))
 
 const providers = computed(() => models.providers ?? [])
 const options = computed<Option[]>(() => providers.value.flatMap((provider) => provider.models.map((model) => ({
@@ -124,9 +138,17 @@ async function openSubmenu(kind: Submenu, row: EventTarget | null): Promise<void
   const box = content.value?.getBoundingClientRect()
   const rect = row instanceof HTMLElement ? row.getBoundingClientRect() : undefined
   if (box !== undefined && rect !== undefined) {
+    const right = box.right + SUBMENU_GAP
+    const left = box.left - SUBMENU_GAP - SUBMENU_WIDTH
     const side = window.innerWidth < 720 ? "inline"
-      : box.right + SUBMENU_WIDTH + 8 <= window.innerWidth ? "right" : "left"
-    placement.value = { side, bottom: box.bottom - rect.bottom }
+      : right + SUBMENU_WIDTH <= window.innerWidth - VIEWPORT_MARGIN ? "right"
+        : left >= VIEWPORT_MARGIN ? "left" : "inline"
+    placement.value = {
+      side,
+      left: side === "left" ? left : right,
+      bottom: window.innerHeight - rect.bottom,
+      maxHeight: Math.min(SUBMENU_MAX_HEIGHT, rect.bottom - VIEWPORT_MARGIN),
+    }
   }
   if (submenu.value === kind) return
   submenu.value = kind
@@ -166,6 +188,8 @@ async function makeDefault(): Promise<void> {
 
 /** Number keys pick a listed model; Escape closes a submenu, then the menu. */
 function onKey(event: KeyboardEvent): void {
+  // A submenu in the menu handles its keys before they reach the menu.
+  if (event.defaultPrevented) return
   if (event.isComposing || event.keyCode === 229 || event.metaKey || event.ctrlKey || event.altKey) return
   if (event.key === "Escape") {
     event.preventDefault()
@@ -241,17 +265,19 @@ defineExpose({ open: () => {
             <span class="model-submenu-value">{{ effortLabel ?? t("composer.effortDefault") }}</span>
             <ChevronRight aria-hidden="true" />
           </button>
-          <div v-if="submenu === 'effort'" class="ui-popover model-submenu-panel" role="menu" :aria-label="t('composer.reasoningEffort')" :data-side="placement.side" :style="placement.side === 'inline' ? undefined : { bottom: `${placement.bottom}px` }">
-            <p class="model-submenu-hint">{{ t("composer.effortHint") }}</p>
-            <button type="button" role="menuitemradio" class="ui-menu-item" :aria-checked="effort === undefined" @click="chooseEffort(undefined)">
-              <span>{{ t("composer.effortDefault") }}</span>
-              <Check v-if="effort === undefined" class="ui-menu-check" aria-hidden="true" />
-            </button>
-            <button v-for="choice in efforts" :key="choice" type="button" role="menuitemradio" class="ui-menu-item" :aria-checked="effort === choice" @click="chooseEffort(choice)">
-              <span>{{ label(choice) }}</span>
-              <Check v-if="effort === choice" class="ui-menu-check" aria-hidden="true" />
-            </button>
-          </div>
+          <Teleport to="body" :disabled="placement.side === 'inline'">
+            <div v-if="submenu === 'effort'" class="ui-popover model-submenu-panel" role="menu" :aria-label="t('composer.reasoningEffort')" :data-side="placement.side" :style="panelStyle" data-popover-part @keydown="onKey">
+              <p class="model-submenu-hint">{{ t("composer.effortHint") }}</p>
+              <button type="button" role="menuitemradio" class="ui-menu-item" :aria-checked="effort === undefined" @click="chooseEffort(undefined)">
+                <span>{{ t("composer.effortDefault") }}</span>
+                <Check v-if="effort === undefined" class="ui-menu-check" aria-hidden="true" />
+              </button>
+              <button v-for="choice in efforts" :key="choice" type="button" role="menuitemradio" class="ui-menu-item" :aria-checked="effort === choice" @click="chooseEffort(choice)">
+                <span>{{ label(choice) }}</span>
+                <Check v-if="effort === choice" class="ui-menu-check" aria-hidden="true" />
+              </button>
+            </div>
+          </Teleport>
         </div>
         <div v-if="others.length" class="model-submenu">
           <button
@@ -267,31 +293,33 @@ defineExpose({ open: () => {
             <span>{{ t("composer.moreModels") }}</span>
             <ChevronRight aria-hidden="true" />
           </button>
-          <div v-if="submenu === 'more'" class="ui-popover model-submenu-panel model-more" role="menu" :aria-label="t('composer.moreModels')" :data-side="placement.side" :style="placement.side === 'inline' ? undefined : { bottom: `${placement.bottom}px` }">
-            <label class="ui-menu-search">
-              <Search aria-hidden="true" />
-              <input ref="searchInput" v-model="query" type="text" :placeholder="t('composer.searchModels')" :aria-label="t('composer.searchModels')">
-            </label>
-            <div class="model-more-list">
-              <p v-if="groups.length === 0" class="menu-empty">{{ t("composer.noModels") }}</p>
-              <template v-for="group in groups" :key="group.providerId">
-                <p class="ui-menu-label">{{ group.name }}</p>
-                <button
-                  v-for="option in group.options"
-                  :key="`${option.providerId}:${option.modelId}`"
-                  type="button"
-                  role="menuitemradio"
-                  class="ui-menu-item"
-                  :aria-checked="isCurrent(option)"
-                  :title="`${option.name} · ${option.providerName}`"
-                  @click="select(option)"
-                >
-                  <span class="model-name">{{ option.name }}</span>
-                  <Check v-if="isCurrent(option)" class="ui-menu-check" aria-hidden="true" />
-                </button>
-              </template>
+          <Teleport to="body" :disabled="placement.side === 'inline'">
+            <div v-if="submenu === 'more'" class="ui-popover model-submenu-panel model-more" role="menu" :aria-label="t('composer.moreModels')" :data-side="placement.side" :style="panelStyle" data-popover-part @keydown="onKey">
+              <label class="ui-menu-search">
+                <Search aria-hidden="true" />
+                <input ref="searchInput" v-model="query" type="text" :placeholder="t('composer.searchModels')" :aria-label="t('composer.searchModels')">
+              </label>
+              <div class="model-more-list">
+                <p v-if="groups.length === 0" class="menu-empty">{{ t("composer.noModels") }}</p>
+                <template v-for="group in groups" :key="group.providerId">
+                  <p class="ui-menu-label">{{ group.name }}</p>
+                  <button
+                    v-for="option in group.options"
+                    :key="`${option.providerId}:${option.modelId}`"
+                    type="button"
+                    role="menuitemradio"
+                    class="ui-menu-item"
+                    :aria-checked="isCurrent(option)"
+                    :title="`${option.name} · ${option.providerName}`"
+                    @click="select(option)"
+                  >
+                    <span class="model-name">{{ option.name }}</span>
+                    <Check v-if="isCurrent(option)" class="ui-menu-check" aria-hidden="true" />
+                  </button>
+                </template>
+              </div>
             </div>
-          </div>
+          </Teleport>
         </div>
       </template>
       <hr class="ui-menu-separator">
@@ -316,9 +344,9 @@ defineExpose({ open: () => {
 .model-list kbd { font-family: var(--font-mono); }
 .model-submenu-row > :first-child { flex: 1; }
 .model-submenu-value { color: var(--muted-foreground); font-size: var(--text-sm); }
-.model-submenu-panel { position: absolute; width: 280px; max-height: min(420px, 70dvh); overflow-y: auto; transform-origin: bottom left; --popover-enter-y: 0px; }
-.model-submenu-panel[data-side="right"] { left: calc(100% + 6px); }
-.model-submenu-panel[data-side="left"] { right: calc(100% + 6px); transform-origin: bottom right; }
+/* Beside the menu the submenu is in <body>, placed in the window, so no pane clips it. */
+.model-submenu-panel { position: fixed; width: 280px; overflow-y: auto; transform-origin: bottom left; --popover-enter-y: 0px; }
+.model-submenu-panel[data-side="left"] { transform-origin: bottom right; }
 .model-submenu-panel[data-side="inline"] { position: static; width: auto; max-height: 260px; margin: 2px 0 var(--space-1) var(--space-3); border: 0; box-shadow: none; padding: 0; }
 .model-submenu-hint { margin: 0; padding: var(--space-1) var(--space-2) var(--space-2); color: var(--muted-foreground); font-size: var(--text-sm); line-height: var(--leading-snug); }
 .model-more { display: flex; flex-direction: column; overflow: hidden; }

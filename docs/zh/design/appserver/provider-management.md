@@ -79,6 +79,7 @@ Capability、通知流、目录副本、凭据服务或注册表。继续遵守
 | `actions` | 当前可用操作名：`update`、`delete`、`refresh`、`models.create`、`models.edit`、`models.reset`、`models.delete`、`models.set_enabled`、`preferences.update`、`login`、`logout`、`usage`；没有逐操作原因代码 |
 | `connection` | 下表静态记录安全连接；连接配置只在可选账号包内时为 `null` |
 | `models` | `{model:ModelEntry,source:"default"\|"override"\|"user",enabled:boolean,endpoint:ModelProtocol\|null,unavailableReason:string\|null,missingLimits:("contextWindow"\|"maxOutputTokens")[],actions:string[],endpointOverride?:NewApiEndpoint}[]`；路由覆盖限 §6 可执行子集。仅账号无本地目录记录时为 `null`，坏目录报错。`missingLimits` 指出没有任何来源声明的上限（§3.5），否则为空。模型操作为 `set_enabled`、`edit`、`reset`、`delete`，按来源/authority 限制；`set_enabled` 只出现在没有 `unavailableReason` 的条目上，因为集合会保留不可用条目的启用状态 |
+| `removedModels` | `{modelId, displayName}[]`：静态记录中用户删除的默认模型，`models.reset` 可恢复；没有时省略 |
 | `preferences` | model ID 到既有 `ModelPreferences` 的映射 |
 | `modelsListed` | 读取和不改 `baseUrl`、`credential`、`headers` 的更新不含该字段；其余更新说明本次写入如何处理记录自身的模型：`listed`、`bundled`、`unsupported` 或 `disabled` |
 
@@ -117,8 +118,8 @@ actions 只说明当前可用性，
 | `provider.create` | `{providerId,displayName,connection,models:ModelEntry[],enabled}` | `ManagementProvider`；只创建，客户端生成新 UUID，已存在 ID 冲突 | true | `Drain` |
 | `provider.update` | `{providerId,expectedVersion,patch}` | `ManagementProvider`；校验后单事务局部写入；patch 改动 `baseUrl`、`credential` 或 `headers` 时，同一次 CAS 写入还用新 endpoint 的列举结果替换记录自身的模型，`modelsListed` 说明结果；只改 `network` 时单独保存 | true | `Drain` |
 | `provider.probe` | `{providerId,connection}` | `{models:ModelEntry[]}`；只做 §3.3 网络探测，不写入或检查版本 | false | `Drain` |
-| `provider.models.create` | `{providerId,expectedVersion,model:ModelEntry}` | 既有 catalog；写独立用户新增列表，与默认/用户项重复的 ID 拒绝；以启用状态新增，同事务清掉该 ID 遗留的 modelConfigOverrides、disabledModelIds、modelPreferences 和 endpointOverrides 项 | true | `Drain` |
-| `provider.models.delete` | `{providerId,expectedVersion,modelId}` | 既有 catalog；仅删用户新增项，同事务移除该 ID 的 disabledModelIds 项并清理自有偏好/路由/选择 | true | `Drain` |
+| `provider.models.create` | `{providerId,expectedVersion,model:ModelEntry}` | 既有 catalog；写独立用户新增列表，与默认项、用户项或已删除默认项重复的 ID 拒绝；以启用状态新增，同事务清掉该 ID 遗留的 modelConfigOverrides、disabledModelIds、modelPreferences 和 endpointOverrides 项 | true | `Drain` |
+| `provider.models.delete` | `{providerId,expectedVersion,modelId}` | 既有 catalog；用户新增项直接删除，静态记录的默认项移入记录的 `removedModels`，在 `provider.models.reset` 恢复前不出现在 catalog 中（重新播种或重新列出模型都不会加回）；同事务移除该 ID 的 disabledModelIds 项、丢弃其描述覆盖并清理自有偏好/路由/选择 | true | `Drain` |
 | `provider.preferences.update` | `{providerId,expectedVersion,modelId,patch}` | `ManagementProvider`；effort/tier 分别 set/clear，按模型校验 | true | `Drain` |
 
 客户端发送前生成并保留 UUID。create 只接受规范的小写、带连字符 UUID，其他值返回
@@ -131,7 +132,7 @@ actions 只说明当前可用性，
 `headers:Record<string,string>`、既有 keep/clear/set/set_aws/set_ref `credential` 操作。
 新记录缺 headers/network 表示无覆盖，缺 credential 表示无凭据；启用的 keyed Provider
 必须有合法凭据。`create.models` 只承载 probe 结果，写入默认列表；不支持发现或未发现模型
-时传空列表。refresh 可以替换默认项，models.delete 不能删除它们。创建后，手动项通过
+时传空列表。refresh 可以替换默认项；models.delete 会把默认项移入 `removedModels`，之后的 refresh 或重新播种不会加回。创建后，手动项通过
 `provider.models.create` 加入 userModels，保留于 refresh 后且允许删除；模板项也用此方法，
 按 `{providerId,modelId}` 复制完整公开 `ModelEntry`，不保存模板引用或客户端 bundled catalog。
 客户端不反向转换执行投影 `ProviderModel`。
@@ -178,7 +179,7 @@ driver、auth、默认模型只读。custom 的 driverKind/auth 创建后同样�
 override 优先，clear 回到发现结果，不删除 metadata；未知上游字符串仅作描述。
 仅设置或清除 endpoint 的编辑只写 endpointOverrides，不创建或修改 descriptor 覆盖。
 models.reset 只移除 descriptor 覆盖，保留端点覆盖；endpoint: clear 只移除路由覆盖。
-models.reset 恢复仍存在的默认项，用户项用 delete。refresh 保留用户模型、覆盖、偏好和
+models.reset 恢复仍存在的默认项，也恢复 `removedModels` 中已删除的默认项；用户项用 delete。refresh 保留用户模型、覆盖、偏好和
 显式禁用，沿用 admitted 配置冲突检查。托管目录换账号 refresh 时，偏好随 descriptor 覆盖
 和禁用项一起清空；同账号 refresh 则保留它们。托管账号目录不通过这些方法新增用户模型/路由。
 models.edit 修改用户模型的 descriptor 时替换该项 userModels，不把用户 ID 写入 modelConfigOverrides。

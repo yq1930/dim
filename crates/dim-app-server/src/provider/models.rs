@@ -240,10 +240,12 @@ impl ProviderService {
                     if model.capabilities.max_output_tokens.is_some() {
                         declare(&mut model, "maxOutputTokens");
                     }
+                    // A deleted default model keeps its ID for a restore.
                     if record
                         .models
                         .iter()
                         .chain(&record.user_models)
+                        .chain(&record.removed_models)
                         .any(|entry| entry.model_id == model.model_id)
                     {
                         return Err(ProviderError::Conflict("Model ID already exists".into()));
@@ -281,20 +283,32 @@ impl ProviderService {
                 provider_id.clone(),
                 expected_version,
                 move |record, tx| {
-                    let Some(index) = record
+                    if let Some(index) = record
                         .user_models
                         .iter()
                         .position(|entry| entry.model_id == model_id)
-                    else {
-                        return Err(
-                            if record.models.iter().any(|entry| entry.model_id == model_id) {
-                                ProviderError::Unsupported("Only user models can be deleted".into())
-                            } else {
-                                ProviderError::NotFound
-                            },
-                        );
-                    };
-                    record.user_models.remove(index);
+                    {
+                        record.user_models.remove(index);
+                    } else if let Some(index) = record
+                        .models
+                        .iter()
+                        .position(|entry| entry.model_id == model_id)
+                    {
+                        if record.credential_authority != CredentialAuthority::Static {
+                            return Err(ProviderError::Unsupported(
+                                "Only user models can be deleted".into(),
+                            ));
+                        }
+                        // A deleted default model is kept aside, so a reseed or
+                        // a listing leaves it out and a reset restores it.
+                        let entry = record.models.remove(index);
+                        record
+                            .model_config_overrides
+                            .retain(|entry| entry.model_id != model_id);
+                        record.removed_models.push(entry);
+                    } else {
+                        return Err(ProviderError::NotFound);
+                    }
                     record.disabled_model_ids.retain(|id| id != &model_id);
                     record.model_preferences.remove(&model_id);
                     record.endpoint_overrides.remove(&model_id);
@@ -375,6 +389,17 @@ impl ProviderService {
                     provider_id,
                     expected_version,
                     move |record, _| {
+                        // Resetting a deleted default model restores it.
+                        if edit.is_none()
+                            && let Some(index) = record
+                                .removed_models
+                                .iter()
+                                .position(|entry| entry.model_id == model_id)
+                        {
+                            let entry = record.removed_models.remove(index);
+                            record.models.push(entry);
+                            return Ok(());
+                        }
                         let user = record
                             .user_models
                             .iter()

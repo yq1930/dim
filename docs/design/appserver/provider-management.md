@@ -140,6 +140,7 @@ catalog. Aggregation does not promise an atomic snapshot across account owners.
 | `actions` | Available operation names: `update`, `delete`, `refresh`, `models.create`, `models.edit`, `models.reset`, `models.delete`, `models.set_enabled`, `preferences.update`, `login`, `logout`, `usage`; no per-action reason codes |
 | `connection` | Safe static-record connection below; `null` when connection configuration exists only in the optional account package |
 | `models` | `{model: ModelEntry, source: "default" \| "override" \| "user", enabled: boolean, endpoint: ModelProtocol \| null, unavailableReason: string \| null, missingLimits: ("contextWindow" \| "maxOutputTokens")[], actions: string[], endpointOverride?: NewApiEndpoint}[]`; endpoint overrides use the executable subset in §6. `null` only for an account entry with no local catalog record. Bad catalog data is an error. `missingLimits` names the limits no source declared (§3.5) and is empty otherwise. Model actions are `set_enabled`, `edit`, `reset`, `delete`, restricted by origin/authority, and `set_enabled` only on an entry without an `unavailableReason`, because the set keeps an unavailable entry's enablement |
+| `removedModels` | `{modelId, displayName}[]`: a static record's default models the user deleted, which `models.reset` restores; absent when there are none |
 | `preferences` | Map from model ID to the existing `ModelPreferences` shape |
 | `modelsListed` | Absent from the reads and from an update that did not change `baseUrl`, `credential` or `headers`; on the other updates it says what the write did with the record's models: `listed`, `bundled`, `unsupported` or `disabled` |
 
@@ -184,8 +185,8 @@ typed errors in §3.4. Existing writes retain `mutating:true`, `interruption:Dra
 | `provider.create`  | `{providerId, displayName, connection, models: ModelEntry[], enabled}` | `ManagementProvider`; create-only, caller-generated fresh UUID, existing ID conflicts | true | `Drain` |
 | `provider.update`  | `{providerId, expectedVersion, patch}` | `ManagementProvider`; validate and commit one partial update transaction; a patch that changes `baseUrl`, `credential` or `headers` also replaces the record's own models with the new endpoint's listing in that same compare-and-set write, and `modelsListed` says what it did; a `network`-only change saves alone | true | `Drain` |
 | `provider.probe`  | `{providerId, connection}` | `{models: ModelEntry[]}`; §3.3, no record writes or version check | false | `Drain` |
-| `provider.models.create`  | `{providerId, expectedVersion, model: ModelEntry}` | Existing catalog; separate user-added list; duplicate default or user ID rejected; add enabled and remove any stale `modelConfigOverrides`, `disabledModelIds`, `modelPreferences` and `endpointOverrides` entries for that ID in the same transaction | true | `Drain` |
-| `provider.models.delete`  | `{providerId, expectedVersion, modelId}` | Existing catalog; only user-added items; remove that ID from `disabledModelIds` and clean owned preferences/routes/selections in the same transaction | true | `Drain` |
+| `provider.models.create`  | `{providerId, expectedVersion, model: ModelEntry}` | Existing catalog; separate user-added list; an ID a default, user or deleted default item uses is rejected; add enabled and remove any stale `modelConfigOverrides`, `disabledModelIds`, `modelPreferences` and `endpointOverrides` entries for that ID in the same transaction | true | `Drain` |
+| `provider.models.delete`  | `{providerId, expectedVersion, modelId}` | Existing catalog; a user-added item is removed, a default item of a static record moves to the record's `removedModels`, out of the catalog until `provider.models.reset` restores it (a reseed or a listing does not bring it back); remove that ID from `disabledModelIds`, drop its descriptor override and clean owned preferences/routes/selections in the same transaction | true | `Drain` |
 | `provider.preferences.update`  | `{providerId, expectedVersion, modelId, patch}` | `ManagementProvider`; effort/tier independently set/clear, validated against the model | true | `Drain` |
 
 The client generates and retains the UUID before sending. `create` accepts only
@@ -203,7 +204,7 @@ existing keep/clear/set/set_aws/set_ref operations. Absent headers/network mean 
 overrides for a new record; absent credential means none. Enabled keyed records
 require a valid credential. `create.models` carries only probe results, stored as
 defaults; it is empty when discovery is unsupported or no models were discovered.
-Refresh may replace these defaults, and `models.delete` cannot remove them.
+Refresh may replace these defaults; `models.delete` sets one aside in `removedModels`, which a later refresh or reseed leaves out.
 After creation, add manual entries through `provider.models.create` so they live
 in `userModels`, survive refresh and can be deleted. Template entries use that
 same method: copy the complete public `ModelEntry` identified by
@@ -270,8 +271,8 @@ Unknown upstream endpoint strings remain descriptive, not executable routes.
 An edit that sets or clears only `endpoint` writes only `endpointOverrides`; it
 does not create or change a descriptor override. `models.reset` removes only the
 descriptor override and keeps the endpoint override; `endpoint: clear` removes
-only the route override. `models.reset` restores an existing default; user entries
-use delete. `refresh` updates default models while preserving user models,
+only the route override. `models.reset` restores an existing default, and a deleted
+one from `removedModels`; user entries use delete. `refresh` updates default models while preserving user models,
 overrides, preferences and explicit disables, with its existing
 admitted-configuration conflict check. A managed refresh for a different account
 clears preferences together with descriptor overrides and disables; a same-account

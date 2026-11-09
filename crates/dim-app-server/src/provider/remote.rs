@@ -182,6 +182,7 @@ impl ProviderService {
                 reject_user_model_conflicts(&record, &models)?;
                 let version = record.version;
                 record.models = models;
+                record.drop_removed_models();
                 record.remote_models = true;
                 record.version = version
                     .checked_add(1)

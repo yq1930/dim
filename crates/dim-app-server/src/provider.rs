@@ -311,6 +311,10 @@ pub struct StaticProviderRecord {
     endpoint_overrides: BTreeMap<String, NewApiEndpoint>,
     #[serde(default)]
     disabled_model_ids: Vec<String>,
+    /// Default models the user deleted: a reseed or a listing does not put
+    /// them back in `models`, and `provider.models.reset` restores one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    removed_models: Vec<ModelEntry>,
     enabled: bool,
     #[serde(default)]
     definition_fingerprint: Option<String>,
@@ -339,6 +343,13 @@ impl StaticProviderRecord {
     pub fn with_version(mut self, version: u32) -> Self {
         self.version = version;
         self
+    }
+    /// Keeps the default models the user deleted out of `models`, which a
+    /// reseed or a listing has just written.
+    fn drop_removed_models(&mut self) {
+        let removed = &self.removed_models;
+        self.models
+            .retain(|model| !removed.iter().any(|entry| entry.model_id == model.model_id));
     }
 }
 
@@ -699,6 +710,7 @@ fn validate_static_record(
         &record.models,
         &record.model_config_overrides,
         &record.user_models,
+        &record.removed_models,
     ] {
         let mut ids = HashSet::new();
         if models.iter().any(|model| {
@@ -723,6 +735,15 @@ fn validate_static_record(
         return Err(failure(
             "User models conflict with default models or descriptor overrides",
         ));
+    }
+    if record.removed_models.iter().any(|removed| {
+        record
+            .models
+            .iter()
+            .chain(&record.user_models)
+            .any(|model| model.model_id == removed.model_id)
+    }) {
+        return Err(failure("Deleted models conflict with listed models"));
     }
     if !record.endpoint_overrides.is_empty()
         && (record.driver_kind != "new-api-router"
@@ -1082,6 +1103,7 @@ fn bundled_seed(provider: &CatalogProvider) -> Result<StaticProviderRecord, Host
         model_preferences: BTreeMap::new(),
         endpoint_overrides: BTreeMap::new(),
         disabled_model_ids: Vec::new(),
+        removed_models: Vec::new(),
         enabled: authority != CredentialAuthority::Static,
         definition_fingerprint: Some(format!("{:x}", Sha256::digest(fingerprint))),
         version: 1,
@@ -1126,6 +1148,8 @@ fn reseed_candidate(
     definition.model_preferences = previous.model_preferences.clone();
     definition.endpoint_overrides = previous.endpoint_overrides.clone();
     definition.disabled_model_ids = previous.disabled_model_ids.clone();
+    definition.removed_models = previous.removed_models.clone();
+    definition.drop_removed_models();
     definition.enabled = previous.enabled && drivers::supported(&definition.driver_kind);
     definition
 }

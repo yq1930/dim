@@ -3,8 +3,8 @@ import { defineStore } from "pinia"
 import { TRANSCRIPT_VIEWS, usePreferencesStore, type TranscriptView } from "./preferences"
 
 /** What the right panel shows for a Session. */
-export type DetailView = "changes" | "files" | "preview" | "plan" | "tasks" | "terminal" | "git" | "lines"
-const DETAIL_VIEWS: readonly DetailView[] = ["changes", "files", "preview", "plan", "tasks", "terminal", "git", "lines"]
+export type DetailView = "details" | "changes" | "files" | "preview" | "plan" | "tasks" | "terminal" | "git" | "lines"
+const DETAIL_VIEWS: readonly DetailView[] = ["details", "changes", "files", "preview", "plan", "tasks", "terminal", "git", "lines"]
 
 /**
  * A Session's panes, as Claude Code remembers each session's tiles: whether the

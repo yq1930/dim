@@ -110,7 +110,9 @@ Session 值不持有状态。解析出的连接只存在于一次策略调用内
 | 方法 | 变更 | 请求 | 回复 |
 | --- | --- | --- | --- |
 | `session.context.compact` | 是 | `{sessionId, branchId}` | `{status: "completed", sequence}` 或 `{status: "skipped", reason}` |
-| `session.context.usage` | 否 | `{sessionId, branchId}` | `{through, contextWindow, outputTokens, thresholdTokens, estimatedInputTokens, baselineSource: "provider_baseline" \| "full_estimate"}` |
+| `session.context.usage` | 否 | `{sessionId, branchId}` | `{through, contextWindow, outputTokens, thresholdTokens, estimatedInputTokens, baselineSource: "provider_baseline" \| "full_estimate", parts: [{kind, tokens}]}` |
+
+`parts` 把 `estimatedInputTokens` 按估算请求里的内容拆开，供客户端展示上下文构成：`systemPrompt`、`tools`（内置工具定义）、`mcpTools`（MCP 服务器提供的定义，`source: "dynamic"`）、`instructions`（来自 `dim/instructions/*` 的 `<dim-rule>` 块）、`skills`（来自 `dim/skills/*` 的块）、`state`（其余 `<dim-state>` 与 `<dim-rule>` 块）和 `messages`。除 `messages` 外，每一项都是对请求中对应部分的 `count_tokens`（`provider_baseline` 时用最近一次实测调用的请求，否则用配置请求）；`messages` 取余数，因此各项之和等于估算值，计出的各项合计超过估算值时按比例一起缩小。为零的项不列出。
 
 `session.context.compact`：
 

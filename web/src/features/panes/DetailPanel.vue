@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, provide, useId, type Component } from "vue"
 import { useI18n } from "vue-i18n"
-import { Activity, AppWindow, ChevronDown, FileDiff, Files, GitBranch, GitPullRequest, ListChecks, Maximize2, Minimize2, SquareTerminal, X } from "lucide-vue-next"
+import { Activity, AppWindow, ChevronDown, FileDiff, Files, GitBranch, GitPullRequest, List, ListChecks, Maximize2, Minimize2, SquareTerminal, X } from "lucide-vue-next"
 import RowActionMenu from "../../components/RowActionMenu.vue"
 import LinesPanel from "./lines/LinesPanel.vue"
 import PlanPanel from "./plan/PlanPanel.vue"
@@ -24,6 +24,7 @@ import { shortcutText, withKeys, type ShortcutCommand } from "../../app/shortcut
 const TerminalPanel = defineAsyncComponent(() => import("./terminal/TerminalPanel.vue"))
 const FilesPanel = defineAsyncComponent(() => import("./files/FilesPanel.vue"))
 const PreviewPanel = defineAsyncComponent(() => import("./preview/PreviewPanel.vue"))
+const SessionDetailsPanel = defineAsyncComponent(() => import("./details/SessionDetailsPanel.vue"))
 
 type Tab = { view: DetailView; icon: Component; label: string; badge?: string | number; tone?: "primary" | "warning"; command?: ShortcutCommand }
 
@@ -56,6 +57,7 @@ const tabs = computed<Tab[]>(() => {
   const lines = view?.lines.filter((line) => line.id !== MAIN_BRANCH) ?? []
   const linesBusy = lines.some((line) => line.state.kind === "working" || view?.approvals.some((request) => request.branchId === line.id))
   return [
+    { view: "details", icon: List, label: t("details.title") },
     { view: "changes", icon: FileDiff, label: t("sessionChanges.title"), command: "toggleDiff", ...(changed > 0 ? { badge: changed } : {}) },
     ...(files.readable(props.sessionId) ? [{ view: "files" as const, icon: Files, label: t("files.title"), command: "toggleFiles" as const }] : []),
     { view: "preview", icon: AppWindow, label: t("preview.title"), command: "togglePreview" },
@@ -101,7 +103,8 @@ const shown = computed(() => tabs.value.find((tab) => tab.view === current.value
       </div>
     </header>
     <div class="detail-panel-body" role="region" :aria-labelledby="`${id}-title`">
-      <SessionChangesPanel v-if="current === 'changes'" :session-id="sessionId" />
+      <SessionDetailsPanel v-if="current === 'details'" :session-id="sessionId" />
+      <SessionChangesPanel v-else-if="current === 'changes'" :session-id="sessionId" />
       <FilesPanel v-else-if="current === 'files'" :session-id="sessionId" />
       <PreviewPanel v-else-if="current === 'preview'" :session-id="sessionId" />
       <PlanPanel v-else-if="current === 'plan'" :session-id="sessionId" />

@@ -169,7 +169,9 @@ methods are declared with `interruption: report`, `progress: false`, `notificati
 | Method | Mutating | Request | Reply |
 | --- | --- | --- | --- |
 | `session.context.compact` | yes | `{sessionId, branchId}` | `{status: "completed", sequence}` or `{status: "skipped", reason}` |
-| `session.context.usage` | no | `{sessionId, branchId}` | `{through, contextWindow, outputTokens, thresholdTokens, estimatedInputTokens, baselineSource: "provider_baseline" \| "full_estimate"}` |
+| `session.context.usage` | no | `{sessionId, branchId}` | `{through, contextWindow, outputTokens, thresholdTokens, estimatedInputTokens, baselineSource: "provider_baseline" \| "full_estimate", parts: [{kind, tokens}]}` |
+
+`parts` splits `estimatedInputTokens` by what the estimated request carries, for a client's context breakdown: `systemPrompt`, `tools` (built-in definitions), `mcpTools` (definitions from MCP servers, `source: "dynamic"`), `instructions` (`<dim-rule>` blocks from `dim/instructions/*`), `skills` (blocks from `dim/skills/*`), `state` (the other `<dim-state>` and `<dim-rule>` blocks) and `messages`. Each share but `messages` is `count_tokens` on that part of the request (the last measured call's on the `provider_baseline` path, the configured request's otherwise); `messages` takes the rest, so the shares sum to the estimate, and the counted shares shrink together where they alone exceed it. Shares of zero are left out.
 
 `session.context.compact`:
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, type Component } from "vue"
 import { useI18n } from "vue-i18n"
-import { Activity, AppWindow, FileDiff, Files, GitBranch, ListChecks, SquareTerminal } from "lucide-vue-next"
+import { Activity, AppWindow, FileDiff, Files, GitBranch, List, ListChecks, SquareTerminal } from "lucide-vue-next"
 import { withKeys, type ShortcutCommand } from "../../../app/shortcuts"
 import { MAIN_BRANCH } from "../../../rpc/protocol"
 import { useChatStore } from "../../../stores/chat"
@@ -36,6 +36,7 @@ const buttons = computed<PaneButton[]>(() => {
   const lines = view.value?.lines.filter((line) => line.id !== MAIN_BRANCH) ?? []
   const linesBusy = lines.some((line) => line.state.kind === "working" || view.value?.approvals.some((request) => request.branchId === line.id))
   return [
+    { view: "details", icon: List, label: t("details.title") },
     ...(changed > 0 || shown("changes") ? [{ view: "changes" as const, icon: FileDiff, label: t("sessionChanges.title"), command: "toggleDiff" as const, ...(changed > 0 ? { count: changed } : {}) }] : []),
     ...(files.readable(props.sessionId) ? [{ view: "files" as const, icon: Files, label: t("files.title"), command: "toggleFiles" as const }] : []),
     { view: "preview", icon: AppWindow, label: t("preview.title"), command: "togglePreview" },

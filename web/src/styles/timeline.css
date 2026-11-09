@@ -10,7 +10,14 @@
 .session-header { display: flex; min-width: 0; min-height: 48px; align-items: center; justify-content: space-between; gap: var(--space-3); padding: 0 var(--space-4) 0 var(--space-6); border-bottom: 1px solid var(--border); background: var(--background); }
 .session-heading { display: flex; min-width: 0; flex: 1; align-items: center; gap: var(--space-2); }
 .session-header h1 { min-width: 0; overflow: hidden; margin: 0; color: var(--foreground); font-size: var(--text-md); font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; outline: none; }
-.workspace-crumb { max-width: 12rem; flex-shrink: 1; overflow: hidden; color: var(--muted-foreground); font-size: var(--text-sm); text-overflow: ellipsis; white-space: nowrap; }
+/* The title keeps its room longest: the workspace and branch give way first, and leave a narrow
+   header (the right panel open beside the transcript) to the title; the sidebar still names them. */
+.session-header { container: session-header / inline-size; }
+.session-header .session-heading > :is(.workspace-crumb, .branch-chip) { flex-shrink: 8; }
+@container session-header (max-width: 560px) {
+  .app-shell:not([data-mode="compact"]) .session-heading > :is(.workspace-crumb, .workspace-crumb-separator, .branch-chip) { display: none; }
+}
+.workspace-crumb { max-width: 12rem; overflow: hidden; color: var(--muted-foreground); font-size: var(--text-sm); text-overflow: ellipsis; white-space: nowrap; }
 .workspace-crumb-separator { flex: none; color: color-mix(in oklab, var(--foreground) 30%, transparent); }
 .session-title-menu { flex: none; }
 /* Anchored dropdowns (sidebar row / list options / workspace group, session title,

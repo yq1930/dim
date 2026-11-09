@@ -4,7 +4,7 @@
  * throws a ProtocolError here; nothing past these files re-checks shapes. This
  * module reads Session replies and re-exports the Provider and event readers.
  */
-import type { CompactResult, ContextUsage, FileCandidate, FileView, PermissionState, BranchCreateResult, CreateResult, HelloResult, HistoryPage, ModelUpdateResult, SessionSummary, TurnChanges, RewindResult } from "./protocol"
+import { CONTEXT_PART_KINDS, type CompactResult, type ContextPartKind, type ContextUsage, type FileCandidate, type FileView, type PermissionState, type BranchCreateResult, type CreateResult, type HelloResult, type HistoryPage, type ModelUpdateResult, type SessionSummary, type TurnChanges, type RewindResult } from "./protocol"
 import { fail, obj, arr, str, optStr, num, finite, bool, modelId, readPermissionPolicy } from "./read-core"
 import { readEvent } from "./read-events"
 
@@ -54,6 +54,12 @@ export function readContextUsage(value: unknown): ContextUsage {
     thresholdTokens: finite(source, "thresholdTokens", at),
     estimatedInputTokens: finite(source, "estimatedInputTokens", at),
     baselineSource: str(source, "baselineSource", at),
+    // An older service sends no parts; a kind this page does not know is left out.
+    parts: source.parts === undefined ? [] : arr(source.parts, `${at}.parts`).flatMap((value, index) => {
+      const part = obj(value, `${at}.parts[${index}]`)
+      const kind = str(part, "kind", `${at}.parts[${index}]`)
+      return CONTEXT_PART_KINDS.includes(kind as ContextPartKind) ? [{ kind: kind as ContextPartKind, tokens: finite(part, "tokens", `${at}.parts[${index}]`) }] : []
+    }),
   }
 }
 

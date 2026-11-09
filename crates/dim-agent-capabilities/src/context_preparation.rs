@@ -350,6 +350,31 @@ pub struct ContextUsage {
     pub threshold_tokens: f64,
     pub estimated_input_tokens: f64,
     pub baseline_source: BaselineSource,
+    /// `estimated_input_tokens` split by what the request carries; the shares
+    /// sum to it.
+    pub parts: Vec<ContextPart>,
+}
+
+/// What a share of the estimated input carries: the system prompt, the
+/// built-in and MCP tool definitions, the project and user instructions, the
+/// skills list, the other runtime state blocks, and the conversation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ContextPartKind {
+    SystemPrompt,
+    Tools,
+    McpTools,
+    Instructions,
+    Skills,
+    State,
+    Messages,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextPart {
+    pub kind: ContextPartKind,
+    pub tokens: f64,
 }
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum ContextOpError {
@@ -567,6 +592,7 @@ impl ContextPreparation {
                     threshold_tokens: model.threshold_tokens(),
                     estimated_input_tokens: input,
                     baseline_source: BaselineSource::ProviderBaseline,
+                    parts: context_parts(&request, model.as_ref(), input),
                 });
             }
         }
@@ -592,6 +618,7 @@ impl ContextPreparation {
             threshold_tokens: model.threshold_tokens(),
             estimated_input_tokens: estimate.input,
             baseline_source: estimate.source,
+            parts: context_parts(&request, model.as_ref(), estimate.input),
         })
     }
     /// The last provider measurement plus the messages written after it, when
@@ -1058,6 +1085,135 @@ fn last_call<'a>(facts: &'a [EstimateEvent], request_id: &str) -> Option<&'a Est
     facts.iter().find(|(_, event)| {
         matches!(&event.kind, dim_agent_types::EventKind::ModelCall(data) if data.request_id == request_id)
     })
+}
+
+/// `input` split by what `request` carries. Every share but the conversation
+/// is counted on the request's own system prompt, tool definitions and runtime
+/// blocks; the conversation takes the rest, so the shares sum to `input`, and
+/// the counted shares shrink together where they alone exceed it.
+fn context_parts(
+    request: &ModelRequest,
+    model: &dyn crate::host::ContextModel,
+    input: f64,
+) -> Vec<ContextPart> {
+    let empty = || ModelRequest::new(&request.provider_id, &request.model_id, Vec::new());
+    let tools = |dynamic: bool| {
+        let definitions: Vec<ToolDefinition> = request
+            .tools
+            .iter()
+            .flat_map(|tools| tools.iter())
+            .filter(|tool| (tool.source == ToolSource::Dynamic) == dynamic)
+            .cloned()
+            .collect();
+        if definitions.is_empty() {
+            return 0.;
+        }
+        model.count_tokens(&ModelRequest {
+            tools: Some(Arc::new(definitions)),
+            ..empty()
+        })
+    };
+    let found: Vec<(ContextPartKind, &str)> = request
+        .messages
+        .iter()
+        .filter(|message| message.role == Role::User)
+        .flat_map(|message| match &message.content {
+            MessageContent::Text(text) => vec![text.as_str()],
+            MessageContent::Parts(parts) => parts
+                .iter()
+                .filter_map(|part| match part {
+                    MessagePart::Text { text, .. } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect(),
+        })
+        .flat_map(runtime_blocks)
+        .collect();
+    let blocks = |kind: ContextPartKind| {
+        let messages: Vec<Arc<Message>> = found
+            .iter()
+            .filter(|(found, _)| *found == kind)
+            .map(|(_, text)| Arc::new(Message::text(Role::User, *text)))
+            .collect();
+        if messages.is_empty() {
+            return 0.;
+        }
+        model.count_tokens(&ModelRequest {
+            messages,
+            ..empty()
+        })
+    };
+    let system = request.system.as_ref().map_or(0., |system| {
+        model.count_tokens(&ModelRequest {
+            system: Some(system.clone()),
+            ..empty()
+        })
+    });
+    let counted = [
+        (ContextPartKind::SystemPrompt, system),
+        (ContextPartKind::Tools, tools(false)),
+        (ContextPartKind::McpTools, tools(true)),
+        (
+            ContextPartKind::Instructions,
+            blocks(ContextPartKind::Instructions),
+        ),
+        (ContextPartKind::Skills, blocks(ContextPartKind::Skills)),
+        (ContextPartKind::State, blocks(ContextPartKind::State)),
+    ];
+    let sum: f64 = counted.iter().map(|(_, tokens)| tokens).sum();
+    let scale = if sum > input && sum > 0. {
+        input.max(0.) / sum
+    } else {
+        1.
+    };
+    counted
+        .into_iter()
+        .map(|(kind, tokens)| ContextPart {
+            kind,
+            tokens: tokens * scale,
+        })
+        .chain([ContextPart {
+            kind: ContextPartKind::Messages,
+            tokens: (input - sum * scale).max(0.),
+        }])
+        .filter(|part| part.tokens > 0.)
+        .collect()
+}
+
+/// The runtime blocks in `text`: `<dim-state>` and `<dim-rule>` elements,
+/// whose bodies are escaped so they never nest, each with the share its
+/// source names.
+fn runtime_blocks(text: &str) -> Vec<(ContextPartKind, &str)> {
+    let mut found = Vec::new();
+    let mut rest = text;
+    while let Some(start) = rest.find("<dim-") {
+        let tail = &rest[start..];
+        let Some(name) = ["dim-state", "dim-rule"].into_iter().find(|name| {
+            tail[1..].starts_with(name) && tail[1 + name.len()..].starts_with([' ', '>'])
+        }) else {
+            rest = &tail[1..];
+            continue;
+        };
+        let close = format!("</{name}>");
+        let Some(end) = tail.find(&close) else {
+            break;
+        };
+        let block = &tail[..end + close.len()];
+        let source = block
+            .split_once("source=\"")
+            .and_then(|(_, after)| after.split_once('"'))
+            .map_or("", |(source, _)| source);
+        let kind = if source.starts_with("dim/instructions/") {
+            ContextPartKind::Instructions
+        } else if source.starts_with("dim/skills/") {
+            ContextPartKind::Skills
+        } else {
+            ContextPartKind::State
+        };
+        found.push((kind, block));
+        rest = &tail[block.len()..];
+    }
+    found
 }
 
 fn canary_request(facts: &[EstimateEvent]) -> Option<Arc<ModelRequest>> {

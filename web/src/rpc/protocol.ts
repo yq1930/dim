@@ -259,12 +259,18 @@ export type RewindResult = {
 export type CompactResult = { status: "completed" } | { status: "skipped"; reason: string }
 
 /** `session.context.usage` of the main line; `baselineSource` says how the input count was made. */
+/** What a share of the estimated input carries. */
+export type ContextPartKind = "systemPrompt" | "tools" | "mcpTools" | "instructions" | "skills" | "state" | "messages"
+export const CONTEXT_PART_KINDS: readonly ContextPartKind[] = ["messages", "tools", "mcpTools", "systemPrompt", "instructions", "skills", "state"]
+
 export type ContextUsage = {
   contextWindow: number
   outputTokens: number
   thresholdTokens: number
   estimatedInputTokens: number
   baselineSource: string
+  /** The estimate split by what it carries; empty from a service that does not split it. */
+  parts: { kind: ContextPartKind; tokens: number }[]
 }
 
 export type MemberApprovalDescriptor = {

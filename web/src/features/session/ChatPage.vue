@@ -292,6 +292,7 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
       :session-commands="sessionCommands"
       :list-skills="listSkills"
       :context-usage="contextUsage"
+      :show-context="() => panes.show(sessionId, 'details')"
       :plan-mode="planControl"
       :history="sentMessages"
     />

@@ -74,6 +74,8 @@ const props = withDefaults(defineProps<{
   placeholder?: string
   createBranch?: (prompt: string) => Promise<void>
   openLines?: () => void
+  /** Opens the Session's details at its context; the context meter is then a button. */
+  showContext?: () => void
   /** Session commands the menu lists, each only when given. */
   sessionCommands?: SessionCommands
   /** The line's earlier messages, oldest first, as sent. */
@@ -145,9 +147,12 @@ const { matches, commandMode, open: menuOpen, active: activeIndex, move: moveCom
   ],
   listSkills: () => props.listSkills,
 })
-const contextLabel = computed(() => {
+/** As Claude Code's composer: a ring filling with the window, its numbers in the tooltip. */
+const contextMeter = computed(() => {
   const reading = props.contextUsage
-  return reading === undefined || reading.contextWindow <= 0 ? undefined : `${formatTokens(reading.estimatedInputTokens)} / ${formatTokens(reading.contextWindow)}`
+  if (reading === undefined || reading.contextWindow <= 0) return undefined
+  const ratio = Math.min(1, Math.max(0, reading.estimatedInputTokens / reading.contextWindow))
+  return { ratio, label: t("composer.contextDetails", { used: formatTokens(reading.estimatedInputTokens), size: formatTokens(reading.contextWindow), percent: Math.round(ratio * 100) }) }
 })
 const contextNearLimit = computed(() => {
   const reading = props.contextUsage
@@ -499,7 +504,9 @@ defineExpose({ focus: () => field.value?.focus(), quote, insert, openMenu })
           <ComposerModeMenu v-if="workModes.length && variant !== 'panel'" ref="modeMenu" :modes="workModes" :current="workMode" :policy="permission?.policy" :disabled="changingMode" @select="onMode" />
         </div>
         <div class="composer-run-group">
-          <span v-if="contextLabel" class="composer-context" :data-near="contextNearLimit ? '' : undefined" v-tooltip="t('composer.contextUsage')">{{ contextLabel }}</span>
+          <button v-if="contextMeter" type="button" class="ui-icon-button composer-context" data-variant="ghost" data-size="sm" :data-near="contextNearLimit ? '' : undefined" :aria-label="contextMeter.label" v-tooltip="contextMeter.label" :disabled="showContext === undefined" @click="showContext?.()">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" class="context-track" /><circle cx="8" cy="8" r="6" class="context-fill" :stroke-dasharray="`${contextMeter.ratio * 37.7} 37.7`" transform="rotate(-90 8 8)" /></svg>
+          </button>
           <ComposerModelMenu v-if="variant !== 'panel'" ref="modelMenu" :model="model" :selectable="modelSelectable" :disabled="changingModel || changingEffort" :effort="reasoningEffort" :effort-selectable="selectEffort !== undefined" @select="onModel" @effort="onEffort" />
           <button
             class="ui-icon-button"
@@ -529,7 +536,11 @@ defineExpose({ focus: () => field.value?.focus(), quote, insert, openMenu })
 .draft-file-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .attachment-status { padding: var(--space-2); color: var(--muted-foreground); font-size: var(--text-sm); }
 .composer-toolbar { flex-wrap: wrap; }
-.composer-context { color: var(--muted-foreground); font-size: var(--text-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.composer-context { color: var(--muted-foreground); }
+.composer-context:disabled { opacity: 1; cursor: default; }
+.composer-context svg { width: 16px; height: 16px; fill: none; stroke-width: 2; }
+.composer-context .context-track { stroke: var(--border-strong); }
+.composer-context .context-fill { stroke: currentColor; stroke-linecap: round; }
 .composer-context[data-near] { color: var(--danger); }
 .composer-run-group { margin-left: auto; max-width: 100%; flex-wrap: wrap; }
 .composer-input { display: block; width: 100%; min-height: 60px; max-height: 300px; resize: none; padding: 0; border: 0; background: transparent; color: var(--foreground); font: var(--text-base)/var(--leading-relaxed) var(--font-sans); outline: none; }

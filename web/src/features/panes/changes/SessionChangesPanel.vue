@@ -6,13 +6,15 @@ import { useChatStore } from "../../../stores/chat"
 import { useSessionsStore } from "../../../stores/sessions"
 import { useUiStore, type ReviewNote } from "../../../stores/ui"
 import DiffLines from "../../../components/DiffLines.vue"
+import FileContextMenu from "../files/FileContextMenu.vue"
 import { sessionChanges, workspacePath, type FileEdit } from "./session-changes"
 
 /**
  * The detail panel's review of what the Session's main line changed: every
  * file its `write` and `edit` calls touched, with each call's diff in order.
  * Picking a line opens a comment on it; the comments go into the main
- * composer together, as one message for the operator to send.
+ * composer together, as one message for the operator to send. A right click
+ * on a file opens what else can be done with it.
  */
 const props = defineProps<{ sessionId: string }>()
 const { t } = useI18n()
@@ -31,6 +33,7 @@ const notes = computed(() => ui.reviewNotes[props.sessionId] ?? [])
 const drafting = ref<{ key: string; file: string; edit: FileEdit; index: number }>()
 const draftText = ref("")
 const draftField = ref<HTMLTextAreaElement[]>()
+const fileMenu = ref<InstanceType<typeof FileContextMenu>>()
 watch(() => props.sessionId, () => { folded.value = {}; drafting.value = undefined })
 
 function noteKey(edit: FileEdit, index: number): string {
@@ -95,7 +98,7 @@ function putIntoComposer(): void {
       <div v-if="!view || view.status === 'loading'" class="changes-empty" role="status">{{ t("common.loading") }}</div>
       <p v-else-if="files.length === 0" class="changes-empty">{{ t("sessionChanges.empty") }}</p>
       <section v-for="file in files" :key="file.path" class="changes-file">
-        <button type="button" class="changes-file-toggle" :aria-expanded="!folded[file.path]" :title="file.path" @click="folded[file.path] = !folded[file.path]">
+        <button type="button" class="changes-file-toggle" :aria-expanded="!folded[file.path]" :title="file.path" @click="folded[file.path] = !folded[file.path]" @contextmenu.prevent="fileMenu?.open($event, { path: file.path, label: workspacePath(file.path, cwd), dir: false })">
           <ChevronRight :size="14" :class="{ 'is-expanded': !folded[file.path] }" aria-hidden="true" />
           <span class="changes-file-path">{{ workspacePath(file.path, cwd) }}</span>
           <span class="changes-stat" data-tone="success">+{{ file.added }}</span>
@@ -125,6 +128,7 @@ function putIntoComposer(): void {
         </div>
       </section>
     </div>
+    <FileContextMenu ref="fileMenu" :session-id="sessionId" />
     <footer v-if="notes.length" class="review-bar">
       <span>{{ t("review.count", { count: notes.length }, notes.length) }}</span>
       <button type="button" class="ui-button" data-variant="ghost" data-size="sm" @click="ui.clearReviewNotes(sessionId)">{{ t("review.clear") }}</button>

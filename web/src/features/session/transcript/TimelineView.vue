@@ -5,6 +5,7 @@ import { useVirtualizer } from "@tanstack/vue-virtual"
 import { ChevronDown, CircleCheck, FileDiff, GitBranch, LoaderCircle, Users } from "lucide-vue-next"
 import type { TimelineRow } from "../../../projection"
 import ChatMarkdown from "../../../components/ChatMarkdown.vue"
+import MessageContextMenu from "./MessageContextMenu.vue"
 import TimelineUserMessage from "./TimelineUserMessage.vue"
 import TimelineWorkRow from "./TimelineWorkRow.vue"
 import { groupRows, type WorkItem } from "./work"
@@ -39,6 +40,7 @@ const emit = defineEmits<{ quote: [text: string]; branch: [text: string, cut: nu
 const { t } = useI18n()
 const viewport = ref<HTMLElement>()
 const list = ref<HTMLElement>()
+const messageMenu = ref<InstanceType<typeof MessageContextMenu>>()
 /** The view follows new output while the reader is within this distance of the end. */
 const FOLLOW_THRESHOLD_PX = 96
 const following = ref(true)
@@ -196,8 +198,8 @@ onMounted(() => void toEnd())
               @toggle="toggleGroup(entry.key, item.index)"
               @toggle-item="toggleItem"
             />
-            <TimelineUserMessage v-else-if="entry.row.kind === 'user'" :text="entry.row.text" :skills="entry.row.skills" :at="entry.row.at" :quotable="quotable" :branchable="branchable === true" @branch="onBranch(entry.row, $event)" @quote="emit('quote', $event)" />
-            <article v-else-if="entry.row.kind === 'assistant'" class="timeline-row" data-role="assistant">
+            <TimelineUserMessage v-else-if="entry.row.kind === 'user'" :text="entry.row.text" :skills="entry.row.skills" :at="entry.row.at" :quotable="quotable" :branchable="branchable === true" @branch="onBranch(entry.row, $event)" @quote="emit('quote', $event)" @contextmenu.prevent="messageMenu?.open($event, entry.row)" />
+            <article v-else-if="entry.row.kind === 'assistant'" class="timeline-row" data-role="assistant" @contextmenu.prevent="messageMenu?.open($event, entry.row)">
               <strong class="sr-only">{{ t("chat.assistant") }}</strong>
               <ChatMarkdown :content="entry.row.text" :final="!entry.row.streaming" :message-id="entry.row.key" />
             </article>
@@ -267,6 +269,7 @@ onMounted(() => void toEnd())
         </span>
       </button>
     </nav>
+    <MessageContextMenu ref="messageMenu" :quotable="quotable" :branchable="branchable === true" @quote="emit('quote', $event)" @branch="(text, cut) => emit('branch', text, cut)" />
     <Transition name="jump-latest">
       <button v-if="!following" class="ui-icon-button jump-latest" data-variant="secondary" data-size="md" type="button" :aria-label="t('timeline.scrollToBottom')" v-tooltip="t('timeline.scrollToBottom')" @click="jumpToLatest">
         <ChevronDown aria-hidden="true" />

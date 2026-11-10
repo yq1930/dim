@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue"
+import { computed, ref } from "vue"
 import { RouterLink } from "vue-router"
 import { useI18n } from "vue-i18n"
 import { Archive, Circle, CircleDot, Columns2, Copy, LoaderCircle, Pencil, Pin, PinOff, Trash2 } from "lucide-vue-next"
@@ -14,7 +14,7 @@ import { useSessionState } from "./session-state"
 /**
  * A Session in the sidebar: as in Claude Code, a spinner while it runs and a dot while it waits on
  * the operator or has news, its title (and `workspace` where the list mixes workspaces), its age,
- * and what can be done with it.
+ * and what can be done with it, which a right click on the row opens too.
  */
 const props = defineProps<{ session: SessionSummary; workspace?: string; activeSessionId?: string; nowMs: number; busy?: boolean }>()
 const emit = defineEmits<{ navigate: []; action: [kind: "rename" | "archive" | "delete", session: SessionSummary]; copy: [path: string] }>()
@@ -22,6 +22,7 @@ const { t } = useI18n()
 const connection = useConnectionStore()
 const ui = useUiStore()
 const stateOf = useSessionState()
+const menu = ref<InstanceType<typeof RowActionMenu>>()
 const state = computed(() => stateOf(props.session))
 const name = computed(() => props.session.title ?? props.session.preview ?? t("sidebar.untitled"))
 const pinned = computed(() => ui.pinnedSessions.includes(props.session.sessionId))
@@ -32,7 +33,7 @@ const branch = computed(() => git.linkedMain(props.session.cwd) === undefined ? 
 </script>
 
 <template>
-  <li class="session-row">
+  <li class="session-row" @contextmenu.prevent="menu?.open($event)">
     <RouterLink
       class="session-open"
       :to="{ name: 'chat-session', params: { sessionId: session.sessionId } }"
@@ -46,7 +47,7 @@ const branch = computed(() => git.linkedMain(props.session.cwd) === undefined ? 
       <strong>{{ name }}<span v-if="branch" class="session-branch">{{ branch }}</span><span v-if="workspace" class="session-workspace">{{ workspace }}</span><span v-if="state !== 'idle'" class="sr-only">, {{ t(`sidebar.state.${state}`) }}</span></strong>
       <small>{{ formatRelativeTimeShort(new Date(session.updatedAt), nowMs) }}</small>
     </RouterLink>
-    <span class="session-actions"><RowActionMenu :label="t('sidebar.sessionActions', { name })">
+    <span class="session-actions"><RowActionMenu ref="menu" :label="t('sidebar.sessionActions', { name })">
       <button type="button" class="ui-menu-item" @click="ui.togglePinned(session.sessionId)"><PinOff v-if="pinned" aria-hidden="true" /><Pin v-else aria-hidden="true" />{{ t(pinned ? "sidebar.unpin" : "sidebar.pin") }}</button>
       <button v-if="connection.supports('session.methods')" type="button" class="ui-menu-item" :disabled="busy || connection.phase !== 'connected'" @click="emit('action', 'rename', session)"><Pencil aria-hidden="true" />{{ t("sidebar.rename") }}</button>
       <button v-if="connection.supports('session.archive')" type="button" class="ui-menu-item" :disabled="busy || session.running || connection.phase !== 'connected'" @click="emit('action', 'archive', session)"><Archive aria-hidden="true" />{{ t("sidebar.archive") }}</button>

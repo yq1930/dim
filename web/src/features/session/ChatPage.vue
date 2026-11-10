@@ -20,6 +20,7 @@ import TodoPanel from "../panes/plan/TodoPanel.vue"
 import TurnChangesDialog from "./transcript/TurnChangesDialog.vue"
 import { useComposerDrafts } from "./composer/composer-drafts"
 import { LINK_CONTEXT } from "../../components/link-context"
+import { unlinkMentions } from "../../mentions"
 import { useSessionCommands } from "./session-commands"
 import { MAIN_BRANCH, type ContextUsage, type DraftAttachments, type ModelId, type PermissionPreset } from "../../rpc/protocol"
 import { readSkills } from "../../rpc/general-settings"
@@ -104,16 +105,19 @@ async function commit(): Promise<void> {
 }
 const sessionCommands = computed(() => commands.value ? { ...commands.value, tasks: () => panes.show(props.sessionId, "tasks") } : undefined)
 
-// Text a panel puts into this Session's composer (the review comments of the changes panel).
+// Text a panel puts into this Session's composer (the review comments of the changes panel, a file
+// of the tree). A file link written `[@path](…)` goes in as the `@path` mention the picker inserts.
 watch(() => ui.composerInsert, (request) => {
   if (request === undefined || request.sessionId !== props.sessionId) return
   ui.composerInsert = undefined
+  const draft = drafts.get(`session:${props.sessionId}:main`)
+  const { text, mentions } = unlinkMentions(request.text)
+  draft.mentions = [...draft.mentions, ...mentions.filter((mention) => !draft.mentions.some((known) => known.label === mention.label && known.path === mention.path))]
   if (composer.value !== undefined) {
-    void composer.value.insert(request.text)
+    void composer.value.insert(text)
     return
   }
-  const draft = drafts.get(`session:${props.sessionId}:main`)
-  draft.text = draft.text === "" ? request.text : `${draft.text}\n\n${request.text}`
+  draft.text = draft.text === "" ? text : `${draft.text}\n\n${text}`
 })
 
 // A shortcut opens a menu of the composer in the pane the operator is in.

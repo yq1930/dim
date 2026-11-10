@@ -3,7 +3,8 @@ import { nextTick, onBeforeUnmount, ref, type Component } from "vue"
 import { MoreHorizontal } from "lucide-vue-next"
 /**
  * `icon` replaces the trigger's ⋯; `triggerClass` styles the trigger, since the menu has two roots.
- * The `trigger` slot draws a trigger of its own, which opens the menu under itself with `open(element)`.
+ * The `trigger` slot draws a trigger of its own, which opens the menu under itself with `open(element)`;
+ * an empty one leaves a menu only a right click opens, at the pointer, with `open(event)`.
  */
 defineProps<{ label: string; icon?: Component; triggerClass?: string }>()
 const trigger = ref<HTMLButtonElement>()
@@ -44,7 +45,7 @@ defineExpose({ open })
   <slot name="trigger" :open="open" :expanded="expanded">
     <button ref="trigger" type="button" class="ui-icon-button" :class="triggerClass" data-variant="ghost" data-size="sm" :aria-label="label" aria-haspopup="dialog" :aria-expanded="expanded" v-tooltip="label" @click.stop="open()"><component :is="icon ?? MoreHorizontal" aria-hidden="true" /></button>
   </slot>
-  <dialog ref="dialog" class="row-action-menu ui-popover" :style="{ left: `${left}px`, top: `${top}px` }" :aria-label="label" @cancel="expanded = false" @close="expanded = false" @keydown="key" @click="($event.target === dialog || ($event.target as HTMLElement).closest('button')) && close()">
+  <dialog ref="dialog" class="row-action-menu ui-popover" :style="{ left: `${left}px`, top: `${top}px` }" :aria-label="label" @cancel="expanded = false" @close="expanded = false" @keydown="key" @click="($event.target === dialog || ($event.target as HTMLElement).closest('button')) && close()" @contextmenu.prevent.stop="$event.target === dialog && close()">
     <slot />
   </dialog>
 </template>

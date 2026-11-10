@@ -1,20 +1,23 @@
 <script setup lang="ts">
-import { computed, watch } from "vue"
+import { computed, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
 import { ChevronRight, ChevronsDownUp, FileText, Folder, FolderOpen, LoaderCircle, RefreshCw } from "lucide-vue-next"
 import { useFilesStore } from "../../../stores/files"
 import { useToastStore } from "../../../stores/toast"
 import { workspaceName } from "../../../stores/sessions"
+import FileContextMenu from "./FileContextMenu.vue"
 
 /**
  * The Session's workspace as a tree: a folder opens in place, a file opens in the
  * file view (a double click keeps its tab). Folders are read when first opened.
+ * A right click on either opens what else can be done with it.
  */
 const props = defineProps<{ sessionId: string; root: string; activePath?: string }>()
 const emit = defineEmits<{ opened: [] }>()
 const { t } = useI18n()
 const files = useFilesStore()
 const toast = useToastStore()
+const menu = ref<InstanceType<typeof FileContextMenu>>()
 
 type Row = { key: string; path: string; name: string; depth: number } & ({ kind: "file" } | { kind: "folder"; open: boolean } | { kind: "loading" } | { kind: "error"; message: string } | { kind: "more" })
 
@@ -53,6 +56,10 @@ watch(() => props.sessionId, (sessionId) => {
   if (files.folders[sessionId]?.[""] === undefined) void files.readFolder(sessionId, "")
 }, { immediate: true })
 
+function openMenu(event: MouseEvent, row: Row): void {
+  menu.value?.open(event, { path: `${props.root.replace(/\/+$/, "")}/${row.path}`, label: row.path, dir: row.kind === "folder" })
+}
+
 async function openFile(path: string, keep: boolean): Promise<void> {
   try {
     if (await files.open(props.sessionId, path, undefined, keep)) emit("opened")
@@ -80,6 +87,7 @@ async function openFile(path: string, keep: boolean): Promise<void> {
           :style="{ '--depth': row.depth }"
           :title="row.path"
           @click="files.toggleFolder(sessionId, row.path)"
+          @contextmenu.prevent="openMenu($event, row)"
         >
           <ChevronRight class="file-tree-chevron" :class="{ 'is-open': row.open }" aria-hidden="true" />
           <FolderOpen v-if="row.open" aria-hidden="true" /><Folder v-else aria-hidden="true" />
@@ -95,6 +103,7 @@ async function openFile(path: string, keep: boolean): Promise<void> {
           :title="row.path"
           @click="openFile(row.path, false)"
           @dblclick="openFile(row.path, true)"
+          @contextmenu.prevent="openMenu($event, row)"
         >
           <span class="file-tree-chevron" aria-hidden="true" />
           <FileText aria-hidden="true" />
@@ -105,6 +114,7 @@ async function openFile(path: string, keep: boolean): Promise<void> {
         <p v-else class="file-tree-note" :style="{ '--depth': row.depth }">{{ t("files.treeTruncated") }}</p>
       </li>
     </ul>
+    <FileContextMenu ref="menu" :session-id="sessionId" />
   </nav>
 </template>
 

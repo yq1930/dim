@@ -47,7 +47,7 @@ watch(() => ui.composerMenu, (request) => {
   if (request?.pane !== "main") return
   ui.composerMenu = undefined
   composer.value?.openMenu(request.menu)
-})
+}, { flush: "sync" })
 let active = true
 onBeforeUnmount(() => { active = false })
 

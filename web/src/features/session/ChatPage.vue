@@ -12,6 +12,7 @@ import QueuedInputs from "./composer/QueuedInputs.vue"
 import PlanReview from "./composer/PlanReview.vue"
 import QuestionPrompt from "./composer/QuestionPrompt.vue"
 import SessionPaneButtons from "./header/SessionPaneButtons.vue"
+import SessionRenameDialog from "../sidebar/SessionRenameDialog.vue"
 import SessionTitleMenu from "./header/SessionTitleMenu.vue"
 import TimelineView from "./transcript/TimelineView.vue"
 import TranscriptViewMenu from "./header/TranscriptViewMenu.vue"
@@ -46,6 +47,7 @@ const toast = useToastStore()
 const route = useRoute()
 const router = useRouter()
 const forkConfirm = ref<InstanceType<typeof ConfirmDialog>>()
+const renameDialog = ref<InstanceType<typeof SessionRenameDialog>>()
 const drafts = useComposerDrafts()
 
 watch(() => props.sessionId, (id) => chat.open(id), { immediate: true })
@@ -94,6 +96,7 @@ const { commands, failure } = useSessionCommands({
   summary,
   contextUsage,
   confirm: (message, options) => forkConfirm.value?.open(message, options) ?? Promise.resolve(false),
+  askTitle: () => { if (summary.value !== undefined) void renameDialog.value?.open(summary.value) },
 })
 /** Asks the main line to commit the changes of the turn that just ended. */
 async function commit(): Promise<void> {
@@ -120,12 +123,13 @@ watch(() => ui.composerInsert, (request) => {
   draft.text = draft.text === "" ? text : `${draft.text}\n\n${text}`
 })
 
-// A shortcut opens a menu of the composer in the pane the operator is in.
+// A shortcut opens a menu of the composer in the pane the operator is in; within the key press,
+// which a file chooser needs.
 watch(() => ui.composerMenu, (request) => {
   if (request === undefined || request.pane !== (props.pane ?? "main")) return
   ui.composerMenu = undefined
   composer.value?.openMenu(request.menu)
-})
+}, { flush: "sync" })
 
 const listSkills = computed(() => {
   const cwd = summary.value?.cwd
@@ -216,6 +220,7 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
 
   <section v-else class="chat-page">
     <ConfirmDialog ref="forkConfirm" />
+    <SessionRenameDialog ref="renameDialog" />
     <TurnChangesDialog
       v-if="fileChanges"
       ref="changesDialog"

@@ -30,8 +30,8 @@ export type ReviewNote = {
 /** Text a panel asks the Session's main composer to take. */
 export type ComposerInsert = { sessionId: string; text: string; id: number }
 
-/** A menu of a pane's composer that the keyboard asked to open. */
-export type ComposerMenuRequest = { pane: Pane; menu: "mode" | "model"; id: number }
+/** A menu of a pane's composer, or its file chooser, that the keyboard asked to open. */
+export type ComposerMenuRequest = { pane: Pane; menu: "mode" | "model" | "attach"; id: number }
 
 export type NewLineRequest = {
   sessionId: string
@@ -121,6 +121,8 @@ export const useUiStore = defineStore("ui", () => {
   const composerMenu = ref<ComposerMenuRequest>()
   /** Whether the keyboard shortcuts dialog is open. */
   const shortcutsOpen = ref(false)
+  /** Whether the Session switcher is open. */
+  const switcherOpen = ref(false)
   /** The Session shown beside the routed one, when the shell is wide enough. */
   const splitSessionId = ref(persisted.splitSessionId)
   const splitAvailable = computed(() => shellWidth.value >= SPLIT_MIN_WIDTH)
@@ -273,7 +275,7 @@ export const useUiStore = defineStore("ui", () => {
     detailWidth, newLine, endingLine, setDetailWidth,
     sidebarGroupBy, sidebarSortBy,
     viewingSessionId, unread, viewSession, markUnread, setUnread, splitSessionId, splitAvailable, activePane, openSplit, closeSplit,
-    reviewNotes, addReviewNote, removeReviewNote, clearReviewNotes, composerInsert, requestComposerInsert, composerMenu, requestComposerMenu, shortcutsOpen,
+    reviewNotes, addReviewNote, removeReviewNote, clearReviewNotes, composerInsert, requestComposerInsert, composerMenu, requestComposerMenu, shortcutsOpen, switcherOpen,
     approvalKeyboard,
     requestNewLine, closeNewLine, requestEndLine, closeEndLine, resetSessionTabs,
   }

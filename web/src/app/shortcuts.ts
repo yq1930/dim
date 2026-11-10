@@ -8,10 +8,10 @@ import type { TranslationKey } from "../i18n"
  * the keys components handle themselves.
  */
 export type ShortcutCommand =
-  | "showShortcuts" | "toggleSidebar" | "newSession" | "openSettings" | "cycleTranscriptMode"
+  | "showShortcuts" | "toggleSidebar" | "newSession" | "searchSessions" | "openSettings" | "cycleTranscriptMode"
   | "toggleDiff" | "toggleFiles" | "togglePreview" | "toggleTerminal" | "closePane" | "toggleExpandPane"
   | "newTerminal" | "nextTerminal" | "prevTerminal" | "toggleFileList" | "goToFile"
-  | "openModeMenu" | "openModelMenu"
+  | "openModeMenu" | "openModelMenu" | "attachFiles"
 
 type Binding = {
   command: ShortcutCommand
@@ -32,6 +32,7 @@ export const SHORTCUTS: readonly Binding[] = [
   { command: "toggleSidebar", key: "cmd+b", code: "KeyB", matchBy: "char" },
   { command: "newSession", key: "cmd+n", code: "KeyN", matchBy: "char", when: "desktop" },
   { command: "newSession", key: "cmd+shift+o", code: "KeyO", matchBy: "char", when: "browser" },
+  { command: "searchSessions", key: "cmd+k", code: "KeyK", matchBy: "char" },
   { command: "openSettings", key: "cmd+,", code: "Comma", matchBy: "char", when: "desktop" },
   { command: "cycleTranscriptMode", key: "ctrl+o", code: "KeyO", matchBy: "char" },
   { command: "toggleDiff", key: "cmd+shift+d", code: "KeyD", matchBy: "char", when: "desktop" },
@@ -54,6 +55,7 @@ export const SHORTCUTS: readonly Binding[] = [
   { command: "openModeMenu", key: "cmd+shift+m", code: "KeyM", matchBy: "char", when: "desktop" },
   { command: "openModeMenu", key: "cmd+alt+m", code: "KeyM", matchBy: "char" },
   { command: "openModelMenu", key: "cmd+shift+i", code: "KeyI", matchBy: "char" },
+  { command: "attachFiles", key: "cmd+u", code: "KeyU", matchBy: "char" },
 ]
 
 export type ShortcutContext = { mac: boolean; desktop: boolean }
@@ -134,6 +136,7 @@ export type ShortcutHelp = { group: ShortcutGroup; label: TranslationKey } & ({ 
 
 export const SHORTCUT_HELP: readonly ShortcutHelp[] = [
   { group: "general", label: "shortcuts.newSession", command: "newSession" },
+  { group: "general", label: "shortcuts.searchSessions", command: "searchSessions" },
   { group: "general", label: "shortcuts.toggleSidebar", command: "toggleSidebar" },
   { group: "general", label: "shortcuts.openSettings", command: "openSettings" },
   { group: "general", label: "shortcuts.searchSettings", keys: ["cmd+f"] },
@@ -159,5 +162,6 @@ export const SHORTCUT_HELP: readonly ShortcutHelp[] = [
   { group: "composer", label: "shortcuts.modeMenu", command: "openModeMenu" },
   { group: "composer", label: "shortcuts.cycleMode", keys: ["shift+tab"] },
   { group: "composer", label: "shortcuts.modelMenu", command: "openModelMenu" },
+  { group: "composer", label: "shortcuts.attachFiles", command: "attachFiles" },
   { group: "composer", label: "shortcuts.recall", keys: ["up"] },
 ]

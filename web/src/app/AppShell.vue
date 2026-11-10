@@ -20,6 +20,7 @@ import { useTerminalsStore } from "../stores/terminals"
 import { useToastStore } from "../stores/toast"
 import { useUiStore, type Pane } from "../stores/ui"
 import { useKeepAwake } from "./keep-awake"
+import SessionSwitcher from "./SessionSwitcher.vue"
 import ShortcutsDialog from "./ShortcutsDialog.vue"
 import { matchShortcut, shortcutContext, withKeys, type ShortcutCommand } from "./shortcuts"
 
@@ -132,7 +133,7 @@ function paneCommand(view: DetailView, command: PaneCommand, whereShown = false)
   return true
 }
 
-function openComposerMenu(menu: "mode" | "model"): boolean {
+function openComposerMenu(menu: "mode" | "model" | "attach"): boolean {
   if (route.name !== "chat-new" && route.name !== "chat-session") return false
   ui.requestComposerMenu(activePane.value, menu)
   return true
@@ -152,6 +153,10 @@ const commands: Record<ShortcutCommand, () => boolean> = {
   newSession: () => {
     const cwd = sessionId.value === undefined ? undefined : sessions.byId.get(sessionId.value)?.cwd
     void router.push({ name: "chat-new", ...(cwd === undefined ? {} : { query: { cwd } }) })
+    return true
+  },
+  searchSessions: () => {
+    ui.switcherOpen = !ui.switcherOpen
     return true
   },
   openSettings: () => {
@@ -176,7 +181,10 @@ const commands: Record<ShortcutCommand, () => boolean> = {
   goToFile: () => paneCommand("files", "goToFile"),
   openModeMenu: () => openComposerMenu("mode"),
   openModelMenu: () => openComposerMenu("model"),
+  attachFiles: () => openComposerMenu("attach"),
 }
+/** The dialogs a shortcut opens, which the same keys close again. */
+const TOGGLED_DIALOGS: Partial<Record<ShortcutCommand, string>> = { showShortcuts: "shortcuts-dialog", searchSessions: "session-switcher" }
 const keys = shortcutContext()
 
 function onKey(event: KeyboardEvent): void {
@@ -189,9 +197,10 @@ function onKey(event: KeyboardEvent): void {
   if (event.defaultPrevented || event.repeat || event.isComposing) return
   const command = matchShortcut(event, keys)
   if (command === undefined) return
-  // An open dialog keeps the keyboard; the shortcuts dialog still closes with its own keys.
+  // An open dialog keeps the keyboard; one a shortcut opened still closes with its own keys.
   const dialog = document.querySelector("dialog[open]:not(.drawer-content)")
-  if (dialog !== null && !(command === "showShortcuts" && dialog.classList.contains("shortcuts-dialog"))) return
+  const own = TOGGLED_DIALOGS[command]
+  if (dialog !== null && !(own !== undefined && dialog.classList.contains(own))) return
   if (commands[command]()) event.preventDefault()
 }
 
@@ -322,5 +331,6 @@ function focusMain(): void {
     <NewLineDialog v-if="ui.newLine" />
     <EndLineDialog v-if="ui.endingLine" />
     <ShortcutsDialog />
+    <SessionSwitcher />
   </div>
 </template>

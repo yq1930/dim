@@ -7,7 +7,7 @@ export type MenuEntry = { category: string; name: string; description?: string }
 export type CommandEntry = { category: string; name: string; available: boolean }
 
 /** The commands whose words follow them; choosing one in the menu fills `/name ` for them. */
-export const ARGUMENT_COMMANDS: readonly string[] = ["branch", "goal", "effort", "review"]
+export const ARGUMENT_COMMANDS: readonly string[] = ["branch", "goal", "effort", "review", "rename"]
 
 /** `/name words` when `message` is that command, else undefined. */
 export function commandWords(message: string, name: string): string | undefined {

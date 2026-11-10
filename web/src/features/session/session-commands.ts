@@ -14,10 +14,10 @@ import { formatTokens } from "./composer/usage-format"
 
 /**
  * The Session page's own composer commands — /compact, /usage, /fork, /goal,
- * /effort, /review, /status, /copy and /diff — each offered only where the
- * Session serves what it needs, with results and failures reported as notices.
- * `confirm` asks before a fork; `contextUsage` is the composer's meter, which
- * /compact refreshes.
+ * /effort, /review, /rename, /status, /copy and /diff — each offered only where
+ * the Session serves what it needs, with results and failures reported as
+ * notices. `confirm` asks before a fork; `askTitle` opens the rename dialog;
+ * `contextUsage` is the composer's meter, which /compact refreshes.
  */
 export function useSessionCommands(options: {
   sessionId: () => string
@@ -25,8 +25,9 @@ export function useSessionCommands(options: {
   summary: ComputedRef<SessionSummary | undefined>
   contextUsage: Ref<ContextUsage | undefined>
   confirm: (message: string, options: { confirmLabel: string }) => Promise<boolean | undefined>
+  askTitle: () => void
 }) {
-  const { sessionId, view, summary, contextUsage, confirm } = options
+  const { sessionId, view, summary, contextUsage, confirm, askTitle } = options
   const { t } = useI18n()
   const chat = useChatStore()
   const connection = useConnectionStore()
@@ -53,6 +54,7 @@ export function useSessionCommands(options: {
       goal: session.methods.includes("session.goal.set") ? goal : undefined,
       effort: effortChoices.value !== undefined && effortChoices.value.length > 0 ? effort : undefined,
       review,
+      rename: session.methods.includes("session.rename") ? rename : undefined,
       status,
       copy: copyLastReply,
       diff: () => panes.show(sessionId(), "changes"),
@@ -174,6 +176,21 @@ export function useSessionCommands(options: {
     const prompt = focus === "" ? t("review.prompt") : `${t("review.prompt")}\n\n${t("review.focus", { focus })}`
     try {
       await chat.submit(sessionId(), MAIN_BRANCH, prompt)
+    } catch (cause) {
+      failure(cause)
+    }
+  }
+
+  /** `/rename` with no words asks for the title; `/rename TITLE` sets it. */
+  async function rename(words: string): Promise<void> {
+    const title = words.trim()
+    if (title === "") {
+      askTitle()
+      return
+    }
+    try {
+      await sessions.rename(sessionId(), title)
+      toast.push({ tone: "success", title: t("command.renamed", { title }) })
     } catch (cause) {
       failure(cause)
     }

@@ -278,6 +278,7 @@ commands are handled locally rather than submitted as model input.
 | `session` | `/compact` | Compact the main line's context (`session.context.compact`); listed when the Session's method table (`session.methods`) lists it. Reports the result as a notice |
 | `session` | `/usage` | Show the main line's context window usage (`session.context.usage`); listed under the same condition as `/compact` |
 | `session` | `/fork` | Fork the Session at its last finished turn (`session.fork {at}`) after a confirmation, then open the new Session; listed when the connection serves `session.fork` and main has a finished turn |
+| `session` | `/rename [name]` | Set the Session's title to the words after it (`session.rename`), or open the sidebar's rename dialog when there are none; listed when the Session's method table lists `session.rename` |
 | `session` | `/goal [words]` | Show the main line's goal, folded from its own events (as the TUI folds it), or write it: `/goal OBJECTIVE`, `set`, `edit`, `pause`, `resume` and `clear` call `session.goal.<call>` with `branchId: main`; listed when the Session's method table lists `session.goal.set`. The menu fills `/goal ` for its words |
 | `session` | `/review [focus]` | Ask the main line to review the workspace's uncommitted changes, untracked files included, and report problems by severity with file and line before changing anything, as Codex's `/review` does; the words after it name a focus. Sent as an ordinary message (`session.submit`) in the composer's language; listed when the Session is ready |
 | `session` | `/diff` | Open the Changes view of the detail panel (below) |
@@ -288,7 +289,7 @@ commands are handled locally rather than submitted as model input.
 | `session` | `/lines` | Open the existing Session lines panel |
 | `session` | `/new` | Navigate to the existing new-Session page, seeded with the current Session's working directory |
 
-`/compact`, `/usage`, `/fork`, `/goal`, `/effort`, `/review`, `/diff`, `/status` and `/copy` belong to the main Session composer; a line composer does not list them, because the Session-wide cut and compaction are decided on main. Rename is offered through the sidebar's Session action menu using `session.rename`.
+`/compact`, `/usage`, `/fork`, `/rename`, `/goal`, `/effort`, `/review`, `/diff`, `/status` and `/copy` belong to the main Session composer; a line composer does not list them, because the Session-wide cut and compaction are decided on main. Rename is also offered through the sidebar's Session action menu.
 
 The model menu lists the current provider's first nine models, numbered for the keyboard, then two submenus: the
 reasoning effort, when the catalog declares choices for the current model, and the other providers' models with a
@@ -828,11 +829,12 @@ The macOS desktop window lets a frame show an origin only after the page announc
 
 ### 4.10 Keyboard shortcuts
 
-The page's shortcuts are one table, `app/shortcuts.ts`, in the shape of Claude Code's keybindings: each binding names a command, its keys (`cmd` reads as Ctrl off the Mac), whether it matches the character the key types (so letters follow the keyboard layout) or the physical key (punctuation), and where it applies (the Mac, the desktop app, or a browser, which keeps some keys for itself). The shell runs the commands; while a dialog is open the keyboard stays with it. ⌘/, or the keyboard button at the foot of the sidebar, opens the Keyboard shortcuts dialog: the table's commands and the keys components handle themselves (Enter, Shift+Enter, Esc, ↑, Shift+Tab, ⌘S, ⌘F in Settings, and an approval's Enter or Y and Esc or N), in three groups, filtered by what is typed. The tooltips of controls a command also runs name its keys.
+The page's shortcuts are one table, `app/shortcuts.ts`, in the shape of Claude Code's keybindings: each binding names a command, its keys (`cmd` reads as Ctrl off the Mac), whether it matches the character the key types (so letters follow the keyboard layout) or the physical key (punctuation), and where it applies (the Mac, the desktop app, or a browser, which keeps some keys for itself). The shell runs the commands; while a dialog is open the keyboard stays with it, except that the keys which opened a dialog close it again. ⌘/, or the keyboard button at the foot of the sidebar, opens the Keyboard shortcuts dialog: the table's commands and the keys components handle themselves (Enter, Shift+Enter, Esc, ↑, Shift+Tab, ⌘S, ⌘F in Settings, and an approval's Enter or Y and Esc or N), in three groups, filtered by what is typed. The tooltips of controls a command also runs name its keys.
 
 | Group | Command | Desktop app | Browser |
 | --- | --- | --- | --- |
 | General | New Session (in the routed Session's workspace) | ⌘N | ⇧⌘O |
+| General | Search Sessions | ⌘K | ⌘K |
 | General | Toggle sidebar | ⌘B | ⌘B |
 | General | Settings | ⌘, | — |
 | General | Keyboard shortcuts | ⌘/ | ⌘/ |
@@ -844,8 +846,11 @@ The page's shortcuts are one table, `app/shortcuts.ts`, in the shape of Claude C
 | Panes | New terminal; next and previous terminal | ⌃⇧\`; ⌃⇧] and ⌃⇧[ (Ctrl+PgDn and Ctrl+PgUp off the Mac) | ⌃⇧\`; ⌃⇧] and ⌃⇧[ |
 | Panes | Show or hide the file tree; go to a file | ⇧⌘Y; ⌘P | ⌃⇧Y; ⌘P |
 | Composer | Mode menu, model menu of the active pane | ⇧⌘M or ⌥⌘M, ⇧⌘I | ⌥⌘M, ⇧⌘I |
+| Composer | Add files or photos to the active pane's message | ⌘U | ⌘U |
 
-Off the Mac, ⌘ reads as Ctrl. A pane command does nothing for a Session without that view (Files without `session.files.read`, Terminal without terminals). A new terminal and going to a file show their view first; switching terminals and the file tree act only on the view shown. The view takes the command through `panes.request` once it is mounted. The composer of the active pane opens its menu on `ui.composerMenu`, as it takes panel text on `ui.composerInsert`.
+Off the Mac, ⌘ reads as Ctrl. A pane command does nothing for a Session without that view (Files without `session.files.read`, Terminal without terminals). A new terminal and going to a file show their view first; switching terminals and the file tree act only on the view shown. The view takes the command through `panes.request` once it is mounted. The composer of the active pane opens its menu, or its file chooser, on `ui.composerMenu` within the key press (a chooser opens only from one), as it takes panel text on `ui.composerInsert`.
+
+⌘K opens the Session switcher (`app/SessionSwitcher.vue`), as in Claude Code's desktop app: the sidebar's Sessions, the latest first, narrowed by the words typed of a title, a workspace name or a path. ↑ and ↓ move the highlight, which starts on the first Session other than the one shown, so ⌘K and Enter go back to the one before; Enter or a click opens it.
 
 ### 4.11 Sessions without a folder
 

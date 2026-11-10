@@ -30,6 +30,8 @@ type SessionCommands = {
   effort?: (words: string) => Promise<void>
   /** Receives the words after `/review`, the focus of the review; empty reviews everything. */
   review?: (words: string) => Promise<void>
+  /** Receives the words after `/rename`, the new title; empty asks for one. */
+  rename?: (words: string) => Promise<void>
   status?: () => void
   copy?: () => Promise<void>
   diff?: () => void
@@ -133,6 +135,7 @@ const { matches, commandMode, open: menuOpen, active: activeIndex, move: moveCom
     { category: "session", name: "compact", available: props.sessionCommands?.compact !== undefined },
     { category: "session", name: "usage", available: props.sessionCommands?.usage !== undefined },
     { category: "session", name: "fork", available: props.sessionCommands?.fork !== undefined },
+    { category: "session", name: "rename", available: props.sessionCommands?.rename !== undefined },
     { category: "session", name: "goal", available: props.sessionCommands?.goal !== undefined },
     { category: "session", name: "review", available: props.sessionCommands?.review !== undefined },
     { category: "session", name: "diff", available: props.sessionCommands?.diff !== undefined },
@@ -182,7 +185,7 @@ async function submit(): Promise<void> {
     await runCommand("branch")
     return
   }
-  for (const name of ["goal", "review", "effort"] as const) {
+  for (const name of ["goal", "review", "effort", "rename"] as const) {
     const handler = props.sessionCommands?.[name]
     const words = dismissed.value || handler === undefined ? undefined : commandWords(message, name)
     if (handler === undefined || words === undefined) continue
@@ -409,10 +412,11 @@ async function quote(message: string): Promise<void> {
 }
 
 onMounted(() => { resize(); field.value?.focus() })
-/** Opens the mode or model menu, as their shortcuts do. */
-function openMenu(menu: "mode" | "model"): void {
+/** Opens the mode or model menu, or the file chooser, as their shortcuts do. */
+function openMenu(menu: "mode" | "model" | "attach"): void {
   if (menu === "mode") modeMenu.value?.open()
-  else modelMenu.value?.open()
+  else if (menu === "model") modelMenu.value?.open()
+  else if (!sending.value && !draft.value.reading) upload.value?.click()
 }
 
 defineExpose({ focus: () => field.value?.focus(), quote, insert, openMenu })
@@ -449,7 +453,7 @@ defineExpose({ focus: () => field.value?.focus(), quote, insert, openMenu })
           @click.stop="runMenuEntry(command)"
         >
           <span class="command-category">{{ index === 0 || matches[index - 1]?.category !== command.category ? t(`composer.category.${command.category}`) : '' }}</span>
-          <span class="command-name">/{{ command.name }}<span v-if="command.name === 'branch'" class="command-argument"> &lt;prompt&gt;</span><span v-else-if="command.name === 'goal' || command.name === 'effort' || command.name === 'review'" class="command-argument"> [args]</span></span>
+          <span class="command-name">/{{ command.name }}<span v-if="command.name === 'branch'" class="command-argument"> &lt;prompt&gt;</span><span v-else-if="command.name === 'goal' || command.name === 'effort' || command.name === 'review'" class="command-argument"> [args]</span><span v-else-if="command.name === 'rename'" class="command-argument"> [name]</span></span>
           <span class="command-description">{{ command.category === 'skill' ? command.description : t(`composer.command.${command.name}`) }}</span>
         </button>
         <p class="command-keys">{{ t("composer.commandKeys") }}</p>

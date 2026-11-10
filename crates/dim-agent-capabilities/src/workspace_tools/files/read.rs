@@ -684,7 +684,8 @@ fn read_image(
     // The source is the file itself: `scale_image` reads the header, runs the
     // pixel guard and only then decodes, so the file is never all in memory.
     let source = std::io::BufReader::new(&mut *file);
-    Ok(match images::scale_image(source) {
+    let scaled = images::scale_image(source, images::TOOL_IMAGE_BASE64_BYTES);
+    Ok(match scaled {
         Ok(image) => image_result(display, size, input, image),
         Err(ImageRefusal::NotAnImage) => binary(display),
         Err(ImageRefusal::UnsupportedFormat(name)) => unsupported_image(display, name),

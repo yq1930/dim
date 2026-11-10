@@ -13,8 +13,11 @@ request's model (Attachments A.1; [images.rs](../../../../crates/dim-agent-capab
 The rule covers images in user content and images inside a tool result alike: a
 model that does not accept image input gets the text placeholder in the block's
 place, an image the request cannot carry gets the other placeholder, and every
-other image is sent as is. The decision changes the request only; the adopted
-input, the Timeline and the stored tool result never change.
+other image is sent as is, except that a request carries only its three newest
+tool-result images plus any the model has not answered yet: an older one gets a
+placeholder telling the model to run the tool again. The decision changes the
+request only; the adopted input, the Timeline and the stored tool result never
+change.
 
 ## Dependencies
 

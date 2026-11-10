@@ -223,7 +223,7 @@ CLI 在提交前检查：
 | URL | 从不发送（A3） |
 | 被拒绝 | 不发送；保留草稿并显示原因 |
 
-图片是缩放，不是拒绝。规则与 `read` 相同，只在 [WorkspaceTools § read results and images](../../../architecture/rust-agent/plugins/WorkspaceTools.md#read-results-and-images) 写一次：`images::scale_image` 把图片变成可发送的——最长边不超过 2048 px、base64 编码不超过 5,000,000 字节，应用 EXIF 方向使像素正立，PNG 在其缩放后的 PNG 放得下时保持 PNG，否则用 JPEG，动画只发送第一帧。唯一的大小拒绝是该函数的 1 亿像素护栏，消息给出尺寸；不是图片的字节、本构建无法解码的格式和无效数据与以前一样被拒绝。
+图片是缩放，不是拒绝。规则与 `read` 相同，只在 [WorkspaceTools § read results and images](../../../architecture/rust-agent/plugins/WorkspaceTools.md#read-results-and-images) 写一次，字节上限用附件自己的：`images::scale_image` 把图片变成可发送的——最长边不超过 2048 px、base64 编码不超过 5,000,000 字节，应用 EXIF 方向使像素正立，PNG 在其缩放后的 PNG 放得下时保持 PNG，否则用 JPEG，动画只发送第一帧。唯一的大小拒绝是该函数的 1 亿像素护栏，消息给出尺寸；不是图片的字节、本构建无法解码的格式和无效数据与以前一样被拒绝。
 
 限制（A2）：每次提交最多 20 张图片，整个编码请求不超过 16 MiB 传输帧；仍然超出帧的提交被拒绝并保留草稿。块保持其顺序。
 
@@ -235,6 +235,9 @@ ModelProvider 补充（已在 S11 实现，`model_provider/images.rs`；[总体�
 | 模型不接受图片输入（Provider 目录） | 文本 `[Image omitted: the current model does not accept images.]` |
 | 能力未知 | 原样发送；由提供方决定（A4） |
 | URL 来源、缺失或无法解码的 base64 数据，或 PNG、JPEG、WebP、GIF 以外的格式 | 文本 `[Image omitted: the image cannot be sent to this model.]`（A10） |
+| 最后一条 assistant 消息之前的工具结果里可发送的图片，且不在本次请求最新的三张工具结果图片之内 | 文本 `[Image removed from context: only the most recent tool images are kept. Run the tool again to see it.]` |
+
+最后一条 assistant 消息之后的工具结果图片是模型尚未回应的：始终发送，并计入这三张。用户内容里的图片从不移除。之后的每个请求都会再次携带图片，这条规则限定了长会话重复发送的量；随着消息追加，被移除的图片只增不减，所以提供方缓存的前缀每移除一张图片只变化一次。
 
 这里不检查大小：没有适配器公布按模型的图片大小上限，所以超大的图片照常发送，由提供方决定，与能力未知时相同（A4）。CLI 的缩放规则和限制（A2）在提交前仍然适用。
 

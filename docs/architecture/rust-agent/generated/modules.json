@@ -777,7 +777,9 @@
       "crate": "dim_agent_capabilities",
       "parent": "dim_agent_capabilities::model_provider",
       "file": "crates/dim-agent-capabilities/src/model_provider/images.rs",
-      "unexpandedMacros": []
+      "unexpandedMacros": [
+        "matches"
+      ]
     },
     {
       "id": "dim_agent_capabilities::model_provider::recovery",
@@ -11062,6 +11064,7 @@
         "path MessagePart::Image",
         "path MessagePart::Text",
         "path MessagePart::ToolResult",
+        "path Role::Assistant",
         "path ToolContent::Blocks",
         "path content"
       ]
@@ -15059,6 +15062,7 @@
         "path ScaledImage",
         "path Sniffed::Image",
         "path Sniffed::Unsupported",
+        "path images::TOOL_IMAGE_BASE64_BYTES",
         "path images::scale_image",
         "path images::sniff",
         "use crate::images",
@@ -29289,6 +29293,7 @@
         "path ImageRefusal::UnsupportedFormat",
         "path ImageSize",
         "path MAX_PIXELS",
+        "path dim_agent_capabilities::images::MAX_BASE64_BYTES",
         "path dim_agent_capabilities::images::ScaledImage",
         "path dim_agent_capabilities::images::scale_image",
         "path dim_agent_capabilities::images::scale_pixels",

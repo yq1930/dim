@@ -2,6 +2,7 @@ import { computed, type ComputedRef } from "vue"
 import { useI18n } from "vue-i18n"
 import type { ImageBlock } from "../../../rpc/protocol"
 import type { ComposerDraft } from "./composer-drafts"
+import { fitImage } from "./image-fit"
 
 /** The files the attachment button offers. */
 export const FILE_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,application/pdf,.pdf,text/*,application/json,application/javascript,application/xml,.ts,.tsx,.jsx,.vue,.rs,.go,.py,.php,.sql,.md,.yaml,.yml,.toml,.ini,.sh,.css,.scss,.jsonc,.log,.diff,.patch,.svg"
@@ -30,15 +31,16 @@ export function useComposerAttachments(draft: ComputedRef<ComposerDraft>, option
   const files = computed({ get: () => draft.value.files, set: (value) => { draft.value.files = value } })
   const empty = computed(() => images.value.length === 0 && pastes.value.length === 0 && files.value.length === 0)
 
-  function readImage(file: File): Promise<{ url: string; block: ImageBlock }> {
+  async function readImage(file: File): Promise<{ url: string; block: ImageBlock }> {
+    const image = await fitImage(file).catch(() => { throw new Error(t("composer.imageReadFailed")) })
     return new Promise((resolve, reject) => {
       const reader = new FileReader()
       reader.onload = () => {
         const url = String(reader.result)
-        resolve({ url, block: { type: "image", source: { type: "base64", mediaType: file.type, data: url.slice(url.indexOf(",") + 1) } } })
+        resolve({ url, block: { type: "image", source: { type: "base64", mediaType: image.type, data: url.slice(url.indexOf(",") + 1) } } })
       }
       reader.onerror = () => reject(reader.error ?? new Error(t("composer.imageReadFailed")))
-      reader.readAsDataURL(file)
+      reader.readAsDataURL(image)
     })
   }
 

@@ -8,6 +8,8 @@ import { createPinia, setActivePinia } from "pinia"
 
 globalThis.Document = class {}
 globalThis.ShadowRoot = class {}
+// The composer fits an image to the read limits before reading it; these fit as they are.
+globalThis.createImageBitmap = async () => ({ width: 1, height: 1, close() {} })
 
 const components = /\/(ChatPage|LineConversation|ComposerPanel|ComposerModeMenu|ConfirmDialog|QuestionPrompt)\.vue$/
 registerHooks({
@@ -212,7 +214,7 @@ for (const branchId of ["main", "worker"]) {
     const { root, submissions } = mount(t, branchId)
     const field = all(root).find((element) => element.type === "textarea")
     let prevented = false
-    field.props.onPaste({ clipboardData: { files: [{ type: "image/png" }] }, preventDefault() { prevented = true } })
+    field.props.onPaste({ clipboardData: { files: [{ type: "image/png", size: 1 }] }, preventDefault() { prevented = true } })
     await flush()
     assert.equal(prevented, true)
     assert(all(root).some((element) => element.type === "img"))
@@ -236,12 +238,14 @@ test("overlapping image reads preserve additions and removals in either completi
   for (const order of [[0, 1], [1, 0]]) {
     const { root, submissions } = mount(t, "main")
     const field = all(root).find((element) => element.type === "textarea")
-    const paste = (data) => field.props.onPaste({ clipboardData: { files: [{ type: "image/png", data }] }, preventDefault() {} })
+    const paste = (data) => field.props.onPaste({ clipboardData: { files: [{ type: "image/png", size: 1, data }] }, preventDefault() {} })
     paste("b2xk")
+    await flush()
     readers.shift().onload()
     await flush()
     paste("Zmlyc3Q=")
     paste("c2Vjb25k")
+    await flush()
     await click(button(root, "composer.removeAttachment"))
     for (const index of order) {
       readers[index].onload()
@@ -265,7 +269,7 @@ test("send acknowledgments clear only submitted attachments, while failures pres
     const field = all(root).find((element) => element.type === "textarea")
     const pastes = ["first paste\n".repeat(1700), "next paste\n".repeat(1800)]
     const add = async (data, value) => {
-      field.props.onPaste({ clipboardData: { files: [{ type: "image/png", data }] }, preventDefault() {} })
+      field.props.onPaste({ clipboardData: { files: [{ type: "image/png", size: 1, data }] }, preventDefault() {} })
       field.props.onPaste({ clipboardData: { files: [], getData: () => value }, preventDefault() {} })
       await flush()
     }

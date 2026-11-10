@@ -1,6 +1,6 @@
 //! One scaling step for every place that turns a local image into an image
 //! block: `read` and the CLI's attachments both call it, so both send an image
-//! the same way.
+//! the same way, each within its own byte limit.
 use image::{
     AnimationDecoder, DynamicImage, GenericImageView, ImageDecoder, ImageFormat, ImageReader, Rgb,
     RgbImage, codecs::jpeg::JpegEncoder, imageops::FilterType, metadata::Orientation,
@@ -16,6 +16,10 @@ pub const MAX_EDGE: u32 = 2048;
 /// or 2^20, and this value holds under either reading.
 /// Raw bytes `n` fit when `4 * ceil(n / 3) <= MAX_BASE64_BYTES`.
 pub const MAX_BASE64_BYTES: u64 = 5_000_000;
+/// The largest base64 encoding of an image a tool returns, in bytes. Every
+/// later request of the session carries the image again, so it is held well
+/// under what a provider accepts.
+pub const TOOL_IMAGE_BASE64_BYTES: u64 = 500_000;
 /// The pixel guard: a header claiming more pixels is refused before decoding.
 pub const MAX_PIXELS: u64 = 100_000_000;
 /// The largest allocation one decoder may make, in bytes: [`MAX_PIXELS`] in the
@@ -175,13 +179,15 @@ pub enum ImageRefusal {
 /// The whole source is never buffered: the first bytes are read to recognize
 /// the format, the header is read from the same source and the pixel guard
 /// runs, and only then are the pixels decoded. An image sent as it is is read
-/// back in full only when its base64 encoding is within [`MAX_BASE64_BYTES`],
+/// back in full only when its base64 encoding is within `max_base64_bytes`,
 /// so memory stays within that bound and the pixel guard.
 ///
-/// An image that fits both limits is returned unchanged. An image whose longest
-/// edge exceeds [`MAX_EDGE`], whose base64 encoding exceeds
-/// [`MAX_BASE64_BYTES`], whose EXIF orientation is not the identity, or which
-/// is animated is decoded and re-encoded: a PNG source stays PNG while its
+/// `max_base64_bytes` is [`MAX_BASE64_BYTES`] for an attachment and
+/// [`TOOL_IMAGE_BASE64_BYTES`] for a tool result. An image that fits both
+/// limits is returned unchanged. An image whose longest edge exceeds
+/// [`MAX_EDGE`], whose base64 encoding exceeds `max_base64_bytes`, whose EXIF
+/// orientation is not the identity, or which is animated is decoded and
+/// re-encoded: a PNG source stays PNG while its
 /// scaled PNG fits, and everything else becomes JPEG at quality 85, its long
 /// edge stepping down until the encoding fits. The EXIF orientation is applied
 /// before anything else, so the sent pixels are upright, and an animation is
@@ -191,7 +197,10 @@ pub enum ImageRefusal {
 /// is reported as the pixel-guard refusal; the WebP decoder takes no allocation
 /// limit, so a metadata chunk larger than that bound, or than the file that
 /// declares it, is refused before the decoder reads it.
-pub fn scale_image<R: BufRead + Seek>(mut source: R) -> Result<ScaledImage, ImageRefusal> {
+pub fn scale_image<R: BufRead + Seek>(
+    mut source: R,
+    max_base64_bytes: u64,
+) -> Result<ScaledImage, ImageRefusal> {
     let kind = match sniffed(&mut source)? {
         Some(Sniffed::Image(kind)) => kind,
         Some(Sniffed::Unsupported(name)) => return Err(ImageRefusal::UnsupportedFormat(name)),
@@ -216,10 +225,18 @@ pub fn scale_image<R: BufRead + Seek>(mut source: R) -> Result<ScaledImage, Imag
                 stored,
                 Orientation::NoTransforms,
                 animated,
+                max_base64_bytes,
             )? {
                 return Ok(image);
             }
-            reencoded(kind, stored, Orientation::NoTransforms, image, animated)
+            reencoded(
+                kind,
+                stored,
+                Orientation::NoTransforms,
+                image,
+                animated,
+                max_base64_bytes,
+            )
         }
         ImageKind::WebP => {
             rewind(&mut source, kind)?;
@@ -238,10 +255,17 @@ pub fn scale_image<R: BufRead + Seek>(mut source: R) -> Result<ScaledImage, Imag
                 .map_err(|error| decode_refusal(kind, stored, error))?;
             if decoder.has_animation() {
                 let (image, animated) = first_frame(kind, stored, decoder.into_frames())?;
-                return reencoded(kind, stored, orientation, image, animated);
+                return reencoded(kind, stored, orientation, image, animated, max_base64_bytes);
             }
             drop(decoder);
-            if let Some(image) = unchanged(&mut source, kind, stored, orientation, false)? {
+            if let Some(image) = unchanged(
+                &mut source,
+                kind,
+                stored,
+                orientation,
+                false,
+                max_base64_bytes,
+            )? {
                 return Ok(image);
             }
             rewind(&mut source, kind)?;
@@ -249,12 +273,19 @@ pub fn scale_image<R: BufRead + Seek>(mut source: R) -> Result<ScaledImage, Imag
                 .map_err(|error| invalid(kind, error))?;
             let image = DynamicImage::from_decoder(decoder)
                 .map_err(|error| decode_refusal(kind, stored, error))?;
-            reencoded(kind, stored, orientation, image, false)
+            reencoded(kind, stored, orientation, image, false, max_base64_bytes)
         }
         _ => {
             rewind(&mut source, kind)?;
             let (stored, orientation) = read_header(&mut source, kind)?;
-            if let Some(image) = unchanged(&mut source, kind, stored, orientation, false)? {
+            if let Some(image) = unchanged(
+                &mut source,
+                kind,
+                stored,
+                orientation,
+                false,
+                max_base64_bytes,
+            )? {
                 return Ok(image);
             }
             rewind(&mut source, kind)?;
@@ -265,7 +296,7 @@ pub fn scale_image<R: BufRead + Seek>(mut source: R) -> Result<ScaledImage, Imag
                 .map_err(|error| decode_refusal(kind, stored, error))?;
             let image = DynamicImage::from_decoder(decoder)
                 .map_err(|error| decode_refusal(kind, stored, error))?;
-            reencoded(kind, stored, orientation, image, false)
+            reencoded(kind, stored, orientation, image, false, max_base64_bytes)
         }
     }
 }
@@ -320,6 +351,7 @@ pub fn scale_pixels(image: DynamicImage) -> Result<ScaledImage, ImageRefusal> {
         Orientation::NoTransforms,
         image,
         false,
+        MAX_BASE64_BYTES,
     )
 }
 
@@ -416,7 +448,7 @@ fn first_frame(
 }
 
 /// The source's own bytes when nothing has to change and its base64 encoding
-/// is within [`MAX_BASE64_BYTES`]; `None` when the image has to be re-encoded
+/// is within `max_base64_bytes`; `None` when the image has to be re-encoded
 /// instead.
 fn unchanged<R: BufRead + Seek>(
     source: &mut R,
@@ -424,6 +456,7 @@ fn unchanged<R: BufRead + Seek>(
     stored: ImageSize,
     orientation: Orientation,
     animated: bool,
+    max_base64_bytes: u64,
 ) -> Result<Option<ScaledImage>, ImageRefusal> {
     let length = source
         .seek(SeekFrom::End(0))
@@ -432,7 +465,7 @@ fn unchanged<R: BufRead + Seek>(
         && orientation == Orientation::NoTransforms
         && stored.width <= MAX_EDGE
         && stored.height <= MAX_EDGE
-        && fits_base64(length);
+        && base64_len(length) <= max_base64_bytes;
     if !fits {
         return Ok(None);
     }
@@ -465,11 +498,12 @@ fn reencoded(
     orientation: Orientation,
     mut image: DynamicImage,
     animated: bool,
+    max_base64_bytes: u64,
 ) -> Result<ScaledImage, ImageRefusal> {
     if orientation != Orientation::NoTransforms {
         image.apply_orientation(orientation);
     }
-    let (bytes, media_type, sent) = encode(&image, kind)?;
+    let (bytes, media_type, sent) = encode(&image, kind, max_base64_bytes)?;
     Ok(ScaledImage {
         bytes,
         media_type,
@@ -501,12 +535,6 @@ pub fn base64_len(raw: u64) -> u64 {
     raw.div_ceil(3) * 4
 }
 
-/// Whether `raw` bytes of an image encode within [`MAX_BASE64_BYTES`], padding
-/// included.
-fn fits_base64(raw: u64) -> bool {
-    base64_len(raw) <= MAX_BASE64_BYTES
-}
-
 /// Rewinds the source to its first byte.
 fn rewind<R: Seek>(source: &mut R, kind: ImageKind) -> Result<(), ImageRefusal> {
     source
@@ -521,17 +549,19 @@ fn rewind<R: Seek>(source: &mut R, kind: ImageKind) -> Result<(), ImageRefusal> 
 fn encode(
     image: &DynamicImage,
     kind: ImageKind,
+    max_base64_bytes: u64,
 ) -> Result<(Vec<u8>, &'static str, ImageSize), ImageRefusal> {
+    let fits = |encoded: &[u8]| base64_len(encoded.len() as u64) <= max_base64_bytes;
     let mut fitted = fit(image);
     if kind == ImageKind::Png {
         let encoded = png(&fitted).map_err(|error| invalid(kind, error))?;
-        if fits_base64(encoded.len() as u64) {
+        if fits(&encoded) {
             return Ok((encoded, "image/png", size(fitted.dimensions())));
         }
     }
     loop {
         let encoded = jpeg(&fitted)?;
-        if fits_base64(encoded.len() as u64) {
+        if fits(&encoded) {
             return Ok((encoded, "image/jpeg", size(fitted.dimensions())));
         }
         let (width, height) = fitted.dimensions();

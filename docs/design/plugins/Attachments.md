@@ -223,7 +223,7 @@ CLI checks, before submitting:
 | URL | Never sent (A3) |
 | Rejected | Not sent; the draft is kept and the reason shown |
 
-Images are scaled, not refused. The rule is the one `read` uses, written once in [WorkspaceTools § read results and images](../../architecture/rust-agent/plugins/WorkspaceTools.md#read-results-and-images): `images::scale_image` makes an image acceptable within 2048 px on its longest edge and 5,000,000 bytes of base64, applying the EXIF orientation so the pixels are upright, keeping a PNG while its scaled PNG fits and using JPEG otherwise, and sending an animation as its first frame. The only size refusal is that function's 100-megapixel guard, which names the dimensions; bytes that are not an image, a format this build cannot decode and invalid data are refused as before.
+Images are scaled, not refused. The rule is the one `read` uses, written once in [WorkspaceTools § read results and images](../../architecture/rust-agent/plugins/WorkspaceTools.md#read-results-and-images), with an attachment's own byte limit: `images::scale_image` makes an image acceptable within 2048 px on its longest edge and 5,000,000 bytes of base64, applying the EXIF orientation so the pixels are upright, keeping a PNG while its scaled PNG fits and using JPEG otherwise, and sending an animation as its first frame. The only size refusal is that function's 100-megapixel guard, which names the dimensions; bytes that are not an image, a format this build cannot decode and invalid data are refused as before.
 
 Limits (A2): at most 20 images per submission and the 16 MiB transport frame for the whole encoded request; a submission that still exceeds the frame is refused and the draft kept. Blocks keep their order.
 
@@ -235,6 +235,9 @@ ModelProvider supplement (implemented in S11, `model_provider/images.rs`; [overv
 | The model does not accept image input (Provider catalog) | Text `[Image omitted: the current model does not accept images.]` |
 | Capability unknown | Sent as is; the provider decides (A4) |
 | URL source, missing or undecodable base64 data, or a format other than PNG, JPEG, WebP or GIF | Text `[Image omitted: the image cannot be sent to this model.]` (A10) |
+| A sendable image in a tool result before the last assistant message, older than the three newest tool-result images of the request | Text `[Image removed from context: only the most recent tool images are kept. Run the tool again to see it.]` |
+
+A tool-result image after the last assistant message is one the model has not answered: it is always sent and counts toward the three. Images in user content are never removed. Every later request carries an image again, so the rule bounds what a long session re-sends; a removal only grows as messages are appended, so the prefix a provider caches changes once per removed image.
 
 Size is not checked here: no adapter publishes a per-model image size limit, so an oversized image is sent and the provider decides, as for unknown capability (A4). The CLI's scaling rule and limits (A2) still apply before submitting.
 

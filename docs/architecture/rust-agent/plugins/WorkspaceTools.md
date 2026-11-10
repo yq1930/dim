@@ -138,9 +138,12 @@ and an unreadable one `read_error`.
 One shared function, `images::scale_image`, makes the image acceptable to a
 model. It reads from a seekable source — the file, not its bytes — so the whole
 source is never buffered: it reads the header, runs the guard, and only then
-decodes. An image whose longest edge exceeds 2048 px or whose base64 encoding
-exceeds 5,000,000 bytes is decoded, its EXIF orientation applied first so the
-sent pixels are upright, and re-encoded to fit: a PNG source stays PNG while
+decodes. The caller gives the byte limit: 500,000 bytes of base64 for `read`,
+whose image every later request of the session carries again, and the
+5,000,000 a provider accepts for an attachment. An image whose longest edge
+exceeds 2048 px or whose base64 encoding exceeds the limit is decoded, its EXIF
+orientation applied first so the sent pixels are upright, and re-encoded to
+fit: a PNG source stays PNG while
 its scaled PNG fits, everything else becomes JPEG at quality 85, transparent
 pixels flattened onto white, and the long edge steps down until the encoding
 fits. An image within both limits with no orientation to apply is sent byte

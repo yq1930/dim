@@ -1361,7 +1361,7 @@ async fn read_scales_a_large_jpeg_within_the_limits() {
     }
     let bytes = jpeg(&DynamicImage::ImageRgb8(image), 95);
     assert!(
-        images::base64_len(bytes.len() as u64) > images::MAX_BASE64_BYTES,
+        images::base64_len(bytes.len() as u64) > images::TOOL_IMAGE_BASE64_BYTES,
         "the fixture is over the base64 limit: {}",
         images::base64_len(bytes.len() as u64)
     );
@@ -1371,32 +1371,25 @@ async fn read_scales_a_large_jpeg_within_the_limits() {
     let (line, source) = image_blocks(&result);
     assert!(line.contains("(3000x2000 px)"), "{line}");
     assert!(line.contains("as image/jpeg"), "{line}");
-    assert!(line.contains("Sent 2048x1365 px"), "{line}");
+    assert!(line.contains("Sent 803x533 px"), "{line}");
     let sent = sent(source);
     assert!(
-        images::base64_len(sent.len() as u64) <= images::MAX_BASE64_BYTES,
+        images::base64_len(sent.len() as u64) <= images::TOOL_IMAGE_BASE64_BYTES,
         "{}",
         images::base64_len(sent.len() as u64)
     );
     assert!(line.contains(&format!("({} bytes)", sent.len())), "{line}");
-    assert_eq!(decoded(source).dimensions(), (2048, 1365));
-    assert_eq!(structured(&result)["sentWidth"], 2048);
+    assert_eq!(decoded(source).dimensions(), (803, 533));
+    assert_eq!(structured(&result)["sentWidth"], 803);
 }
 
-/// The old limit measured raw bytes, so this image was sent unchanged and the
-/// request then exceeded the provider's per-image limit once base64-encoded.
 #[tokio::test]
 async fn read_reencodes_an_image_whose_base64_exceeds_the_limit() {
     let workspace = Workspace::new();
     let reads = branch();
-    let bytes = noise_png(1000, 1000);
+    let bytes = noise_png(400, 400);
     assert!(
-        bytes.len() as u64 <= 4 * 1024 * 1024,
-        "within the 4 MiB of raw bytes the old limit measured: {}",
-        bytes.len()
-    );
-    assert!(
-        images::base64_len(bytes.len() as u64) > images::MAX_BASE64_BYTES,
+        images::base64_len(bytes.len() as u64) > images::TOOL_IMAGE_BASE64_BYTES,
         "over the base64 limit: {}",
         images::base64_len(bytes.len() as u64)
     );
@@ -1404,11 +1397,11 @@ async fn read_reencodes_an_image_whose_base64_exceeds_the_limit() {
     let result = workspace.read(&reads, "noise.png").await;
     assert_eq!(result.is_error, None);
     let (line, source) = image_blocks(&result);
-    assert!(line.contains("(1000x1000 px)"), "{line}");
-    assert!(line.contains("Sent 1000x1000 px as image/jpeg"), "{line}");
+    assert!(line.contains("(400x400 px)"), "{line}");
+    assert!(line.contains("Sent 400x400 px as image/jpeg"), "{line}");
     assert_ne!(sent(source), bytes, "the image is re-encoded");
     assert!(
-        images::base64_len(sent(source).len() as u64) <= images::MAX_BASE64_BYTES,
+        images::base64_len(sent(source).len() as u64) <= images::TOOL_IMAGE_BASE64_BYTES,
         "the re-encoded base64 fits: {}",
         images::base64_len(sent(source).len() as u64)
     );
@@ -1434,21 +1427,18 @@ fn pad_png_to(mut bytes: Vec<u8>, target: u64) -> Vec<u8> {
 async fn read_sends_an_image_whose_base64_just_fits_byte_for_byte() {
     let workspace = Workspace::new();
     let reads = branch();
-    let fits_raw = images::MAX_BASE64_BYTES / 4 * 3;
-    assert_eq!(
-        fits_raw, 3_750_000,
-        "the raw length whose base64 is 5,000,000"
-    );
-    let bytes = pad_png_to(noise_png(900, 900), fits_raw);
+    let fits_raw = images::TOOL_IMAGE_BASE64_BYTES / 4 * 3;
+    assert_eq!(fits_raw, 375_000, "the raw length whose base64 is 500,000");
+    let bytes = pad_png_to(noise_png(300, 300), fits_raw);
     assert_eq!(
         images::base64_len(bytes.len() as u64),
-        images::MAX_BASE64_BYTES
+        images::TOOL_IMAGE_BASE64_BYTES
     );
     workspace.put("exact.png", &bytes);
     let result = workspace.read(&reads, "exact.png").await;
     assert_eq!(result.is_error, None);
     let (line, source) = image_blocks(&result);
-    assert_eq!(line, "Read image: exact.png (900x900 px).");
+    assert_eq!(line, "Read image: exact.png (300x300 px).");
     assert_eq!(
         sent(source),
         bytes,
@@ -1456,7 +1446,7 @@ async fn read_sends_an_image_whose_base64_just_fits_byte_for_byte() {
     );
     assert_eq!(
         source.data.as_deref().unwrap().len() as u64,
-        images::MAX_BASE64_BYTES
+        images::TOOL_IMAGE_BASE64_BYTES
     );
 }
 
@@ -1464,21 +1454,21 @@ async fn read_sends_an_image_whose_base64_just_fits_byte_for_byte() {
 async fn read_reencodes_an_image_one_byte_over_the_raw_fit() {
     let workspace = Workspace::new();
     let reads = branch();
-    let over_raw = images::MAX_BASE64_BYTES / 4 * 3 + 1;
-    let bytes = pad_png_to(noise_png(900, 900), over_raw);
-    assert_eq!(bytes.len() as u64, 3_750_001);
+    let over_raw = images::TOOL_IMAGE_BASE64_BYTES / 4 * 3 + 1;
+    let bytes = pad_png_to(noise_png(300, 300), over_raw);
+    assert_eq!(bytes.len() as u64, 375_001);
     assert_eq!(
         images::base64_len(bytes.len() as u64),
-        images::MAX_BASE64_BYTES + 4
+        images::TOOL_IMAGE_BASE64_BYTES + 4
     );
     workspace.put("over.png", &bytes);
     let result = workspace.read(&reads, "over.png").await;
     assert_eq!(result.is_error, None);
     let (line, source) = image_blocks(&result);
-    assert!(line.contains("(900x900 px)"), "{line}");
+    assert!(line.contains("(300x300 px)"), "{line}");
     assert_ne!(sent(source), bytes, "the image is re-encoded");
     assert!(
-        images::base64_len(sent(source).len() as u64) <= images::MAX_BASE64_BYTES,
+        images::base64_len(sent(source).len() as u64) <= images::TOOL_IMAGE_BASE64_BYTES,
         "the re-encoded base64 fits: {}",
         images::base64_len(sent(source).len() as u64)
     );

@@ -276,7 +276,11 @@ fn scaled_note(path: &Path, image: &Attached) -> Option<String> {
 }
 
 fn scale<R: BufRead + Seek>(source: R) -> Result<Attached> {
-    let image = dim_agent_capabilities::images::scale_image(source).map_err(refusal)?;
+    let image = dim_agent_capabilities::images::scale_image(
+        source,
+        dim_agent_capabilities::images::MAX_BASE64_BYTES,
+    )
+    .map_err(refusal)?;
     let source_media_type = image.kind.media_type();
     attach(image, Some(source_media_type))
 }

@@ -620,7 +620,6 @@ const zhCN: Messages = {
   "timeline.reviewChanges": "审查改动",
   "timeline.commitChanges": "提交改动",
   "timeline.commitPrompt": "把这一轮的改动提交到 git，提交说明写得简洁明了。",
-  "outline.title": "目录",
   "shortcuts.title": "键盘快捷键",
   "shortcuts.search": "搜索快捷键",
   "shortcuts.none": "没有匹配的快捷键",

@@ -618,7 +618,6 @@ const en = {
   "timeline.reviewChanges": "Review changes",
   "timeline.commitChanges": "Commit changes",
   "timeline.commitPrompt": "Commit this turn's changes to git with a concise message.",
-  "outline.title": "Outline",
   "shortcuts.title": "Keyboard shortcuts",
   "shortcuts.search": "Search shortcuts",
   "shortcuts.none": "No matching shortcuts",

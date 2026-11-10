@@ -15,7 +15,6 @@ import SessionPaneButtons from "./header/SessionPaneButtons.vue"
 import SessionTitleMenu from "./header/SessionTitleMenu.vue"
 import TimelineView from "./transcript/TimelineView.vue"
 import TranscriptViewMenu from "./header/TranscriptViewMenu.vue"
-import SessionOutline from "./header/SessionOutline.vue"
 import SessionCrumb from "./header/SessionCrumb.vue"
 import TodoPanel from "../panes/plan/TodoPanel.vue"
 import TurnChangesDialog from "./transcript/TurnChangesDialog.vue"
@@ -68,8 +67,6 @@ const storesPastes = computed(() => view.value?.methods.includes("attachment.put
 const searchFiles = computed(() => view.value?.methods.includes("session.files.search") ? (query: string) => chat.searchFiles(props.sessionId, query) : undefined)
 const fileChanges = computed(() => view.value?.methods.includes("session.files.changes") === true && view.value.methods.includes("session.files.rewind"))
 const changesDialog = ref<InstanceType<typeof TurnChangesDialog>>()
-const timeline = ref<InstanceType<typeof TimelineView>>()
-const outline = computed(() => timeline.value?.markers ?? [])
 const split = computed(() => props.pane === "split")
 /** The main line's messages, oldest first and the queued ones last, for the composer's ↑ recall. */
 const sentMessages = computed(() => [
@@ -231,7 +228,6 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
           <h1 v-else data-route-heading tabindex="-1" :title="title">{{ title }}</h1>
         </div>
         <div class="session-tools">
-          <SessionOutline v-if="outline.length > 1" :markers="outline" @jump="timeline?.jumpTo($event)" />
           <SessionPaneButtons v-if="!split" :session-id="sessionId" />
           <OpenInMenu v-if="!split && summary" :path="summary.cwd" />
           <TranscriptViewMenu v-if="!split" :session-id="sessionId" />
@@ -244,7 +240,6 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
       </header>
     </div>
     <TimelineView
-      ref="timeline"
       :rows="view.rows"
       :running="view.running"
       :run-started-at="view.turnStartedAt"

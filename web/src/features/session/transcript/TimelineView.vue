@@ -161,9 +161,6 @@ async function toEnd(): Promise<void> {
   if (element !== undefined) element.scrollTop = element.scrollHeight
 }
 
-/** The Session outline in the page header lists these markers and jumps with this. */
-defineExpose({ markers, jumpTo })
-
 function jumpToLatest(): void {
   following.value = true
   void toEnd()

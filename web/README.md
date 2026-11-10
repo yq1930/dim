@@ -56,6 +56,6 @@ shown explicitly, and output is rendered as text.
 | `src/app/` | The shell, the keyboard shortcut table and its dialog, keeping the computer awake and auto-archive |
 | `src/components/` | Controls shared across regions: dialogs, menus, toasts, tooltips, Markdown, diffs and the workspace file finder |
 | `src/features/sidebar/` | Workspaces and sessions, their states and actions |
-| `src/features/session/` | The session and new-session pages; `header/` (pane buttons, open in, transcript view, outline, branch), `transcript/` (the timeline) and `composer/` (the composer, its menus and the prompts that take its place) |
+| `src/features/session/` | The session and new-session pages; `header/` (pane buttons, open in, transcript view, branch), `transcript/` (the timeline) and `composer/` (the composer, its menus and the prompts that take its place) |
 | `src/features/panes/` | The right panel, one folder per view: changes, files, preview, plan, tasks, terminal (xterm.js views of the App Server's terminals), git and lines |
 | `src/features/settings/`, `src/features/schedules/` | Settings pages with their registry and search, and scheduled tasks |

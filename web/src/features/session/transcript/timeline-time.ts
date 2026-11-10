@@ -1,3 +1,8 @@
+import type { InjectionKey, Ref } from "vue"
+
+/** The timeline's clock, a tick a second while its Session runs: what a step under way counts its time against. */
+export const TIMELINE_NOW: InjectionKey<Readonly<Ref<number>>> = Symbol("timeline-now")
+
 /**
  * Desktop `formatTimelineTimestamp`: the hover times on user messages and turn
  * footers. The date tier depends on distance from `now`:

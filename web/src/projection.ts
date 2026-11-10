@@ -36,7 +36,8 @@ export type MemberTask = {
 export type TimelineRow =
   | { kind: "user"; key: string; text: string; skills?: string[]; at: number; sequence: number; cut: number }
   | { kind: "assistant"; key: string; text: string; streaming: boolean }
-  | { kind: "thinking"; key: string; text: string; streaming: boolean; elapsedMs?: number }
+  /** `startedAt` is when the request began, which a thought under way counts from; `elapsedMs` is the time from it to the written thought. */
+  | { kind: "thinking"; key: string; text: string; streaming: boolean; startedAt?: number; elapsedMs?: number }
   | { kind: "tool"; key: string; callId: string; name: string; input: Record<string, unknown>; pending: boolean; result?: ToolResult }
   | { kind: "line"; key: string; branchId: string; purpose: string; before?: string; failed?: boolean }
   | { kind: "line-ended"; key: string; issuer: "itself" | "operation" | "ancestor"; ancestor?: string }
@@ -334,7 +335,8 @@ export class Projection {
   private openThinking(requestId: string): Stream {
     let thought = this.thoughts.get(requestId)
     if (thought === undefined) {
-      thought = { index: this.push({ kind: "thinking", key: `thinking-${requestId}-${this.rows.length}`, text: "", streaming: true }), written: "", writtenChars: 0 }
+      const startedAt = this.requestStarts.get(requestId)
+      thought = { index: this.push({ kind: "thinking", key: `thinking-${requestId}-${this.rows.length}`, text: "", streaming: true, ...(startedAt === undefined ? {} : { startedAt }) }), written: "", writtenChars: 0 }
       this.thoughts.set(requestId, thought)
     }
     return thought

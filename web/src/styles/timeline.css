@@ -140,7 +140,14 @@
 /* 6px + 1px rail puts the rail under the chevron's centre; 15px padding plus the
    rows' -8px pull lands their chevrons under the group label (22px). */
 .timeline-work-group-content { display: flex; flex-direction: column; gap: 2px; margin-left: 6px; padding: 2px 0 0 15px; border-left: 1px solid color-mix(in oklab, var(--border) 60%, transparent); }
-.timeline-thinking-quote { max-height: 240px; overflow: auto; padding-left: var(--space-3); border-left: 2px solid color-mix(in oklab, var(--border) 70%, transparent); color: var(--muted-foreground); font-size: var(--text-base); line-height: var(--leading-relaxed); white-space: pre-wrap; overflow-wrap: anywhere; }
+.timeline-thinking-quote { max-height: 240px; overflow: auto; padding-left: var(--space-3); border-left: 2px solid color-mix(in oklab, var(--border) 70%, transparent); color: var(--muted-foreground); font-size: var(--text-base); line-height: var(--leading-relaxed); overflow-wrap: anywhere; }
+/* Thinking is Markdown as the answer is, but stays in the row's muted tone, its headings at body size and set close. */
+.timeline-thinking-quote .chat-markdown { color: inherit; --ms-text-h1: var(--text-base); --ms-text-h2: var(--text-base); --ms-text-h3: var(--text-base); }
+.timeline-thinking-quote .chat-markdown .heading-node { margin-block: .9em .2em; }
+/* The end of a thought under way takes the rest of a folded row. It clips at the left so the newest
+   words stay in view; the fade sits over the padding, which only clipped text reaches. */
+.timeline-thinking-preview { display: flex; min-width: 0; flex: 0 9999 auto; justify-content: flex-end; overflow: hidden; padding-left: var(--space-3); color: color-mix(in oklab, var(--muted-foreground) 75%, transparent); font-size: var(--text-sm); white-space: nowrap; mask-image: linear-gradient(90deg, transparent, #000 var(--space-3)); }
+.timeline-thinking-preview > span { flex: none; }
 /* The thinking and verbose views read thinking in full, as part of the transcript. */
 .timeline-shell:not([data-view="normal"]) .timeline-thinking-quote { max-height: none; overflow: visible; }
 /* Steps open by default there, so an open step's row is not marked unless pointed at. */

@@ -703,6 +703,7 @@ const zhCN: Messages = {
   "work.search": "搜{count}次",
   "work.separator": " · ",
   "work.thinking": "正在思考",
+  "work.thinkingFor": "正在思考 {duration}",
   "work.thinkingSteps": "思考{count}轮",
   "work.thoughtFor": "思考了 {duration}",
   "work.delegate": "委派{count}次",

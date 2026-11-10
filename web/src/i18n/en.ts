@@ -701,6 +701,7 @@ const en = {
   "work.search": "{count} search | {count} searches",
   "work.separator": " · ",
   "work.thinking": "Thinking",
+  "work.thinkingFor": "Thinking {duration}",
   "work.thinkingSteps": "Thought once | Thought {count} times",
   "work.thoughtFor": "Thought for {duration}",
   "work.delegate": "{count} delegation | {count} delegations",

@@ -1,18 +1,20 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from "vue"
+import { computed, inject, onBeforeUnmount, ref } from "vue"
 import { Check, ChevronRight, Copy } from "lucide-vue-next"
 import { useI18n } from "vue-i18n"
 import { copyText } from "../../../clipboard"
+import ChatMarkdown from "../../../components/ChatMarkdown.vue"
 import DiffLines from "../../../components/DiffLines.vue"
 import { diffLines, resolveToolDisplay } from "./tool-display"
-import { formatElapsedSeconds } from "./timeline-time"
-import type { WorkItem } from "./work"
+import { formatElapsedSeconds, TIMELINE_NOW } from "./timeline-time"
+import { thinkingPreview, type WorkItem } from "./work"
 
 // Panels scroll at 240px; the cap only keeps a huge result from flooding the DOM.
 const MAX_PANEL_CHARS = 20_000
 const props = defineProps<{ item: WorkItem; expanded: boolean }>()
 const emit = defineEmits<{ toggle: [] }>()
 const { t } = useI18n()
+const now = inject(TIMELINE_NOW, undefined)
 
 const tool = computed(() => props.item.kind === "tool" ? props.item : undefined)
 const display = computed(() => tool.value === undefined ? undefined : resolveToolDisplay(tool.value.name, tool.value.input))
@@ -22,12 +24,16 @@ const label = computed(() => {
   return current.labelKey === "prompt.useTool" ? tool.value.name : t(current.labelKey)
 })
 
+/** A thought under way counts its seconds; a written one reads how long it took. */
 const thinkingTitle = computed(() => {
   if (props.item.kind !== "thinking") return ""
-  if (props.item.running) return t("work.thinking")
-  return t("work.thoughtFor", { duration: props.item.durationMs === undefined ? "…" : formatElapsedSeconds(props.item.durationMs) })
+  if (!props.item.running) return t("work.thoughtFor", { duration: props.item.durationMs === undefined ? "…" : formatElapsedSeconds(props.item.durationMs) })
+  if (props.item.startedAt === undefined || now === undefined) return t("work.thinking")
+  return t("work.thinkingFor", { duration: formatElapsedSeconds(Math.floor(Math.max(0, now.value - props.item.startedAt) / 1000) * 1000) })
 })
 const thinkingText = computed(() => props.item.kind === "thinking" ? props.item.content.trim() : "")
+/** Folded, a thought under way shows the end of what it has so far. */
+const preview = computed(() => props.item.kind === "thinking" && props.item.running && !props.expanded ? thinkingPreview(props.item.content) : "")
 
 function clip(text: string): string {
   return text.length <= MAX_PANEL_CHARS ? text : `${text.slice(0, MAX_PANEL_CHARS)}…`
@@ -110,6 +116,7 @@ async function copy(section: PanelSection): Promise<void> {
         <span>{{ label }}</span><small v-if="tool.primary">{{ tool.primary }}</small>
       </span>
       <span v-else class="timeline-work-item-summary"><span>{{ thinkingTitle }}</span></span>
+      <small v-if="preview" class="timeline-thinking-preview" aria-hidden="true"><span>{{ preview }}</span></small>
       <template v-if="stats">
         <span class="timeline-work-stat" data-tone="success">+{{ stats.added }}</span>
         <span v-if="stats.removed" class="timeline-work-stat" data-tone="danger">−{{ stats.removed }}</span>
@@ -117,7 +124,7 @@ async function copy(section: PanelSection): Promise<void> {
     </button>
 
     <div v-if="expanded && hasDetails" class="timeline-work-item-details">
-      <div v-if="item.kind === 'thinking'" class="timeline-thinking-quote">{{ thinkingText }}</div>
+      <div v-if="item.kind === 'thinking'" class="timeline-thinking-quote"><ChatMarkdown :content="thinkingText" :final="!item.running" :message-id="item.id" /></div>
       <div v-else class="tool-panel">
         <template v-for="section in sections" :key="section.id">
           <div class="tool-panel-label">

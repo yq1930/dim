@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type ComponentPublicInstance } from "vue"
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch, type ComponentPublicInstance } from "vue"
 import { useI18n } from "vue-i18n"
 import { useVirtualizer } from "@tanstack/vue-virtual"
 import { ChevronDown, CircleCheck, FileDiff, GitBranch, LoaderCircle, Users } from "lucide-vue-next"
@@ -11,7 +11,7 @@ import TimelineWorkRow from "./TimelineWorkRow.vue"
 import { groupRows, type WorkItem } from "./work"
 import { usePanesStore } from "../../../stores/panes"
 import { RAIL_MIN_MARKERS, timelineMarkers } from "../../../timeline-markers"
-import { formatElapsedSeconds } from "./timeline-time"
+import { formatElapsedSeconds, TIMELINE_NOW } from "./timeline-time"
 
 /**
  * `quotable`: the composer is shown, so a message can be quoted into it.
@@ -20,8 +20,8 @@ import { formatElapsedSeconds } from "./timeline-time"
  * `fileChanges`: the Session lists and undoes a turn's file changes.
  * `nextSteps`: the latest turn that changed files offers to review or commit them.
  * `sessionId`: the Session whose transcript view applies (normal without one): normal
- * groups and folds the agent's work; thinking gives each step a row and opens its
- * thinking; verbose opens every step.
+ * groups and folds the agent's work; thinking folds only the tool calls and opens each
+ * thought; verbose gives each step a row and opens it.
  */
 const props = defineProps<{
   rows: readonly TimelineRow[]
@@ -50,7 +50,7 @@ const expandedItems = ref<Record<string, boolean>>({})
 const panes = usePanesStore()
 const view = computed(() => props.sessionId === undefined ? "normal" : panes.transcriptOf(props.sessionId))
 
-const display = computed(() => groupRows(props.rows, view.value !== "normal"))
+const display = computed(() => groupRows(props.rows, view.value))
 watch(view, () => { expandedItems.value = {} })
 
 function itemExpanded(item: WorkItem): boolean {
@@ -64,6 +64,7 @@ function toggleItem(item: WorkItem): void {
 /** When the run under way began, as this view saw it, and a clock for its elapsed time. */
 const runStart = ref<number>()
 const now = ref(Date.now())
+provide(TIMELINE_NOW, now)
 let ticker: ReturnType<typeof setInterval> | undefined
 watch(() => props.running, (running) => {
   clearInterval(ticker)

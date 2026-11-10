@@ -146,6 +146,8 @@ Do not commit unless the user asks you to.
 
 Working method:
 If the user only needs information or explanation, answer directly.
+Look up only what the request needs before acting; do not survey the workspace first.
+When several tool calls do not depend on each other's results, make them all in the same step: they run at the same time. Make calls one after another only when a later call needs an earlier result.
 
 Ending a turn:
 Finish any independent work that can be done now before ending the turn.

@@ -8,11 +8,11 @@ use dim_agent_types::*;
 /// preferences "still start at catalog defaults", and
 /// `docs/design/model-configuration.md` says a cleared field carries "the
 /// value an explicit adoption of the same model with no preference for that
-/// field would carry". The model's default reasoning effort — the highest
-/// level its declaration advertises — and its declared service tier are
-/// therefore part of that base, applied through the same mapping an explicit
-/// preference uses, so the adopted configuration, every read and every
-/// request agree on the value.
+/// field would carry". The model's default reasoning effort — `medium`,
+/// `high` or the highest level its declaration advertises, in that order —
+/// and its declared service tier are therefore part of that base, applied
+/// through the same mapping an explicit preference uses, so the adopted
+/// configuration, every read and every request agree on the value.
 ///
 /// A default applies only when the model advertises the control: the effort is
 /// one of the picker's `effortOptions` (or `none` beside a reasoning-off
@@ -50,13 +50,13 @@ pub(super) fn catalog_defaults(
     config
 }
 
-/// The model's default effort: the highest level its declaration advertises.
+/// The model's default effort, as [`ModelReasoning::default_effort`] picks it.
 fn default_effort(snapshot: &ModelCapabilitySnapshot) -> Option<String> {
     let reasoning = snapshot.reasoning.as_ref()?;
     if !reasoning.supported || !snapshot.capabilities.reasoning {
         return None;
     }
-    reasoning.highest_effort().map(str::to_owned)
+    reasoning.default_effort().map(str::to_owned)
 }
 
 /// The model's declared default service tier, when its declaration lists it.

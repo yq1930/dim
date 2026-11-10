@@ -1,5 +1,5 @@
-//! #896: an adoption without a preference starts at the model's highest
-//! advertised effort.
+//! #896: an adoption without a preference starts at the model's default
+//! effort: `medium`, otherwise `high`, otherwise the highest it advertises.
 //!
 //! Each test runs the App Server binary with a product home and a fake
 //! Anthropic-compatible endpoint that records the request body, so the adopted
@@ -270,11 +270,12 @@ fn sent_effort(capture: &Capture) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// 1. The highest advertised effort reaches the creation reply, the attach
-/// reply, the configured view and the request. The declared default and the
-/// options' order do not decide it.
+/// 1. The default effort reaches the creation reply, the attach reply, the
+/// configured view and the request: `high` where the model offers no
+/// `medium`. The declared default, the options' order and the highest level
+/// do not decide it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn the_highest_advertised_effort_reaches_every_read_and_the_request() {
+async fn the_default_effort_reaches_every_read_and_the_request() {
     tokio::time::timeout(Duration::from_secs(120), async {
         let capture = Arc::new(Capture::default());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -292,7 +293,7 @@ async fn the_highest_advertised_effort_reaches_every_read_and_the_request() {
             provider,
             "anthropic",
             &format!("http://{endpoint}"),
-            vec![model("defaulted", Some("high"), &["high", "max", "low"])],
+            vec![model("defaulted", Some("low"), &["max", "low", "high"])],
         )
         .await;
 
@@ -301,69 +302,6 @@ async fn the_highest_advertised_effort_reaches_every_read_and_the_request() {
                 "session.create",
                 json!({"cwd":directory,"tools":[],
                     "model":{"provider":provider,"modelId":"defaulted"}}),
-            )
-            .await;
-        assert_ok(&created);
-        assert_eq!(
-            created["result"]["modelPreferences"],
-            json!({"reasoningEffort":"max"}),
-            "{created}"
-        );
-        let session_id = created["result"]["sessionId"].clone();
-        let attached = client
-            .rpc("session.attach", json!({"sessionId":session_id}))
-            .await;
-        assert_eq!(
-            attached["result"]["modelPreferences"],
-            json!({"reasoningEffort":"max"}),
-            "{attached}"
-        );
-
-        turn(&mut client, &session_id, "hello").await;
-        assert_eq!(
-            configured(&mut client, &session_id).await["model_preferences"],
-            json!({"reasoningEffort":"max"})
-        );
-        assert_eq!(sent_effort(&capture).as_deref(), Some("max"));
-
-        server.child.kill().await.unwrap();
-        http.abort();
-        std::fs::remove_dir_all(directory).unwrap();
-    })
-    .await
-    .unwrap();
-}
-
-/// 2. A model that declares no default still takes its highest advertised
-/// effort in the reads and on the wire.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_model_with_no_declared_default_still_takes_its_highest_effort() {
-    tokio::time::timeout(Duration::from_secs(120), async {
-        let capture = Arc::new(Capture::default());
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let endpoint = listener.local_addr().unwrap();
-        let app = Router::new()
-            .route("/v1/messages", post(messages))
-            .with_state(capture.clone());
-        let http = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        let directory = directory("no-default-effort");
-        let mut server = launch_product(&directory).await;
-        let mut client = connect(&server).await;
-        let provider = "018ec73f-0000-7000-8000-000000000102";
-        create_provider(
-            &mut client,
-            provider,
-            "anthropic",
-            &format!("http://{endpoint}"),
-            vec![model("open", None, &["low", "high"])],
-        )
-        .await;
-
-        let created = client
-            .rpc(
-                "session.create",
-                json!({"cwd":directory,"tools":[],
-                    "model":{"provider":provider,"modelId":"open"}}),
             )
             .await;
         assert_ok(&created);
@@ -388,6 +326,69 @@ async fn a_model_with_no_declared_default_still_takes_its_highest_effort() {
             json!({"reasoningEffort":"high"})
         );
         assert_eq!(sent_effort(&capture).as_deref(), Some("high"));
+
+        server.child.kill().await.unwrap();
+        http.abort();
+        std::fs::remove_dir_all(directory).unwrap();
+    })
+    .await
+    .unwrap();
+}
+
+/// 2. A model that declares no default takes `medium` where it offers it, in
+/// the reads and on the wire.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_model_with_no_declared_default_takes_medium() {
+    tokio::time::timeout(Duration::from_secs(120), async {
+        let capture = Arc::new(Capture::default());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = listener.local_addr().unwrap();
+        let app = Router::new()
+            .route("/v1/messages", post(messages))
+            .with_state(capture.clone());
+        let http = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let directory = directory("no-default-effort");
+        let mut server = launch_product(&directory).await;
+        let mut client = connect(&server).await;
+        let provider = "018ec73f-0000-7000-8000-000000000102";
+        create_provider(
+            &mut client,
+            provider,
+            "anthropic",
+            &format!("http://{endpoint}"),
+            vec![model("open", None, &["low", "medium", "high", "max"])],
+        )
+        .await;
+
+        let created = client
+            .rpc(
+                "session.create",
+                json!({"cwd":directory,"tools":[],
+                    "model":{"provider":provider,"modelId":"open"}}),
+            )
+            .await;
+        assert_ok(&created);
+        assert_eq!(
+            created["result"]["modelPreferences"],
+            json!({"reasoningEffort":"medium"}),
+            "{created}"
+        );
+        let session_id = created["result"]["sessionId"].clone();
+        let attached = client
+            .rpc("session.attach", json!({"sessionId":session_id}))
+            .await;
+        assert_eq!(
+            attached["result"]["modelPreferences"],
+            json!({"reasoningEffort":"medium"}),
+            "{attached}"
+        );
+
+        turn(&mut client, &session_id, "hello").await;
+        assert_eq!(
+            configured(&mut client, &session_id).await["model_preferences"],
+            json!({"reasoningEffort":"medium"})
+        );
+        assert_eq!(sent_effort(&capture).as_deref(), Some("medium"));
 
         server.child.kill().await.unwrap();
         http.abort();
@@ -547,10 +548,10 @@ async fn an_explicit_preference_wins_over_the_default() {
     .unwrap();
 }
 
-/// 5. A clear removes the Session's value and returns to the highest
-/// advertised effort, in the reads and on the wire.
+/// 5. A clear removes the Session's value and returns to the default effort,
+/// in the reads and on the wire.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_clear_returns_to_the_highest_advertised_effort() {
+async fn a_clear_returns_to_the_default_effort() {
     tokio::time::timeout(Duration::from_secs(120), async {
         let capture = Arc::new(Capture::default());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -680,7 +681,7 @@ async fn a_stored_effortless_configuration_is_unchanged_on_reopen() {
     .unwrap();
 }
 
-/// 7. A highest advertised effort of `none` adopts the form the model
+/// 7. A default effort of `none` adopts the form the model
 /// declares: a native `none` reaches the request as the effort, an off
 /// declaration as the protocol's off field, and a declaration the protocol
 /// cannot express adopts with no effort.

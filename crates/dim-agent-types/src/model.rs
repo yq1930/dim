@@ -208,23 +208,31 @@ pub struct ModelReasoning {
 }
 
 impl ModelReasoning {
-    /// The highest effort this declaration offers, which a model adopts when
-    /// no preference names one. An unsupported declaration offers none.
+    /// The effort a model adopts when no preference names one: `medium` where
+    /// this declaration offers it, otherwise `high`, otherwise the highest it
+    /// offers. A level above `high` slows every step of a turn, so a model
+    /// starts there only when it offers neither. An unsupported declaration
+    /// offers none.
     ///
     /// Known levels rank `none` below `minimal`, `low`, `medium`, `high`,
     /// `xhigh`, `max` and `ultra`; an effort outside that scale is not a
     /// default candidate. A declaration that offers no ranked effort but turns
     /// reasoning off through `off` offers `none` alone.
-    pub fn highest_effort(&self) -> Option<&str> {
+    pub fn default_effort(&self) -> Option<&str> {
         if !self.supported {
             return None;
         }
         const LEVELS: [&str; 8] = [
             "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
         ];
-        self.effort_options
-            .as_deref()
-            .unwrap_or(&[])
+        let offered = self.effort_options.as_deref().unwrap_or(&[]);
+        if let Some(level) = ["medium", "high"]
+            .into_iter()
+            .find(|level| offered.iter().any(|effort| effort == level))
+        {
+            return Some(level);
+        }
+        offered
             .iter()
             .filter_map(|effort| {
                 LEVELS

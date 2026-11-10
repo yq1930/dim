@@ -31,6 +31,7 @@ pub mod prompt_suggestion_settings;
 pub mod protocol;
 pub mod provider;
 pub mod runtime_manager;
+mod scratch;
 pub mod session_grants;
 pub mod session_typescript;
 pub mod settings;
@@ -822,6 +823,17 @@ pub async fn serve(mut builder: AgentBuilder, mut config: ServerConfig) -> Resul
                 Ok(Box::new(git_workspace::GitWorkspacePlugin::new(
                     names,
                     git_home.clone(),
+                )?))
+            },
+        )?);
+        let scratch_home = config.product_home.clone();
+        rows.push(register_part(
+            &mut builtins,
+            builder.catalog(),
+            move |names| {
+                Ok(Box::new(scratch::ScratchPlugin::new(
+                    names,
+                    scratch_home.clone(),
                 )?))
             },
         )?);

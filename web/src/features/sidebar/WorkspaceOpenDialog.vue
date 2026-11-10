@@ -2,6 +2,7 @@
 import { nextTick, ref, useId } from "vue"
 import { useI18n } from "vue-i18n"
 import { canChooseWorkspace, chooseWorkspace } from "../../desktop"
+import { isAbsolutePath } from "../../stores/sessions"
 
 const emit = defineEmits<{ select: [cwd: string] }>()
 const { t } = useI18n()
@@ -30,7 +31,7 @@ async function open(current = ""): Promise<void> {
 }
 function select(): void {
   const value = path.value.trim()
-  if (!value.startsWith("/") && !/^[a-z]:[\\/]/i.test(value) && !value.startsWith("\\\\")) { error.value = t("workspace.absoluteRequired"); return }
+  if (!isAbsolutePath(value)) { error.value = t("workspace.absoluteRequired"); return }
   emit("select", value)
   dialog.value?.close()
 }

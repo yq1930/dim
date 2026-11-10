@@ -265,6 +265,8 @@ pub const WEB_MANAGEMENT_METHODS: &[&str] = &[
     "git.pr",
     "git.worktree.create",
     "git.worktree.remove",
+    "scratch.root",
+    "scratch.create",
     "schedule.list",
     "schedule.save",
     "schedule.delete",

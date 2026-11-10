@@ -9,7 +9,7 @@ import RowActionMenu from "../../components/RowActionMenu.vue"
 import SidebarSessionRow from "./SidebarSessionRow.vue"
 import { useSessionState } from "./session-state"
 
-/** One workspace (a working directory) and its sessions, most recent first; `hasPinned` marks one whose other sessions sit pinned above. */
+/** One workspace (a working directory, or none: an empty `cwd`) and its sessions, most recent first; `hasPinned` marks one whose other sessions sit pinned above. */
 const props = defineProps<{ workspace: Workspace; expanded: boolean; activeSessionId?: string; nowMs: number; busy?: boolean; hasPinned?: boolean }>()
 const emit = defineEmits<{ toggle: []; navigate: []; action: [kind: "rename" | "archive" | "delete", session: SessionSummary]; copy: [path: string] }>()
 const { t } = useI18n()
@@ -23,6 +23,7 @@ const limit = ref(FIRST)
 const shown = computed(() => props.workspace.sessions.slice(0, limit.value))
 const hasMore = computed(() => props.workspace.sessions.length > limit.value)
 const running = computed(() => !props.expanded && props.workspace.sessions.some((session) => session.running))
+const newLabel = computed(() => props.workspace.cwd ? t("sidebar.newInWorkspace", { name: props.workspace.name }) : t("sidebar.newSession"))
 const waiting = computed(() => !props.expanded && props.workspace.sessions.some((session) => stateOf(session) === "waiting"))
 
 function toggleReveal(): void {
@@ -47,7 +48,7 @@ function toggleReveal(): void {
             <Folder v-else :size="14" />
           </span>
         </span>
-        <strong :title="workspace.cwd">{{ workspace.name }}</strong>
+        <strong :title="workspace.cwd || undefined">{{ workspace.name }}</strong>
       </button>
       <!-- A collapsed group with a run in flight shows a spinner where the actions fade in. -->
       <span v-if="waiting" class="workspace-running" aria-hidden="true"><span class="status-dot" data-state="waiting" /></span>
@@ -56,12 +57,12 @@ function toggleReveal(): void {
         <RouterLink
           class="ui-icon-button workspace-add" data-variant="ghost" data-size="sm"
           :to="{ name: 'chat-new', query: { cwd: workspace.cwd } }"
-          :aria-label="t('sidebar.newInWorkspace', { name: workspace.name })"
-          v-tooltip="t('sidebar.newInWorkspace', { name: workspace.name })"
+          :aria-label="newLabel"
+          v-tooltip="newLabel"
           @click="emit('navigate')"
         ><Plus aria-hidden="true" /></RouterLink>
-        <RowActionMenu :label="t('workspace.actions', { name: workspace.name })">
-          <button type="button" class="ui-menu-item" @click="emit('copy', workspace.cwd)"><Copy aria-hidden="true" />{{ t("workspace.copyPath") }}</button>
+        <RowActionMenu v-if="workspace.cwd || !workspace.sessions.length" :label="t('workspace.actions', { name: workspace.name })">
+          <button v-if="workspace.cwd" type="button" class="ui-menu-item" @click="emit('copy', workspace.cwd)"><Copy aria-hidden="true" />{{ t("workspace.copyPath") }}</button>
           <button v-if="!workspace.sessions.length" type="button" class="ui-menu-item" @click="sessions.forgetWorkspace(workspace.cwd)"><X aria-hidden="true" />{{ t("workspace.removeRecent") }}</button>
         </RowActionMenu>
       </div>

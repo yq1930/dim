@@ -54,12 +54,12 @@ export const useModelsStore = defineStore("models", () => {
     })
   }
 
-  /** The default model a new session in `cwd` would get, when the entry reports one. */
+  /** The default model a new session in `cwd` would get, when the entry reports one; an empty `cwd` asks for the global default. */
   async function defaultFor(cwd: string): Promise<ModelId | undefined> {
     const connection = useConnectionStore()
     if (!connection.supports("provider.selection")) return undefined
     try {
-      const scoped = await connection.client.call("provider.selection", { cwd }, readProviderSelection)
+      const scoped = cwd === "" ? undefined : await connection.client.call("provider.selection", { cwd }, readProviderSelection)
       return scoped ?? await connection.client.call("provider.selection", {}, readProviderSelection)
     } catch {
       return undefined

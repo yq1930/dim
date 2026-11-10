@@ -59,7 +59,10 @@ onMounted(() => { clock = setInterval(() => { nowMs.value = Date.now() }, 60_000
 onBeforeUnmount(() => clearInterval(clock))
 
 const activeSessionId = computed(() => typeof route.params.sessionId === "string" ? route.params.sessionId : undefined)
-const activeCwd = computed(() => activeSessionId.value === undefined ? undefined : sessions.byId.get(activeSessionId.value)?.cwd)
+const activeCwd = computed(() => {
+  const cwd = activeSessionId.value === undefined ? undefined : sessions.byId.get(activeSessionId.value)?.cwd
+  return cwd !== undefined && sessions.isScratch(cwd) ? "" : cwd
+})
 /** A current session seeds the new one's workspace. */
 const newSessionTo = computed(() => ({ name: "chat-new" as const, ...(activeCwd.value === undefined ? {} : { query: { cwd: activeCwd.value } }) }))
 

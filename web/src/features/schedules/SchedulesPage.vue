@@ -103,10 +103,10 @@ async function remove(job: ScheduleJob): Promise<void> {
   await act(job, async () => { await connection.client.call("schedule.delete", { job_id: job.id }, readAck) })
 }
 
-/** A new task starts in the workspace of the Session last shown. */
+/** A new task starts in the workspace of the Session last shown, unless that Session has no folder. */
 function create(): void {
   const last = ui.lastSessionId === undefined ? undefined : sessions.byId.get(ui.lastSessionId)?.cwd
-  void editor.value?.open(undefined, last ?? "")
+  void editor.value?.open(undefined, last === undefined || sessions.isScratch(last) ? "" : last)
 }
 
 watch(() => connection.phase, (phase) => { if (phase === "connected") void load() }, { immediate: true })

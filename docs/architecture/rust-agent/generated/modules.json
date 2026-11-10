@@ -2790,6 +2790,19 @@
       ]
     },
     {
+      "id": "dim_app_server::scratch",
+      "crate": "dim_app_server",
+      "parent": "dim_app_server",
+      "file": "crates/dim-app-server/src/scratch.rs",
+      "unexpandedMacros": [
+        "format",
+        "json",
+        "matches",
+        "unreachable",
+        "vec"
+      ]
+    },
+    {
       "id": "dim_app_server::session_grants",
       "crate": "dim_app_server",
       "parent": "dim_app_server",
@@ -18513,6 +18526,14 @@
     },
     {
       "from": "dim_app_server",
+      "to": "dim_app_server::scratch",
+      "references": [
+        "mod scratch",
+        "path scratch::ScratchPlugin::new"
+      ]
+    },
+    {
+      "from": "dim_app_server",
       "to": "dim_app_server::session_grants",
       "references": [
         "mod session_grants"
@@ -25829,6 +25850,38 @@
         "use super::client",
         "use super::download",
         "use super::unpack"
+      ]
+    },
+    {
+      "from": "dim_app_server::scratch",
+      "to": "dim_agent_capabilities::methods",
+      "references": [
+        "path RpcError",
+        "path RpcError::app",
+        "path RpcError::invalid",
+        "path params",
+        "path reply",
+        "use dim_agent_capabilities::methods::Interruption",
+        "use dim_agent_capabilities::methods::MethodDecl",
+        "use dim_agent_capabilities::methods::RpcError",
+        "use dim_agent_capabilities::methods::params",
+        "use dim_agent_capabilities::methods::reply"
+      ]
+    },
+    {
+      "from": "dim_app_server::scratch",
+      "to": "dim_agent_runtime::names",
+      "references": [
+        "path Names",
+        "use dim_agent_runtime::Names"
+      ]
+    },
+    {
+      "from": "dim_app_server::scratch",
+      "to": "dim_app_server::methods",
+      "references": [
+        "path ManagementMethods",
+        "use crate::methods::ManagementMethods"
       ]
     },
     {

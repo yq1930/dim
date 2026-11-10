@@ -36,7 +36,7 @@ let generation = 0
 /** Runs answer no approvals, so `ask` is not offered; a job without a policy runs read-only (Scheduler §3.3). */
 const POLICIES = { "read-only": "schedules.policies.readOnly", "workspace-write": "schedules.policies.workspaceWrite", "full-access": "schedules.policies.fullAccess" } as const
 const spec = computed(() => specFrom(form.value))
-const workspaces = computed(() => sessions.workspaces.map((workspace) => workspace.cwd))
+const workspaces = computed(() => sessions.workspaces.flatMap((workspace) => workspace.cwd || []))
 const weekdays = computed(() => [1, 2, 3, 4, 5, 6, 0].map((day) => ({ day, label: weekdayName(day, locale.value) })))
 const modelChoices = computed(() => (models.providers ?? []).map((provider) => ({ name: provider.name, models: provider.models.map((entry) => ({ key: `${provider.providerId}\n${entry.id}`, name: entry.name })) })))
 const valid = computed(() => name.value.trim() !== "" && prompt.value.trim() !== "" && cwd.value.trim() !== "" && spec.value !== undefined && maxRunMinutes.value >= 1)

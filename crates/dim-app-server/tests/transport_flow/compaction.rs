@@ -226,7 +226,7 @@ async fn product_compaction_runs_automatically_on_request_and_settles_after_a_cr
         assert_ok(&usage);
         assert_eq!(usage["result"]["contextWindow"], 16000.0);
         assert_eq!(usage["result"]["outputTokens"], 200.0);
-        assert_eq!(usage["result"]["thresholdTokens"], 15800.0 - 0.2 * 15800.0);
+        assert_eq!(usage["result"]["thresholdTokens"], 16000.0 - (0.169_f64 * 16000.0).round());
         assert_eq!(usage["result"]["baselineSource"], "full_estimate");
         let threshold = usage["result"]["thresholdTokens"].as_f64().unwrap();
         let overhead = usage["result"]["estimatedInputTokens"].as_f64().unwrap();
@@ -507,7 +507,10 @@ async fn configured_compaction_uses_the_window_declared_in_the_model_file() {
         assert_ok(&usage);
         assert_eq!(usage["result"]["contextWindow"], 8000.0);
         assert_eq!(usage["result"]["outputTokens"], 200.0);
-        assert_eq!(usage["result"]["thresholdTokens"], 7800.0 - 0.2 * 7800.0);
+        assert_eq!(
+            usage["result"]["thresholdTokens"],
+            8000.0 - (0.169_f64 * 8000.0).round()
+        );
 
         let size = 1200.;
         let mut index = 0;
@@ -737,11 +740,12 @@ async fn an_automatic_compaction_skips_a_cut_that_removes_no_more_than_its_repla
         .unwrap();
         let mut server = launch_binary(&directory).await;
         let mut client = connect(&server).await;
-        // The fixed request, the shell-input guide entry included, crosses the
-        // threshold at 0.8 × (window − output) while the window still leaves
-        // room for the requested output, so the turn meets no output-budget
-        // recovery and the threshold skip is what it measures.
-        let (context_window, max_output_tokens) = (3_200, 200);
+        // The fixed request (about 2,590 estimated tokens), the shell-input
+        // guide entry included, crosses the threshold at 83.1% of the window
+        // while the first request (about 2,860) still leaves room for the
+        // requested output, so the turn meets no output-budget recovery and
+        // the threshold skip is what it measures.
+        let (context_window, max_output_tokens) = (3_088, 200);
         let capabilities = dim_agent_types::CatalogCapabilities::with_limits(
             context_window,
             max_output_tokens,
@@ -763,12 +767,10 @@ async fn an_automatic_compaction_skips_a_cut_that_removes_no_more_than_its_repla
             .await;
         assert_ok(&usage);
         let threshold = usage["result"]["thresholdTokens"].as_f64().unwrap();
-        let budget = (context_window - max_output_tokens) as f64;
-        // ContextModel::threshold_tokens (context_model.rs:78-83): the trigger
-        // leaves 10% of the input budget, at least 16000 tokens and at most
-        // 20% of it.
-        let reserve = (0.10 * budget).max(16_000.).min(0.20 * budget);
-        assert_eq!(threshold, budget - reserve);
+        // ContextModel::threshold_tokens: the trigger leaves 16.9% of the
+        // window, which holds this output allowance and its headroom.
+        let reserve = (0.169 * context_window as f64).round();
+        assert_eq!(threshold, context_window as f64 - reserve);
         let overhead = usage["result"]["estimatedInputTokens"].as_f64().unwrap();
         assert!(
             overhead > threshold,

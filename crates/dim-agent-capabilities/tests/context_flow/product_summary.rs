@@ -698,12 +698,12 @@ async fn a_retried_piece_carrying_a_long_summary_still_fits_the_input_budget() {
 }
 
 #[tokio::test]
-async fn the_trigger_reserves_a_bounded_share_of_the_input_budget() {
+async fn the_trigger_reserves_a_fixed_share_of_the_window() {
     for (window, output, threshold) in [
-        (32_000, 8_000, 19_200.),
-        (128_000, 8_000, 104_000.),
-        (200_000, 64_000, 120_000.),
-        (1_000_000, 128_000, 784_800.),
+        (32_000, 8_000, 21_296.),
+        (128_000, 8_000, 106_368.),
+        (200_000, 64_000, 166_200.),
+        (1_000_000, 128_000, 831_000.),
     ] {
         let snapshot: ModelCapabilitySnapshot = serde_json::from_value(serde_json::json!({
             "target": {"providerId": "local", "modelId": "small"},
@@ -1171,7 +1171,7 @@ async fn startup_summaries_keep_selection_and_strategy_reasoning_without_narrowi
         assert_eq!(usage.output_tokens, 80.);
         assert_eq!(
             usage.threshold_tokens,
-            if startup { 1_920. } else { 3_136. }
+            if startup { 1_920. } else { 3_324. }
         );
 
         for text in [cjk(2_000), cjk(1_400)] {

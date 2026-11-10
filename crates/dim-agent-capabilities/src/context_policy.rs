@@ -769,6 +769,11 @@ impl ContextPolicy {
         cancel: CancellationToken,
         cancelled: &(dyn Fn() -> String + Sync),
     ) -> Result<Arc<ModelRequest>, HostError> {
+        let model = self
+            .resolver
+            .resolve(request.clone(), cancel.clone())
+            .await?;
+        let request = within_output(request, model.as_ref());
         let (request, input) = self
             .prepare_estimated(request, source, context, history, events, cancel, cancelled)
             .await?;
@@ -2037,6 +2042,25 @@ fn regrown(view: &View, start: Option<(&TimelinePosition, u64)>, model: &dyn Con
         .map(|entry| count(vec![entry.message.as_ref().clone()]) - empty)
         .sum();
     new >= RETAINED_SHARE * input_budget(model)
+}
+
+/// `request` with its `maxTokens` within the output allowance, so a request
+/// below the threshold leaves room for its output.
+fn within_output(request: Arc<ModelRequest>, model: &dyn ContextModel) -> Arc<ModelRequest> {
+    let allowance = model.output_tokens();
+    let over = request
+        .config
+        .as_ref()
+        .and_then(|config| config.max_tokens)
+        .is_some_and(|max| max > allowance);
+    if !over {
+        return request;
+    }
+    let mut request = Arc::unwrap_or_clone(request);
+    if let Some(config) = request.config.as_mut() {
+        config.max_tokens = Some(allowance);
+    }
+    Arc::new(request)
 }
 
 /// The input budget `context_window − output_tokens`.

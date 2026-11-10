@@ -2,7 +2,7 @@
 
 状态：已在 F1 分支实现（设计已批准；实现说明见 §12）。路线图项 F1（[#72](https://github.com/arcships/dim/issues/72)）。
 总体设计：[附录 B.1 ContextPreparation 行](../overview.md#b1-session-与分支-capability)。
-作用域：[ADR 002](../../adr/002-plugin-scope.md)：若干 Session 部件，加上对现有分支 Capability Loop 与 ContextPreparation 的补充。§12 记录实现对本文的细化。触发点、保留与恢复规则遵循 [#128](https://github.com/arcships/dim/issues/128) 的研究（[compaction-trigger](../research/compaction-trigger.md)）；其中的余量和保留份额是暂定的经验值。§13 是摘要评估、摘要器推理与目标长度的已批准设计（[#170](https://github.com/arcships/dim/issues/170)）；默认值由运行该评估决定（§13.4）。§14 把 [#428 §7.1](../compaction-quality.md#71-contextcompaction) 的压缩质量需求对应到回答它们的各节。英文版：[ContextCompaction](../../../design/plugins/ContextCompaction.md)。
+作用域：[ADR 002](../../adr/002-plugin-scope.md)：若干 Session 部件，加上对现有分支 Capability Loop 与 ContextPreparation 的补充。§12 记录实现对本文的细化。保留与恢复规则遵循 [#128](https://github.com/arcships/dim/issues/128) 的研究（[compaction-trigger](../research/compaction-trigger.md)）；其中的保留份额是暂定的经验值。触发点不用研究里的余量，固定留出窗口的 16.9 %（§5.1）。§13 是摘要评估、摘要器推理与目标长度的已批准设计（[#170](https://github.com/arcships/dim/issues/170)）；默认值由运行该评估决定（§13.4）。§14 把 [#428 §7.1](../compaction-quality.md#71-contextcompaction) 的压缩质量需求对应到回答它们的各节。英文版：[ContextCompaction](../../../design/plugins/ContextCompaction.md)。
 
 ## 1. 概要
 
@@ -343,13 +343,15 @@ builder.session_value(Arc::new(ContextModelHost(Some(model))))
 | 方法 | 值 |
 | --- | --- |
 | `context_window` | `snapshot.capabilities.contextWindow`，即目录值，含其现有覆盖 |
-| `output_tokens` | 有 `request.config.maxTokens` 时取它，否则取 `snapshot.capabilities.maxOutputTokens`；不超过后者 |
-| `threshold_tokens` | `B − reserve`，其中 `B = context_window − output_tokens`（输入预算），`reserve = min(max(0.10 × B, 16,000), 0.20 × B)`。余量用来吸收下一个请求的估算误差；它是暂定的经验值，不能覆盖每一个没有提供方基线的请求（[研究 §3.3、§6.4](../research/compaction-trigger.md#33-建议)） |
+| `output_tokens` | 输出额度：有 `request.config.maxTokens` 时取它，否则取 `snapshot.capabilities.maxOutputTokens`，不超过后者，且至多 `max(R − H, 8,192)`，其中 `R = round(0.169 × context_window)`，`H = min(16,000, ⌊R / 2⌋)` |
+| `threshold_tokens` | `context_window − max(R, output_tokens + H)`：触发点留出窗口的 16.9 %，装下一个请求的输出额度和吸收其估算误差的 `H`。窗口小到放不下 8,192 的输出额度加 `H` 时，留得更多。`B = context_window − output_tokens` 仍是输入预算。这份余量不能覆盖每一个没有提供方基线的请求（[研究 §6.4](../research/compaction-trigger.md#64-对余量的影响-判断)） |
 | `count_tokens` | 序列化后的系统提示、消息和工具声明的 UTF-8 字节数除以 4；每个图片部件按固定 1,600 token 计。暂定（#128）。用于：在提供方的 `prompt_tokens` 之上算增量、第一个请求、`validate`、以及检查压缩是否减少了输入 |
 
 `--models` 配置从模型文件解析同样的窗口事实：`AimuxModels` 按请求的 provider 与 model id 读取对应的模型条目；请求的能力快照保持未设置，所以能力未知时图片照常发出。
 
 **压缩没有自己的窗口上限。** 窗口事实是模型目录里的值及其覆盖，压缩不施加自己的窗口限制：`B`、阈值、`0.5 × B`、`0.25 × B` 和 `S` 都随声明的窗口缩放。一个模型的有用窗口小于声明的窗口时，应当把它声明得更小——在它的目录条目里（由 Provider 拥有），或者通过用户现有的 `contextWindow` 覆盖。压缩从不靠自己的常量做出这个决定。
+
+**请求上的输出额度。** ContextPolicy 的 `prepare` 在投影和估算之前，先把请求的 `maxTokens` 降到 `output_tokens`，所以它发出的请求（包括压缩后的请求）要的输出从不超过阈值留出的空间。更大的 `maxTokens` 仍留在已采用的配置里；没有 `maxTokens` 的请求保持原样。
 
 ### 5.2 ProductSummaryStrategy
 
@@ -687,7 +689,7 @@ consume pending inputs --> prepare next request
 | 项 | 决定 |
 | --- | --- |
 | 用哪个模型压缩 | 摘要策略用请求自己的模型；单独的模型推迟 |
-| 触发点与保留量 | #128：在 `B − min(max(0.10 × B, 16,000), 0.20 × B)` 触发；保留放得进 `min(0.25 × B, 0.5 × B − resident)` 的最长尾部（§5.3），没有尾部放得进上限时替换全部；手动步骤至多保留最新一轮；`validate` 用触发点的估算与 `B` 比较；`字节数 / 4` 和每张图片 1,600 token 不变。余量和份额是暂定的经验值 |
+| 触发点与保留量 | 在 `context_window − max(R, output_tokens + H)` 触发，`R` 为窗口的 16.9 %，输出额度收进 `R`（§5.1）；沿用 #128，保留放得进 `min(0.25 × B, 0.5 × B − resident)` 的最长尾部（§5.3），没有尾部放得进上限时替换全部；手动步骤至多保留最新一轮；`validate` 用触发点的估算与 `B` 比较；`字节数 / 4` 和每张图片 1,600 token 不变。估算余量和份额是暂定的经验值 |
 | 手动压缩 | 由 `context/compact` 安排的 Loop 步骤，在 turn 内外都可以，永远不创建 turn |
 | 步骤在哪里运行 | 在 Loop 中，调用 ContextPolicy 唯一的压缩函数（§2.1） |
 | 记录 | `retain_from`（Timeline 事件 id）、`replacement` 与 `strategy`，一条重放规则；可选 id、`command`、`cancelled`；直接修改（尚未发布） |
@@ -717,7 +719,7 @@ consume pending inputs --> prepare next request
 
 测试用产品配置的 App Server 连接一个上下文窗口很小的 mock HTTP 提供方，也用同样的 App Server 连接一个模型条目声明了小窗口的 `--models` 文件（`crates/dim-app-server/tests`），另加 `crates/dim-agent-capabilities/tests` 中的 Loop 与策略流程测试。
 
-1. **自动。** 超过阈值、且自上一次压缩以来已有 `0.25 × B` 的新历史后，下一次准备依次写 `context/budget`、`context/compaction-start {trigger: threshold}`。所选切点挤出的 token 多于替换内容的计划大小时，它还发出一个摘要请求，并提交 `completed` 的 `context/compaction`：带该请求的 id 和 `start`，没有 `command`，`strategy: "summary"`，`replacement` 只有一条消息，`retain_from` 为保留尾部放得进 `min(0.25 × B, 0.5 × B − resident)` 的最早合法切点（§5.3）。模型请求以这条消息开头，原样保留该尾部。产品窗口事实给出余量的上限、下限和比例（32k/8k → 19,200；128k/8k → 104,000；1M/128k → 784,800）。一个大轮次之后的许多小轮次会保留两轮以上；当 `0.5 × B` 是约束项（框架或基线占去上限的大部分）时，切点后会重放的带 key 块比同样内容不带 key 时保留的轮次少。所选切点挤出的 token 不超过该计划大小时，不发出摘要请求：同一次准备写 `skipped` 的 `context/compaction`，原因 `nothing_to_compact`，`modelCallCount` 为 0（`an_automatic_compaction_skips_a_cut_that_removes_no_more_than_its_replacement`，位于 `transport_flow/compaction.rs`）。
+1. **自动。** 超过阈值、且自上一次压缩以来已有 `0.25 × B` 的新历史后，下一次准备依次写 `context/budget`、`context/compaction-start {trigger: threshold}`。所选切点挤出的 token 多于替换内容的计划大小时，它还发出一个摘要请求，并提交 `completed` 的 `context/compaction`：带该请求的 id 和 `start`，没有 `command`，`strategy: "summary"`，`replacement` 只有一条消息，`retain_from` 为保留尾部放得进 `min(0.25 × B, 0.5 × B − resident)` 的最早合法切点（§5.3）。模型请求以这条消息开头，原样保留该尾部。产品窗口事实留出窗口的 16.9 %，输出下限需要时留得更多（32k/8k → 21,296；128k/8k → 106,368；200k/64k → 166,200，输出额度 17,800；1M/128k → 831,000）。一个大轮次之后的许多小轮次会保留两轮以上；当 `0.5 × B` 是约束项（框架或基线占去上限的大部分）时，切点后会重放的带 key 块比同样内容不带 key 时保留的轮次少。所选切点挤出的 token 不超过该计划大小时，不发出摘要请求：同一次准备写 `skipped` 的 `context/compaction`，原因 `nothing_to_compact`，`modelCallCount` 为 0（`an_automatic_compaction_skips_a_cut_that_removes_no_more_than_its_replacement`，位于 `transport_flow/compaction.rs`）。
 2. **预算恢复。** 准备阶段的估算超过 `B` 时直接以 `trigger: provider_output_budget_exhausted` 压缩，不受阈值与再增长门槛限制。本地恢复成功时不产生模型失败结果，只在压缩完成后调用模型。有提供方基线时，本地计数放得进窗口、但基线估算超过 `B` 的请求会恢复；基线估算放得下的不会。
 3. **手动，没有 turn。** `session.context.compact` 只写 `context/compact`、`context/compaction-start {command}` 和 `context/compaction {command, start}`；没有 `turn/*`、`step/*` 或 `model/call`。回复为 `completed`。两轮的 Session 上切点为最新一轮的开头；该轮的输入本身超出尾部预算时，切点在这一轮内部。
 4. **手动，turn 内。** 序列为 `step/tool-result` → `context/compaction-start {turn_id, command}` → `context/compaction {turn_id, command, start}` → 下一个请求的 `step/model-start`，该请求基于压缩后的上下文准备。

@@ -90,7 +90,7 @@ function share(tokens: number): string {
   if (size.value <= 0) return ""
   const percent = tokens / size.value * 100
   if (percent > 0 && percent < 0.1) return "<0.1%"
-  return `${percent >= 10 ? Math.round(percent) : percent.toFixed(1)}%`
+  return `${percent.toFixed(1)}%`
 }
 
 async function compact(): Promise<void> {

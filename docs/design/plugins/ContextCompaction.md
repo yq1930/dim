@@ -4,11 +4,12 @@ Status: Implemented on the F1 branch (approved design; implementation notes in �
 Overview: [Appendix B.1 ContextPreparation row](../overview.md#b1-session-and-branch-capabilities).
 Scope: [ADR 002](../../adr/002-plugin-scope.md): Session parts plus supplements to the existing
 branch capabilities Loop and ContextPreparation. §12 records where the implementation refines this text.
-The trigger, retention and recovery rules follow the
+The retention and recovery rules follow the
 [#128](https://github.com/arcships/dim/issues/128) research
-([compaction-trigger](../research/compaction-trigger.md)); its reserve and retention share are
-provisional heuristics. §13 is the approved design for the summary evaluation, the summarizer's
-reasoning and a target length ([#170](https://github.com/arcships/dim/issues/170)); the defaults
+([compaction-trigger](../research/compaction-trigger.md)); its retention share is a provisional
+heuristic. The trigger leaves a fixed 16.9 % of the window instead of the research's reserve
+(§5.1). §13 is the approved design for the summary evaluation, the summarizer's reasoning and a
+target length ([#170](https://github.com/arcships/dim/issues/170)); the defaults
 are decided by running the evaluation (§13.4). §14 maps the compaction-quality requirements of
 [#428 §7.1](../compaction-quality.md#71-contextcompaction) to the sections that answer them.
 
@@ -533,8 +534,8 @@ builder.session_value(Arc::new(ContextModelHost(Some(model))))
 | Method | Value |
 | --- | --- |
 | `context_window` | `snapshot.capabilities.contextWindow`, the catalog value with its existing overrides |
-| `output_tokens` | `request.config.maxTokens` if set, else `snapshot.capabilities.maxOutputTokens`; never above the latter |
-| `threshold_tokens` | `B − reserve`, where `B = context_window − output_tokens` (the input budget) and `reserve = min(max(0.10 × B, 16,000), 0.20 × B)`. The reserve absorbs the estimation error of the next request; it is a provisional heuristic that does not cover every request without a provider baseline ([research §3.3, §6.4](../research/compaction-trigger.md#33-recommendation)) |
+| `output_tokens` | The output allowance: `request.config.maxTokens` if set, else `snapshot.capabilities.maxOutputTokens`, never above the latter, and at most `max(R − H, 8,192)`, where `R = round(0.169 × context_window)` and `H = min(16,000, ⌊R / 2⌋)` |
+| `threshold_tokens` | `context_window − max(R, output_tokens + H)`: the trigger leaves 16.9 % of the window, which holds the next request's output allowance and `H` for its estimation error. A window too small for an 8,192-token allowance beside `H` reserves more. `B = context_window − output_tokens` stays the input budget. The headroom does not cover every request without a provider baseline ([research §6.4](../research/compaction-trigger.md#64-consequence-for-headroom-judgment)) |
 | `count_tokens` | UTF-8 bytes of the serialized system prompt, messages and tool declarations divided by 4; each image part counts a fixed 1,600 tokens. Provisional (#128). Used for deltas over the provider's `prompt_tokens`, the first request, `validate` and the reduction check |
 
 The `--models` profile resolves the same facts from its model file: `AimuxModels` reads the entry
@@ -545,12 +546,18 @@ images are sent while the capability is unknown.
 with their overrides: `B`, `0.5 × B`, `0.25 × B` and `S` scale with the declared capacity.
 An adopted [startup](../model-startup.md) `auto_compact_window = W` caps only
 `threshold_tokens` at `max(0, W − output_tokens)`: the effective threshold is the
-minimum of that cap and `B − reserve` above. The output allowance remains reserved;
+minimum of that cap and the threshold above. The output allowance remains reserved;
 the smaller trigger window neither reduces actual capacity nor changes chunking,
 retention, regrowth or manual compaction. Provider validates that W is positive and
 does not exceed adopted capacity. Without W, including startup `auto`, the threshold
 is unchanged. Compaction has no constant capacity cap of its own; a different actual
 capacity is declared by Provider or the existing `contextWindow` override.
+
+**Output allowance on the request.** ContextPolicy's `prepare` lowers the request's
+`maxTokens` to `output_tokens` before it projects or estimates anything, so the request
+it sends, a compacted one included, never asks for more output than the threshold left
+room for. A larger `maxTokens` stays in the adopted configuration; a request without
+one is left as it is.
 
 ### 5.2 ProductSummaryStrategy
 
@@ -1278,7 +1285,7 @@ Internal Rust changes:
 | Item | Decision |
 | --- | --- |
 | Which model compacts | The request's own model, in the summary strategy; a separate model is deferred |
-| Trigger and retention | #128: trigger at `B − min(max(0.10 × B, 16,000), 0.20 × B)`; keep the longest tail that fits `min(0.25 × B, 0.5 × B − resident)` (§5.3), and replace everything when no kept tail fits the bound; manual steps keep at most the latest turn; `validate` compares the trigger's estimate with `B`; `bytes / 4` and 1,600 tokens per image unchanged. The reserve and share are provisional heuristics |
+| Trigger and retention | Trigger at `context_window − max(R, output_tokens + H)` with `R` 16.9 % of the window, the output allowance capped to fit `R` (§5.1); after #128, keep the longest tail that fits `min(0.25 × B, 0.5 × B − resident)` (§5.3), and replace everything when no kept tail fits the bound; manual steps keep at most the latest turn; `validate` compares the trigger's estimate with `B`; `bytes / 4` and 1,600 tokens per image unchanged. The headroom and share are provisional heuristics |
 | Manual compaction | A Loop step scheduled by `context/compact`, inside or outside a turn, never creating a turn |
 | Where the step runs | In the Loop, calling the one ContextPolicy compaction function (§2.1) |
 | Record | `retain_from` (Timeline event id), `replacement` and `strategy` with one replay rule; optional ids, `command`, `cancelled`; changed directly (unreleased) |
@@ -1319,8 +1326,9 @@ window, and the same App Server on a `--models` file whose entry declares a smal
    the replacement's planned size, it also sends one summarizer request and commits
    `context/compaction` `completed` with the request's ids, `start`, no `command`, `strategy: "summary"`, a one-message `replacement`, and `retain_from` = the
    earliest legal cut whose kept tail fits `min(0.25 × B, 0.5 × B − resident)` (§5.3). The model
-   request starts with that message and keeps that tail verbatim. The product window facts give
-   the reserve's cap, floor and ratio (32k/8k → 19,200; 128k/8k → 104,000; 1M/128k → 784,800).
+   request starts with that message and keeps that tail verbatim. The product window facts leave
+   16.9 % of the window, more when the output floor needs it (32k/8k → 21,296; 128k/8k → 106,368;
+   200k/64k → 166,200 with an output allowance of 17,800; 1M/128k → 831,000).
    Many small turns after a large one are kept beyond two turns; a keyed block replayed after the
    cut keeps fewer of them than the same block unkeyed when the `0.5 × B` term is what binds.
    When the selected cut removes no more than that planned size, no summarizer request is sent:

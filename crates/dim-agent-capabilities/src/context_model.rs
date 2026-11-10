@@ -1,17 +1,18 @@
 //! Window facts of a profile that compacts, from the model's declared limits
 //! with a local token estimate (ContextCompaction §5.1).
-//! The trigger reserve is a provisional heuristic (#128).
 use crate::host::*;
 use dim_agent_types::*;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
-/// The trigger leaves `RESERVE_RATIO` of the input budget, at least
-/// `RESERVE_MIN_TOKENS` and at most `RESERVE_MAX_RATIO` of it, for the
-/// estimation error of the next request.
-const RESERVE_RATIO: f64 = 0.10;
-const RESERVE_MIN_TOKENS: f64 = 16_000.;
-const RESERVE_MAX_RATIO: f64 = 0.20;
+/// The trigger leaves `RESERVE_RATIO` of the window: the next request's
+/// output allowance plus headroom for its estimation error, `HEADROOM_TOKENS`
+/// and at most half the reserve.
+const RESERVE_RATIO: f64 = 0.169;
+const HEADROOM_TOKENS: f64 = 16_000.;
+/// The reserve never cuts the output allowance below this; a window too small
+/// for it reserves more.
+const OUTPUT_FLOOR_TOKENS: f64 = 8_192.;
 /// Serialized UTF-8 bytes per estimated token.
 const BYTES_PER_TOKEN: f64 = 4.;
 /// Estimated tokens of one image part.
@@ -46,21 +47,26 @@ impl ResolveContextModel for ProductContextModel {
 
 /// Window facts for a model whose limits are declared: `context_window` and
 /// its `max_output_tokens` limit, which the request's own `maxTokens` never
-/// exceeds.
+/// exceeds. The output allowance is what fits the reserve beside its headroom.
 pub fn window_facts(
     context_window: u64,
     max_output_tokens: u64,
     request: &ModelRequest,
 ) -> Arc<dyn ContextModel> {
+    let window = context_window as f64;
     let limit = max_output_tokens as f64;
-    let output_tokens = request
+    let requested = request
         .config
         .as_ref()
         .and_then(|config| config.max_tokens)
         .map_or(limit, |max| max.min(limit));
+    let reserve = (RESERVE_RATIO * window).round();
+    let headroom = HEADROOM_TOKENS.min((reserve / 2.).floor());
+    let output_tokens = requested.min((reserve - headroom).max(OUTPUT_FLOOR_TOKENS));
     Arc::new(WindowFacts {
-        context_window: context_window as f64,
+        context_window: window,
         output_tokens,
+        reserve: reserve.max(output_tokens + headroom),
         auto_compact_window: request
             .metadata
             .as_ref()
@@ -72,6 +78,7 @@ pub fn window_facts(
 struct WindowFacts {
     context_window: f64,
     output_tokens: f64,
+    reserve: f64,
     auto_compact_window: Option<u64>,
 }
 impl ContextModel for WindowFacts {
@@ -82,11 +89,7 @@ impl ContextModel for WindowFacts {
         self.output_tokens
     }
     fn threshold_tokens(&self) -> f64 {
-        let budget = (self.context_window - self.output_tokens).max(0.);
-        let threshold = budget
-            - (RESERVE_RATIO * budget)
-                .max(RESERVE_MIN_TOKENS)
-                .min(RESERVE_MAX_RATIO * budget);
+        let threshold = (self.context_window - self.reserve).max(0.);
         self.auto_compact_window.map_or(threshold, |window| {
             threshold.min((window as f64 - self.output_tokens).max(0.))
         })

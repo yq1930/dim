@@ -101,12 +101,17 @@
   --ms-text-h4: var(--text-base); --ms-text-h5: var(--text-base); --ms-text-h6: var(--text-base);
 }
 .chat-markdown { min-width: 0; color: var(--foreground); font-size: var(--text-base); line-height: var(--leading-relaxed); --markstream-code-font-family: var(--font-mono); }
-.chat-markdown :where(p, ul, ol, blockquote, pre, table) { margin-block: .55em; }
+/* markstream spaces its blocks by these, at a document's widths; a chat answer sets them closer.
+   Below 1024px it gives a bullet list a margin of its own, so the list's is restated. */
+.chat-markdown { --ms-flow-paragraph-y: .7em; --ms-flow-list-y: .7em; --ms-flow-blockquote-y: .7em; --ms-flow-codeblock-y: 1em; --ms-flow-table-y: 1em; --ms-flow-hr-y: 1.4em; }
+.chat-markdown .list-node { margin-block: var(--ms-flow-list-y); }
+.chat-markdown li > .list-node { margin-block: 0; }
 /* A block's edge margin would stack on top of the row gap, so the first and
    last block sit flush with the row box: the only space between rows is the
-   one gap on .virtual-timeline-row. */
-.chat-markdown :where(p, ul, ol, blockquote, pre, table):first-child { margin-top: 0; }
-.chat-markdown :where(p, ul, ol, blockquote, pre, table):last-child { margin-bottom: 0; }
+   one gap on .virtual-timeline-row. markstream wraps each top-level block in
+   a slot of its own, so those two are the first slot's and the last slot's. */
+.chat-markdown > :first-child > .node-content > :first-child { margin-top: 0; }
+.chat-markdown > :last-child > .node-content > :last-child { margin-bottom: 0; }
 .chat-markdown :where(pre, table) { max-width: 100%; overflow: auto; }
 /* markstream's own rules: bold at 700 (a true bold on the variable face) and inline code at .8125em of the parent. */
 .chat-markdown .strong-node { font-weight: var(--weight-semibold); }

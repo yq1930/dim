@@ -103,9 +103,9 @@ const sending = computed({ get: () => draft.value.sending, set: (value) => { dra
 const changingModel = ref(false)
 const changingEffort = ref(false)
 const changingMode = ref(false)
-/** The presets from the most asking to the least, then plan mode and read-only. */
+/** Claude Code's order: Auto, Ask, Accept edits and Plan, then Read only. */
 const workModes = computed<WorkMode[]>(() => [
-  ...(props.permission === undefined ? [] : ["ask", "workspace-write", "full-access"] as const),
+  ...(props.permission === undefined ? [] : ["full-access", "ask", "workspace-write"] as const),
   ...(props.planMode === undefined ? [] : ["plan"] as const),
   ...(props.permission === undefined ? [] : ["read-only"] as const),
 ])

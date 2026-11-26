@@ -10,7 +10,7 @@ export const router = createRouter({
   routes: [
     { path: "/", name: "root", component: RootRedirect },
     { path: "/chat/new", name: "chat-new", component: NewSessionPage },
-    { path: "/chat/:sessionId", name: "chat-session", component: ChatPage, props: true },
+    { path: "/chat/:sessionId", name: "chat-session", component: ChatPage, props: (route) => ({ sessionId: route.params.sessionId, message: route.query.message }) },
     { path: "/schedules", name: "schedules", component: () => import("./features/schedules/SchedulesPage.vue") },
     {
       path: "/settings", component: () => import("./features/settings/SettingsPage.vue"), children: [

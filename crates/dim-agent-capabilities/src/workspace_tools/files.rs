@@ -8,6 +8,7 @@
 
 mod codec;
 mod edit;
+pub(super) mod present;
 mod read;
 pub mod rewind;
 mod save;

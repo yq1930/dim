@@ -117,6 +117,12 @@ Compatibility: the bare `/ws` keeps today's rules (`hello` and `daemon.ping` onl
 | Loopback by default, TLS or explicit plaintext for other addresses | Loopback only |
 | `ConnectionEntry {name, deviceId}` | `entry: Web` on the connection |
 
+The authenticated Web entry exposes `session.search` on the native Session
+store. It searches adopted user messages and settled assistant text from the
+main lines of visible, unarchived Sessions. The daemon derives an in-memory
+full-text index from committed events. Each hit carries the Session ID,
+message sequence and a short matching excerpt.
+
 ## 3. CLI
 
 `dimcode web [--port N] [--no-open]` connects to (or spawns) the daemon, calls `web.open`, prints where the workspace is in the welcome panel's box and opens the sign-in URL with `browser::open`. With `--no-open`, `DIMCODE_OAUTH_MANUAL=1` or no browser, it prints the full sign-in URL under the box instead; it is the local user's own terminal. It then stays in the foreground holding the entry until Ctrl+C or SIGTERM; its exit removes that holder and closes the entry only when the daemon switch is also off (§2.1). If the daemon stops first, it reports that and exits. Piped output is plain lines. `dimcode web --off` clears the daemon switch and exits; it does not disconnect a foreground holder.

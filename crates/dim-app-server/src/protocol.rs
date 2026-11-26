@@ -101,6 +101,7 @@ pub enum Call {
     Summaries(Summaries),
     Catalog(Catalog),
     CatalogCancel(CatalogCancel),
+    SessionSearch(SessionSearch),
     Attach(Attach),
     Detach(SessionId),
     Submit(Submit),
@@ -612,6 +613,20 @@ pub struct Catalog {
     pub with_acp_sessions: bool,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SessionSearch {
+    pub query: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionSearchHit {
+    pub session_id: String,
+    pub sequence: u64,
+    pub snippet: String,
+}
+
 /// The workspaces a catalog read selects: one workspace, or any of a set.
 /// Its serialized form is the deduplicated set in path order, so a single
 /// workspace, a one-element list and a reordered list are one filter.
@@ -738,6 +753,9 @@ pub struct History {
     /// Exclusive upper cursor of a backward page.
     #[serde(default, deserialize_with = "optional_cursor")]
     pub before: Option<u64>,
+    /// Foldable workspace state below this exclusive sequence.
+    #[serde(default, deserialize_with = "optional_cursor")]
+    pub state_before: Option<u64>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -787,7 +805,7 @@ pub struct BranchCreate {
 /// Methods still decoded by the built-in protocol cannot be shadowed by
 /// runtime contributions. Session-looking names not listed here remain valid
 /// contributed names (for example `session.shell`).
-const BUILTIN_METHODS: [&str; 35] = [
+const BUILTIN_METHODS: &[&str] = &[
     "hello",
     "daemon.ping",
     "daemon.shutdown",
@@ -805,6 +823,7 @@ const BUILTIN_METHODS: [&str; 35] = [
     "session.summaries",
     "session.catalog",
     "session.catalog.cancel",
+    "session.search",
     "session.attach",
     "session.detach",
     "session.submit",
@@ -827,7 +846,10 @@ const BUILTIN_METHODS: [&str; 35] = [
 
 /// Every exact built-in method name.
 pub(crate) fn builtin_methods() -> impl Iterator<Item = &'static str> {
-    BUILTIN_METHODS.into_iter().chain(LOCAL_EXECUTION_METHODS)
+    BUILTIN_METHODS
+        .iter()
+        .copied()
+        .chain(LOCAL_EXECUTION_METHODS)
 }
 
 pub(crate) fn is_builtin_method(method: &str) -> bool {
@@ -871,6 +893,7 @@ pub fn decode(bytes: &[u8]) -> Result<Request, (Option<RequestId>, RpcError)> {
             "session.summaries" => Call::Summaries(params(raw_params)?),
             "session.catalog" => Call::Catalog(params(raw_params)?),
             "session.catalog.cancel" => Call::CatalogCancel(params(raw_params)?),
+            "session.search" => Call::SessionSearch(params(raw_params)?),
             "session.attach" => Call::Attach(params(raw_params)?),
             "session.detach" => Call::Detach(params(raw_params)?),
             "session.submit" => Call::Submit(params(raw_params)?),
@@ -1252,6 +1275,7 @@ pub enum Reply {
     Attach(AttachResult),
     Summaries(Vec<SessionSummary>),
     Catalog(CatalogResult),
+    SessionSearch(Vec<SessionSearchHit>),
     Submit(SubmitResult),
     InputLookup(InputLookupResult),
     History(crate::tree_protocol::HistoryResult),

@@ -1301,6 +1301,16 @@
       ]
     },
     {
+      "id": "dim_agent_capabilities::workspace_tools::files::present",
+      "crate": "dim_agent_capabilities",
+      "parent": "dim_agent_capabilities::workspace_tools::files",
+      "file": "crates/dim-agent-capabilities/src/workspace_tools/files/present.rs",
+      "unexpandedMacros": [
+        "format",
+        "json"
+      ]
+    },
+    {
       "id": "dim_agent_capabilities::workspace_tools::files::read",
       "crate": "dim_agent_capabilities",
       "parent": "dim_agent_capabilities::workspace_tools::files",
@@ -3014,6 +3024,18 @@
       "parent": "dim_app_server::storage::metadata",
       "file": "crates/dim-app-server/src/storage/metadata.rs",
       "unexpandedMacros": []
+    },
+    {
+      "id": "dim_app_server::storage::search",
+      "crate": "dim_app_server",
+      "parent": "dim_app_server::storage",
+      "file": "crates/dim-app-server/src/storage/search.rs",
+      "unexpandedMacros": [
+        "format",
+        "matches",
+        "params",
+        "tokio::select"
+      ]
     },
     {
       "id": "dim_app_server::storage::sqlite",
@@ -8568,6 +8590,13 @@
     },
     {
       "from": "dim_agent_capabilities::context_policy",
+      "to": "dim_agent_capabilities::recall",
+      "references": [
+        "path crate::recall::RECALL_TOOL"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::context_policy",
       "to": "dim_agent_runtime::core::timeline",
       "references": [
         "path ContextHistory",
@@ -8615,8 +8644,11 @@
         "path MessageContent::Parts",
         "path MessageContent::Text",
         "path MessagePart::Text",
+        "path MessagePart::ToolResult",
         "path MessagePart::ToolUse",
-        "path Role::User"
+        "path Role::ToolResult",
+        "path Role::User",
+        "path ToolContent::Text"
       ]
     },
     {
@@ -8689,7 +8721,8 @@
         "path ToolDefinition",
         "path ToolEffect",
         "path ToolEffect::CommandRun",
-        "path ToolEffect::FileWritten"
+        "path ToolEffect::FileWritten",
+        "path tool"
       ]
     },
     {
@@ -14282,6 +14315,14 @@
     },
     {
       "from": "dim_agent_capabilities::workspace_tools",
+      "to": "dim_agent_capabilities::workspace_tools::files::present",
+      "references": [
+        "path files::present::definition",
+        "path files::present::run"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools",
       "to": "dim_agent_capabilities::workspace_tools::files::rewind",
       "references": [
         "path files::rewind::ENTRY",
@@ -14753,6 +14794,13 @@
     },
     {
       "from": "dim_agent_capabilities::workspace_tools::files",
+      "to": "dim_agent_capabilities::workspace_tools::files::present",
+      "references": [
+        "mod present"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files",
       "to": "dim_agent_capabilities::workspace_tools::files::read",
       "references": [
         "mod read",
@@ -15038,6 +15086,50 @@
       "references": [
         "path ToolCall",
         "path ToolResult"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::present",
+      "to": "dim_agent_capabilities::host",
+      "references": [
+        "path HostError",
+        "use crate::host::HostError"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::present",
+      "to": "dim_agent_capabilities::workspace_tools::files",
+      "references": [
+        "path FileTools",
+        "path blocking",
+        "path cancelled",
+        "path invalid_input",
+        "path resolve_path",
+        "path succeeded",
+        "use super::FileTools",
+        "use super::blocking",
+        "use super::cancelled",
+        "use super::invalid_input",
+        "use super::resolve_path",
+        "use super::succeeded"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::present",
+      "to": "dim_agent_types",
+      "references": [
+        "path JsonObject",
+        "use dim_agent_types::JsonObject"
+      ]
+    },
+    {
+      "from": "dim_agent_capabilities::workspace_tools::files::present",
+      "to": "dim_agent_types::tool",
+      "references": [
+        "path ToolDefinition",
+        "path ToolResult",
+        "use dim_agent_types::ToolDefinition",
+        "use dim_agent_types::ToolResult"
       ]
     },
     {
@@ -18910,6 +19002,7 @@
         "path crate::protocol::Catalog",
         "path crate::protocol::CatalogResult",
         "path crate::protocol::SessionInfo",
+        "path crate::protocol::SessionSearchHit",
         "use crate::protocol::AgentInfo",
         "use crate::protocol::SessionOrigin"
       ]
@@ -20894,6 +20987,7 @@
         "path Call::PromptRefresh",
         "path Call::SessionMcp",
         "path Call::SessionMethods",
+        "path Call::SessionSearch",
         "path Call::SessionSkills",
         "path Call::Shutdown",
         "path Call::Stop",
@@ -20941,6 +21035,7 @@
         "path Reply::Permission",
         "path Reply::Ping",
         "path Reply::SessionMethods",
+        "path Reply::SessionSearch",
         "path Reply::SessionSkills",
         "path Reply::Summaries",
         "path Reply::UiAttached",
@@ -26716,6 +26811,13 @@
     },
     {
       "from": "dim_app_server::storage",
+      "to": "dim_app_server::storage::search",
+      "references": [
+        "mod search"
+      ]
+    },
+    {
+      "from": "dim_app_server::storage",
       "to": "dim_app_server::storage::sqlite",
       "references": [
         "mod sqlite",
@@ -27234,6 +27336,90 @@
       ]
     },
     {
+      "from": "dim_app_server::storage::search",
+      "to": "dim_agent_runtime::error",
+      "references": [
+        "path AgentError::Cancelled",
+        "path Result",
+        "use dim_agent_runtime::AgentError",
+        "use dim_agent_runtime::Result"
+      ]
+    },
+    {
+      "from": "dim_app_server::storage::search",
+      "to": "dim_agent_runtime::timeline_query",
+      "references": [
+        "path TimelineQuery",
+        "path TimelineQueryDirection::Ascending",
+        "path TimelineQueryOrderBy::Sequence",
+        "path TimelineQueryScope::Branch",
+        "use dim_agent_runtime::TimelineQuery",
+        "use dim_agent_runtime::TimelineQueryDirection",
+        "use dim_agent_runtime::TimelineQueryOrderBy",
+        "use dim_agent_runtime::TimelineQueryScope"
+      ]
+    },
+    {
+      "from": "dim_app_server::storage::search",
+      "to": "dim_agent_runtime::timeline_store",
+      "references": [
+        "path TimelineKey",
+        "use dim_agent_runtime::TimelineKey",
+        "use dim_agent_runtime::TimelineStore"
+      ]
+    },
+    {
+      "from": "dim_app_server::storage::search",
+      "to": "dim_agent_types::content",
+      "references": [
+        "path ContentBlock::Text",
+        "use dim_agent_types::ContentBlock"
+      ]
+    },
+    {
+      "from": "dim_app_server::storage::search",
+      "to": "dim_agent_types::events",
+      "references": [
+        "path AgentEvent",
+        "path EventKind::InputApplied",
+        "path EventKind::InputDeleted",
+        "path EventKind::InputMessage",
+        "path EventKind::ModelOutputEnd",
+        "path EventKind::Text",
+        "path EventKind::ToolUse",
+        "path EventKind::TurnEnd",
+        "use dim_agent_types::AgentEvent",
+        "use dim_agent_types::EventKind",
+        "use dim_agent_types::ModelOutputOutcome"
+      ]
+    },
+    {
+      "from": "dim_app_server::storage::search",
+      "to": "dim_app_server::protocol",
+      "references": [
+        "path SessionSearchHit",
+        "path SessionSummary",
+        "use crate::protocol::SessionSearchHit",
+        "use crate::protocol::SessionSummary"
+      ]
+    },
+    {
+      "from": "dim_app_server::storage::search",
+      "to": "dim_app_server::storage::sqlite",
+      "references": [
+        "path error",
+        "use super::sqlite::error"
+      ]
+    },
+    {
+      "from": "dim_app_server::storage::search",
+      "to": "dim_app_server::storage::timeline",
+      "references": [
+        "path SessionStore",
+        "use super::SessionStore"
+      ]
+    },
+    {
       "from": "dim_app_server::storage::sqlite",
       "to": "dim_agent_runtime::error",
       "references": [
@@ -27497,6 +27683,13 @@
         "path metadata::Dispatch",
         "use super::metadata",
         "use super::metadata::Titles"
+      ]
+    },
+    {
+      "from": "dim_app_server::storage::timeline",
+      "to": "dim_app_server::storage::search",
+      "references": [
+        "path super::search::SessionSearchIndex"
       ]
     },
     {

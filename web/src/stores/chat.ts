@@ -1,12 +1,12 @@
 import { shallowReactive } from "vue"
 import { defineStore } from "pinia"
-import { Projection, type BackgroundTask, type MemberTask, type TimelineRow } from "../projection"
+import { Projection, type BackgroundTask, type MemberTask, type TimelineRow, type TranscriptRows } from "../projection"
 import { Lines, type LineView } from "../lines"
 import { ConnectionLost, RpcError } from "../rpc/client"
 import type { Goal } from "../goal"
 import { canChooseWorkspace as inDesktopShell, notifyDesktop } from "../desktop"
 import { translate, type TranslationKey } from "../i18n"
-import { MAIN_BRANCH, type ApprovalRequest, type ModelId, type Notification, type PendingPlan, type PendingQuestion, type PermissionPolicy, type QueuedInput, type SessionEvent, type TodoItem } from "../rpc/protocol"
+import { MAIN_BRANCH, type ApprovalRequest, type ModelId, type ModelProgress, type Notification, type PendingPlan, type PendingQuestion, type PermissionPolicy, type QueuedInput, type SessionEvent, type TodoItem } from "../rpc/protocol"
 import { ProtocolError, readAck, readHistory } from "../rpc/read"
 import { removeApproval, sessionCalls } from "./session-calls"
 import { useConnectionStore } from "./connection"
@@ -38,7 +38,12 @@ export type SessionView = {
   status: "loading" | "ready" | "closed" | "failed"
   error: string
   /** The main line's transcript. */
-  rows: readonly TimelineRow[]
+  readonly rows: readonly TimelineRow[]
+  transcript: TranscriptRows
+  messageHistory: readonly string[]
+  hasOlder: boolean
+  loadingOlder: boolean
+  olderError: string
   /** Whether main runs, and whether it is stopping. */
   running: boolean
   stopping: boolean
@@ -83,6 +88,14 @@ type BranchStream = {
   error: string
   /** Live events held while this line's history is paged in. */
   queued: SessionEvent[]
+  progress?: ModelProgress
+}
+
+type HistoryWindow = {
+  before: number
+  through: number
+  state: readonly SessionEvent[]
+  events: SessionEvent[]
 }
 
 type Channel = {
@@ -101,9 +114,12 @@ type Channel = {
   historyQueue: string[]
   historyRunning: boolean
   publishTimer: ReturnType<typeof setTimeout> | undefined
+  history?: HistoryWindow
+  olderRequest?: Promise<boolean>
 }
 
 const HISTORY_PAGE = 256
+const HISTORY_SEEK_PAGE = 2048
 const HISTORY_TIMEOUT_MS = 60_000
 /** Snapshots go out one frame after the first change, however fast events arrive. */
 const PUBLISH_INTERVAL_MS = 16
@@ -151,7 +167,12 @@ export const useChatStore = defineStore("chat", () => {
       sessionId,
       status: "loading",
       error: "",
-      rows: [],
+      get rows() { return this.transcript.rows },
+      transcript: { settled: [], active: [], rows: [] },
+      messageHistory: [],
+      hasOlder: false,
+      loadingOlder: false,
+      olderError: "",
       running: stored?.running ?? false,
       stopping: false,
       sessionRunning: stored?.running ?? false,
@@ -209,17 +230,23 @@ export const useChatStore = defineStore("chat", () => {
     channel.main.done = false
     channel.main.error = ""
     channel.main.queued = []
+    channel.main.progress = undefined
     for (const [id, branch] of channel.branches) {
       branch.syncing = true
       branch.done = false
       branch.error = ""
       branch.queued = []
+      branch.progress = undefined
       if (!channel.historyQueue.includes(id)) channel.historyQueue.push(id)
     }
     try {
       await client().call("session.attach", { sessionId: view.sessionId }, readAck)
       view.methods = await sessionMethods(view.sessionId)
-      const main = await loadHistory(channel, MAIN_BRANCH)
+      const main = channel.main.projection.cursor === 0 && channel.history === undefined
+        && useConnectionStore().supports("session.history.latestTurn")
+        && useConnectionStore().supports("session.history.stateBefore")
+        ? await openWindow(channel)
+        : await loadHistory(channel, MAIN_BRANCH)
       if (main !== "ok") {
         if (main === "failed" && view.status !== "closed") {
           view.status = "failed"
@@ -289,6 +316,7 @@ export const useChatStore = defineStore("chat", () => {
       case "session.model.progress": {
         const branchId = notification.progress.branchId
         const stream = ensureBranch(channel, branchId)
+        stream.progress = notification.progress
         if (stream.syncing) break
         stream.projection.progress(notification.progress)
         changed(channel)
@@ -348,10 +376,146 @@ export const useChatStore = defineStore("chat", () => {
   function applyEvent(channel: Channel, branchId: string, event: SessionEvent): void {
     channel.lines.apply(branchId, event)
     const stream = ensureBranch(channel, branchId)
-    if (!stream.projection.apply(event)) return
-    if (event.content.kind === "branch-create") ensureBranch(channel, event.content.branchId)
+    if (!applyFact(channel, branchId, stream, event)) return
     if (branchId === MAIN_BRANCH && event.content.kind === "permission-changed") channel.view.permission = event.content.policy
     changed(channel)
+  }
+
+  function applyFact(channel: Channel, branchId: string, branch: BranchStream, event: SessionEvent, visible = true): boolean {
+    if (!branch.projection.apply(event, visible)) return false
+    if (event.content.kind === "turn-end" || (event.content.kind === "model-end" && branch.progress?.requestId === event.content.requestId)) {
+      branch.progress = undefined
+    }
+    if (visible && branchId === MAIN_BRANCH) channel.history?.events.push(event)
+    if (event.content.kind === "branch-create") ensureBranch(channel, event.content.branchId)
+    return true
+  }
+
+  async function turnWindow(sessionId: string, through?: number): Promise<{ events: SessionEvent[]; before: number; through: number }> {
+    let before: number | undefined
+    const pages: SessionEvent[][] = []
+    for (;;) {
+      const page = await client().call("session.history", {
+        sessionId, branchId: MAIN_BRANCH, latestTurn: true,
+        ...(through === undefined ? {} : { through }),
+        ...(before === undefined ? {} : { before }),
+      }, readHistory, HISTORY_TIMEOUT_MS)
+      if ((through !== undefined && through !== page.through)
+        || (page.nextBefore !== undefined && (page.nextBefore < 1 || page.nextBefore > page.through || (before !== undefined && page.nextBefore >= before)))
+        || (!page.done && page.nextBefore === undefined)) {
+        throw new ProtocolError("Invalid history window cursor")
+      }
+      through = page.through
+      pages.push(page.events)
+      if (page.done) return { events: pages.reverse().flat(), before: page.nextBefore ?? before ?? through + 1, through }
+      before = page.nextBefore
+    }
+  }
+
+  async function openWindow(channel: Channel): Promise<"ok"> {
+    const sessionId = channel.view.sessionId
+    const latest = await turnWindow(sessionId)
+    const state: SessionEvent[] = []
+    let after = 0
+    while (after < latest.before - 1) {
+      const page = await client().call("session.history", {
+        sessionId, branchId: MAIN_BRANCH, stateBefore: latest.before,
+        through: latest.through, after, limit: HISTORY_PAGE,
+      }, readHistory, HISTORY_TIMEOUT_MS)
+      if (page.through !== latest.through || page.nextAfter <= after || page.nextAfter >= latest.before) {
+        throw new ProtocolError("Invalid workspace state cursor")
+      }
+      state.push(...page.events)
+      after = page.nextAfter
+      if (page.done) break
+    }
+    for (const event of state) {
+      channel.lines.apply(MAIN_BRANCH, event)
+      applyFact(channel, MAIN_BRANCH, channel.main, event, false)
+    }
+    for (const event of latest.events) {
+      channel.lines.apply(MAIN_BRANCH, event)
+      applyFact(channel, MAIN_BRANCH, channel.main, event)
+    }
+    channel.history = { before: latest.before, through: latest.through, state, events: latest.events }
+    channel.main.projection.cursor = latest.through
+    channel.main.done = true
+    channel.main.syncing = false
+    channel.view.hasOlder = latest.before > 1
+    return "ok"
+  }
+
+  async function loadOlder(sessionId: string, through?: number): Promise<boolean> {
+    const channel = channels.get(sessionId)
+    if (channel === undefined || channel.view.status !== "ready") return false
+    const { history } = channel
+    if (history === undefined || history.before <= 1 || (through !== undefined && through >= history.before)) return true
+    if (channel.olderRequest !== undefined) {
+      const loaded = await channel.olderRequest
+      return through === undefined || !loaded ? loaded : loadOlder(sessionId, through)
+    }
+    const request = readOlder(channel, history, through)
+    channel.olderRequest = request
+    try {
+      return await request
+    } finally {
+      channel.olderRequest = undefined
+    }
+  }
+
+  async function readOlder(channel: Channel, history: HistoryWindow, through?: number): Promise<boolean> {
+    const { view, main } = channel
+    const sessionId = view.sessionId
+    view.loadingOlder = true
+    view.olderError = ""
+    try {
+      let before = history.before
+      const pages: SessionEvent[][] = []
+      if (through === undefined) {
+        const page = await turnWindow(sessionId, before - 1)
+        if (page.before >= before && page.events.length > 0) throw new ProtocolError("History window did not advance")
+        pages.push(page.events)
+        before = page.before >= before ? 1 : page.before
+      } else {
+        while (before > through) {
+          const page = await client().call("session.history", {
+            sessionId, branchId: MAIN_BRANCH, before,
+            through: history.through, limit: HISTORY_SEEK_PAGE,
+          }, readHistory, HISTORY_TIMEOUT_MS)
+          if (page.through !== history.through
+            || (page.nextBefore !== undefined && (page.nextBefore <= 0 || page.nextBefore >= before))
+            || (!page.done && page.nextBefore === undefined)) {
+            throw new ProtocolError("Invalid earlier history cursor")
+          }
+          pages.push(page.events)
+          before = page.nextBefore ?? 1
+        }
+        if (before > 1) {
+          const page = await turnWindow(sessionId, before - 1)
+          if (page.before >= before && page.events.length > 0) throw new ProtocolError("History window did not advance")
+          pages.push(page.events)
+          before = page.before >= before ? 1 : page.before
+        }
+      }
+      if (view.status !== "ready" || channels.get(sessionId) !== channel) return false
+      const events = pages.reverse().flat().concat(history.events)
+      const state = history.state.filter((event) => event.sequence < before)
+      const projection = new Projection()
+      for (const event of state) projection.apply(event, false)
+      for (const event of events) projection.apply(event)
+      if (main.progress !== undefined) projection.restoreProgress(main.progress)
+      projection.cursor = main.projection.cursor
+      main.projection = projection
+      channel.history = { before, through: history.through, state, events }
+      view.hasOlder = before > 1
+      publish(channel)
+      return true
+    } catch (cause) {
+      view.olderError = cause instanceof Error ? cause.message : String(cause)
+      return false
+    } finally {
+      view.loadingOlder = false
+    }
   }
 
   function ensureBranch(channel: Channel, branchId: string): BranchStream {
@@ -393,8 +557,7 @@ export const useChatStore = defineStore("chat", () => {
           through = page.through
           for (const event of page.events) {
             channel.lines.apply(branchId, event)
-            branch.projection.apply(event)
-            if (event.content.kind === "branch-create") ensureBranch(channel, event.content.branchId)
+            applyFact(channel, branchId, branch, event)
           }
           after = page.nextAfter
           if (page.done) break
@@ -402,6 +565,7 @@ export const useChatStore = defineStore("chat", () => {
         const queued = branch.queued
         branch.queued = []
         for (const event of queued) applyEvent(channel, branchId, event)
+        if (branch.progress !== undefined) branch.projection.restoreProgress(branch.progress)
         branch.done = true
         branch.syncing = false
         changed(channel)
@@ -482,7 +646,9 @@ export const useChatStore = defineStore("chat", () => {
     channel.publishTimer = undefined
     const view = channel.view
     const main = stateOf(channel, MAIN_BRANCH)
-    view.rows = channel.main.projection.rows.slice()
+    view.transcript = channel.main.projection.transcript()
+    const messages = channel.main.projection.messageHistory
+    if (view.messageHistory.length !== messages.length) view.messageHistory = messages.slice()
     view.lastTurnEnd = channel.main.projection.lastTurnEnd
     view.turnStartedAt = channel.main.projection.turnStartedAt
     view.running = main.running
@@ -549,5 +715,5 @@ export const useChatStore = defineStore("chat", () => {
 
 
   const { submit, stop, createLine, endLine, respond, allowAlways, allowForSession, answerQuestion, setPlanning, reviewPlan, compact, usage, fork, writeGoal, setEffort, setPermission, withdrawInput, searchFiles, readFile, turnChanges, rewindTurn, memberApproval, setModel } = calls
-  return { views, open, resync, receive, ensureLine, retryLine, submit, stop, createLine, endLine, respond, allowAlways, allowForSession, answerQuestion, setPlanning, reviewPlan, compact, usage, fork, writeGoal, setEffort, setPermission, withdrawInput, searchFiles, readFile, turnChanges, rewindTurn, memberApproval, setModel, taskOutput: calls.taskOutput, stopTask: calls.stopTask }
+  return { views, open, resync, receive, ensureLine, retryLine, loadOlder, submit, stop, createLine, endLine, respond, allowAlways, allowForSession, answerQuestion, setPlanning, reviewPlan, compact, usage, fork, writeGoal, setEffort, setPermission, withdrawInput, searchFiles, readFile, turnChanges, rewindTurn, memberApproval, setModel, taskOutput: calls.taskOutput, stopTask: calls.stopTask }
 })

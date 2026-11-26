@@ -713,6 +713,10 @@ async fn run_connection(
                                             methods.push("session.catalog.cancel");
                                             methods.push("session.catalog.origins");
                                             methods.push("session.catalog.workspaces");
+                                            if entry == Entry::Web && hub.config().session_execution
+                                            {
+                                                methods.push("session.search");
+                                            }
                                         }
                                         methods
                                     } else {
@@ -738,6 +742,7 @@ async fn run_connection(
                                             features.push("session.fork");
                                             features.push("session.archive");
                                             features.push("session.history.latestTurn");
+                                            features.push("session.history.stateBefore");
                                         }
                                     }
                                     if trusted && hub.config().local_execution() {

@@ -60,12 +60,19 @@ function toolResult(value: unknown, at: string): ToolResult {
   const structured = source.structuredContent === undefined || source.structuredContent === null ? undefined : obj(source.structuredContent, `${at}.structuredContent`)
   const diff = typeof structured?.diff === "string" ? structured.diff : undefined
   const approved = typeof structured?.approved === "boolean" ? structured.approved : undefined
+  const deliveredFiles = structured?.dimDeliveredFiles === undefined ? undefined
+    : arr(structured.dimDeliveredFiles, `${at}.structuredContent.dimDeliveredFiles`).map((item, index) => {
+      const where = `${at}.structuredContent.dimDeliveredFiles[${index}]`
+      const file = obj(item, where)
+      const description = optStr(file, "description", where)
+      return { path: str(file, "path", where), ...(description === undefined ? {} : { description }) }
+    })
   const effects = source.effects === undefined || source.effects === null ? [] : arr(source.effects, `${at}.effects`)
   const filesWritten = effects.flatMap((item, index) => {
     const effect = obj(item, `${at}.effects[${index}]`)
     return effect.kind === "fileWritten" ? [str(effect, "path", `${at}.effects[${index}]`)] : []
   })
-  return { text, isError: source.isError === true, ...(diff === undefined ? {} : { diff }), ...(approved === undefined ? {} : { approved }), ...(filesWritten.length === 0 ? {} : { filesWritten }) }
+  return { text, isError: source.isError === true, ...(diff === undefined ? {} : { diff }), ...(approved === undefined ? {} : { approved }), ...(filesWritten.length === 0 ? {} : { filesWritten }), ...(deliveredFiles === undefined ? {} : { deliveredFiles }) }
 }
 
 function rawBlocks(blocks: unknown, at: string): RawBlock[] {

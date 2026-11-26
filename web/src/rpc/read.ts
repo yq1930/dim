@@ -7,6 +7,7 @@
 import { CONTEXT_PART_KINDS, type CompactResult, type ContextPartKind, type ContextUsage, type FileCandidate, type FileView, type PermissionState, type BranchCreateResult, type CreateResult, type HelloResult, type HistoryPage, type ModelUpdateResult, type SessionSummary, type TurnChanges, type RewindResult } from "./protocol"
 import { fail, obj, arr, str, optStr, num, finite, bool, modelId, readPermissionPolicy } from "./read-core"
 import { readEvent } from "./read-events"
+import type { SessionSearchHit } from "./protocol"
 
 export function readHello(value: unknown): HelloResult {
   const source = obj(value, "hello")
@@ -123,8 +124,17 @@ export function readHistory(value: unknown): HistoryPage {
     events: arr(source.events, "session.history.events").map((event, index) => readEvent(event, `session.history.events[${index}]`)),
     through: num(source, "through", "session.history"),
     nextAfter: num(source, "nextAfter", "session.history"),
+    ...(source.nextBefore === undefined ? {} : { nextBefore: num(source, "nextBefore", "session.history") }),
     done: bool(source, "done", "session.history"),
   }
+}
+
+export function readSessionSearch(value: unknown): SessionSearchHit[] {
+  return arr(value, "session.search").map((item, index) => {
+    const at = `session.search[${index}]`
+    const source = obj(item, at)
+    return { sessionId: str(source, "sessionId", at), sequence: num(source, "sequence", at), snippet: str(source, "snippet", at) }
+  })
 }
 
 export function readModelUpdate(value: unknown): ModelUpdateResult {

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-workspace-boot-failed"
+description = "Enables the workspace_boot_failed command without any pre-configured scope."
+commands.allow = ["workspace_boot_failed"]
+
+[[permission]]
+identifier = "deny-workspace-boot-failed"
+description = "Denies the workspace_boot_failed command without any pre-configured scope."
+commands.deny = ["workspace_boot_failed"]

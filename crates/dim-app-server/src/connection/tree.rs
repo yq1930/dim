@@ -134,7 +134,12 @@ impl Connection {
             params.limit.unwrap_or(HISTORY_PAGE_LIMIT)
         };
         let window = params.latest_turn || params.before.is_some();
-        if window && !rpc.index.has_session_store() {
+        if let Some(before) = params.state_before
+            && (window || before == 0 || limit > HISTORY_PAGE_LIMIT)
+        {
+            return Err(RpcError::invalid("Invalid state history range or limit"));
+        }
+        if (window || params.state_before.is_some()) && !rpc.index.has_session_store() {
             return Err(RpcError::invalid(
                 "history windows require the native Session store",
             ));
@@ -191,6 +196,27 @@ impl Connection {
                     }
                 }
             }
+        }
+        if let Some(before) = params.state_before {
+            if before > through.saturating_add(1) || after >= before {
+                return Err(RpcError::invalid(
+                    "State history cursor exceeds fixed position",
+                ));
+            }
+            let tree = session
+                .session_service::<TreeCommands>()
+                .map_err(history_error)?;
+            return state_history(
+                &tree,
+                branch,
+                after,
+                before,
+                through,
+                limit,
+                self.protocol_version(),
+            )
+            .await
+            .map(Reply::History);
         }
         if window {
             let tree = session
@@ -363,6 +389,102 @@ impl Connection {
             branch: branch.into(),
         }))
     }
+}
+
+async fn state_history(
+    tree: &TreeCommands,
+    branch: &str,
+    after: u64,
+    before: u64,
+    through: u64,
+    limit: usize,
+    version: u32,
+) -> Result<wire::HistoryResult, RpcError> {
+    use dim_agent_runtime::{TimelineQueryDirection, TimelineQueryOrderBy, TimelineQueryScope};
+
+    let mut events = Vec::new();
+    let mut next_after = before - 1;
+    let mut bytes = 0;
+    if next_after > after {
+        let facts = tree
+            .query(
+                branch.to_owned(),
+                TimelineQuery {
+                    scope: TimelineQueryScope::Branch,
+                    include_publishing: false,
+                    from_event: None,
+                    from_sequence: Some(after + 1),
+                    order_by: TimelineQueryOrderBy::Sequence,
+                    direction: TimelineQueryDirection::Ascending,
+                    kinds: [
+                        "input/message",
+                        "input/applied",
+                        "input/deleted",
+                        "session/forked",
+                        "branch/start",
+                        "branch/create",
+                        "branch/create-failed",
+                        "branch/ended",
+                        "context/configured",
+                        "turn/start",
+                        "turn/end",
+                        "exec/started",
+                        "exec/ended",
+                        "collaboration/request",
+                        "collaboration/delivered",
+                        "collaboration/result",
+                    ]
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect(),
+                    flags: Vec::new(),
+                    event_id: None,
+                    predicate: None,
+                    offset: 0,
+                    limit: std::num::NonZeroU64::new(limit as u64).expect("positive history limit"),
+                },
+            )
+            .await
+            .map_err(history_error)?;
+        let full = facts.events.len() == limit;
+        let mut last = after;
+        for event in facts.events {
+            if event.sequence >= before {
+                break;
+            }
+            let sequence = event.sequence;
+            if let Some(visible) = wire::ProductEvent::new(event, version) {
+                let size = serde_json::to_vec(&visible)
+                    .map_err(|error| RpcError::wire(-32603, error.to_string()))?
+                    .len();
+                if size > HISTORY_FRAME_BYTES {
+                    return Err(RpcError::app(
+                        -32000,
+                        "history_too_large",
+                        "A workspace state event exceeds the frame limit",
+                    ));
+                }
+                if !events.is_empty() && bytes + size > HISTORY_TURN_BYTES {
+                    next_after = last;
+                    break;
+                }
+                events.push(visible);
+                bytes += size;
+            }
+            last = sequence;
+            if full {
+                next_after = last;
+            }
+        }
+    }
+    Ok(wire::HistoryResult {
+        events,
+        through,
+        next_after,
+        done: next_after == before - 1,
+        next_before: None,
+        turn_start: None,
+    })
 }
 
 /// The default page of a `session.history` read without `latestTurn`.

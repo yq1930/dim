@@ -4,15 +4,21 @@
 use crate::{Result, environment, window};
 use std::{
     collections::HashSet,
+    fs::OpenOptions,
+    io::Write,
+    os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Manager, Url};
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+use tauri_plugin_dialog::{
+    DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
+};
+use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_shell::{
     ShellExt,
     process::{Command, CommandChild, CommandEvent},
@@ -24,9 +30,30 @@ const STOP_TIMEOUT: Duration = Duration::from_secs(35);
 const STDERR_TAIL: usize = 8192;
 
 /// Why a run ended without Desktop asking it to.
-enum Failure {
-    Startup(String),
-    Stopped(String),
+#[derive(Clone, Copy, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+enum Stage {
+    Resources,
+    Environment,
+    LocalService,
+    WebInitialization,
+    Running,
+}
+
+struct Failure {
+    stage: Stage,
+    message: String,
+    exit_code: Option<i32>,
+}
+
+impl Failure {
+    fn new(stage: Stage, message: impl Into<String>) -> Self {
+        Self {
+            stage,
+            message: message.into(),
+            exit_code: None,
+        }
+    }
 }
 
 pub struct Service {
@@ -41,6 +68,7 @@ pub struct Service {
     started: AtomicU64,
     /// The run whose exit is a failure; zero while a restart or quit is under way.
     current: AtomicU64,
+    reported: AtomicU64,
     /// The latest run whose start has connected or failed.
     settled: tokio::sync::watch::Sender<u64>,
     quitting: AtomicBool,
@@ -57,6 +85,7 @@ impl Service {
             granted: Mutex::new(HashSet::new()),
             started: AtomicU64::new(0),
             current: AtomicU64::new(0),
+            reported: AtomicU64::new(0),
             settled: tokio::sync::watch::channel(0).0,
             quitting: AtomicBool::new(false),
         }
@@ -88,11 +117,8 @@ impl Service {
         tauri::async_runtime::spawn(async move {
             let result = service.hold(&app, run).await;
             service.settle(run);
-            if let Err(failure) = result
-                && service.current.load(Ordering::Acquire) == run
-                && !service.quitting.load(Ordering::Acquire)
-            {
-                service.report(&app, failure);
+            if let Err(failure) = result {
+                service.report(&app, run, failure);
             }
         });
     }
@@ -149,24 +175,26 @@ impl Service {
     }
 
     async fn hold(&self, app: &AppHandle, run: u64) -> std::result::Result<(), Failure> {
-        let startup =
-            |error: Box<dyn std::error::Error + Send + Sync>| Failure::Startup(error.to_string());
+        let startup = |error: Box<dyn std::error::Error + Send + Sync>| {
+            Failure::new(Stage::LocalService, error.to_string())
+        };
         for file in ["web/index.html", "plugins-payload/default-plugins.json"] {
             if !self.resources.join(file).is_file() {
-                return Err(Failure::Startup(format!(
-                    "应用缺少资源 {file}，请重新构建 Lacus.app。"
-                )));
+                return Err(Failure::new(
+                    Stage::Resources,
+                    format!("应用缺少资源 {file}，请重新构建 Lacus.app。"),
+                ));
             }
         }
         let user_home = app
             .path()
             .home_dir()
-            .map_err(|error| startup(error.into()))?;
+            .map_err(|error| Failure::new(Stage::Environment, error.to_string()))?;
         let environment = tauri::async_runtime::spawn_blocking(move || {
             environment::service_environment(&user_home)
         })
         .await
-        .map_err(|error| startup(error.into()))?;
+        .map_err(|error| Failure::new(Stage::Environment, error.to_string()))?;
         let (mut events, child) = self
             .command(app)
             .map_err(startup)?
@@ -191,8 +219,9 @@ impl Service {
                 tokio::time::timeout_at(deadline, events.recv())
                     .await
                     .map_err(|_| {
-                        Failure::Startup(
-                            "本地服务启动超时，请检查应用数据目录中的 rust/daemon.log。".into(),
+                        Failure::new(
+                            Stage::LocalService,
+                            "本地服务启动超时，请检查应用数据目录中的 rust/daemon.log。",
                         )
                     })?
             };
@@ -206,7 +235,9 @@ impl Service {
                     if self.current.load(Ordering::Acquire) != run {
                         continue;
                     }
-                    self.open(app, url).map_err(startup)?;
+                    self.open(app, url).map_err(|error| {
+                        Failure::new(Stage::WebInitialization, error.to_string())
+                    })?;
                 }
                 Some(CommandEvent::Stderr(bytes)) => {
                     stderr.extend(bytes);
@@ -215,8 +246,17 @@ impl Service {
                         stderr.drain(..stderr.len() - STDERR_TAIL);
                     }
                 }
-                Some(CommandEvent::Error(error)) => return Err(Failure::Stopped(error)),
-                Some(CommandEvent::Terminated(_)) | None => {
+                Some(CommandEvent::Error(error)) => {
+                    return Err(Failure::new(
+                        if connected {
+                            Stage::Running
+                        } else {
+                            Stage::LocalService
+                        },
+                        error,
+                    ));
+                }
+                ended @ (Some(CommandEvent::Terminated(_)) | None) => {
                     if self.current.load(Ordering::Acquire) != run {
                         return Ok(());
                     }
@@ -225,11 +265,18 @@ impl Service {
                         String::from_utf8_lossy(&stderr).trim(),
                         self.log().display()
                     );
-                    return Err(if connected {
-                        Failure::Stopped(message)
-                    } else {
-                        Failure::Startup(message)
-                    });
+                    let mut failure = Failure::new(
+                        if connected {
+                            Stage::Running
+                        } else {
+                            Stage::LocalService
+                        },
+                        message,
+                    );
+                    if let Some(CommandEvent::Terminated(status)) = ended {
+                        failure.exit_code = status.code;
+                    }
+                    return Err(failure);
                 }
                 _ => {}
             }
@@ -257,6 +304,7 @@ impl Service {
                 .permission("allow-open-in-app")
                 .permission("allow-open-workspace-path")
                 .permission("allow-show-preview")
+                .permission("allow-workspace-boot-failed")
                 .permission("core:window:allow-start-dragging")
                 .permission("core:window:allow-internal-toggle-maximize"),
             )?;
@@ -267,14 +315,35 @@ impl Service {
         Ok(())
     }
 
-    /// Asks whether to restart the service or quit; nothing else in the app works
-    /// without it. The question is a sheet on the main window, shown first:
-    /// without a parent, macOS presents it as a system alert that may not
-    /// appear, and its silent answer would quit.
-    fn report(self: &Arc<Self>, app: &AppHandle, failure: Failure) {
-        let (title, message) = match failure {
-            Failure::Startup(message) => ("Lacus 无法启动本地服务", message),
-            Failure::Stopped(message) => ("Lacus 的本地服务已停止", message),
+    pub fn workspace_boot_failed(self: &Arc<Self>, app: &AppHandle) {
+        let run = self.current.load(Ordering::Acquire);
+        self.report(
+            app,
+            run,
+            Failure::new(Stage::WebInitialization, "工作台初始化失败。"),
+        );
+    }
+
+    fn report(self: &Arc<Self>, app: &AppHandle, run: u64, failure: Failure) {
+        if run == 0
+            || self.current.load(Ordering::Acquire) != run
+            || self.quitting.load(Ordering::Acquire)
+            || self.reported.fetch_max(run, Ordering::AcqRel) >= run
+        {
+            return;
+        }
+        self.recovery(app, run, Arc::new(failure));
+    }
+
+    fn recovery(self: &Arc<Self>, app: &AppHandle, run: u64, failure: Arc<Failure>) {
+        const RESTART: &str = "重启本地服务";
+        const REPORT: &str = "显示诊断报告";
+        let title = match failure.stage {
+            Stage::Resources => "Lacus 缺少应用资源",
+            Stage::Environment => "Lacus 无法读取启动环境",
+            Stage::LocalService => "Lacus 无法启动本地服务",
+            Stage::WebInitialization => "Lacus 无法打开工作台",
+            Stage::Running => "Lacus 的本地服务已停止",
         };
         let Some(main) = app.get_webview_window(window::MAIN) else {
             return app.exit(1);
@@ -282,21 +351,77 @@ impl Service {
         window::show(app);
         let (service, handle) = (self.clone(), app.clone());
         app.dialog()
-            .message(message)
+            .message(&failure.message)
             .title(title)
             .kind(MessageDialogKind::Error)
             .parent(&main)
-            .buttons(MessageDialogButtons::OkCancelCustom(
-                "重启本地服务".into(),
+            .buttons(MessageDialogButtons::YesNoCancelCustom(
+                RESTART.into(),
+                REPORT.into(),
                 "退出 Lacus".into(),
             ))
-            .show(move |restart| {
-                if restart {
-                    service.restart(&handle);
-                } else {
-                    handle.exit(0);
+            .show_with_result(move |result| {
+                if service.current.load(Ordering::Acquire) != run {
+                    return;
+                }
+                match result {
+                    MessageDialogResult::Yes => service.restart(&handle),
+                    MessageDialogResult::Custom(label) if label == RESTART => {
+                        service.restart(&handle)
+                    }
+                    MessageDialogResult::No => service.show_report(&handle, run, failure),
+                    MessageDialogResult::Custom(label) if label == REPORT => {
+                        service.show_report(&handle, run, failure)
+                    }
+                    _ => handle.exit(0),
                 }
             });
+    }
+
+    fn show_report(self: &Arc<Self>, app: &AppHandle, run: u64, failure: Arc<Failure>) {
+        match self.write_report(app, &failure).and_then(|path| {
+            app.opener().reveal_item_in_dir(path)?;
+            Ok(())
+        }) {
+            Ok(()) => self.recovery(app, run, failure),
+            Err(error) => {
+                eprintln!("Lacus diagnostic report: {error}");
+                let (service, app) = (self.clone(), app.clone());
+                app.dialog()
+                    .message("无法保存或显示诊断报告。")
+                    .kind(MessageDialogKind::Error)
+                    .show(move |_| service.recovery(&app, run, failure));
+            }
+        }
+    }
+
+    fn write_report(&self, app: &AppHandle, failure: &Failure) -> Result<PathBuf> {
+        let directory = self.home.join("diagnostics");
+        std::fs::create_dir_all(&directory)?;
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)?;
+        let path = directory.join(format!(
+            "lacus-{}-{}.json",
+            now.as_secs(),
+            uuid::Uuid::new_v4()
+        ));
+        let build = crate::update::BuildInfo::read(app);
+        let report = serde_json::json!({
+            "application": "Lacus",
+            "version": app.package_info().version.to_string(),
+            "commit": build.source_commit,
+            "timeUnixMs": now.as_millis(),
+            "stage": failure.stage,
+            "exitCode": failure.exit_code,
+            "daemonLogAvailable": self.log().is_file(),
+        });
+        let bytes = serde_json::to_vec_pretty(&report)?;
+        OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)?
+            .write_all(&bytes)?;
+        Ok(path)
     }
 
     /// Waits for the latest start to settle, so no daemon is left behind,

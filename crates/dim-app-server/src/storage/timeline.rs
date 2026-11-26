@@ -1079,6 +1079,7 @@ pub struct TurnWindow {
 #[derive(Clone)]
 pub struct SessionStore {
     pub(super) timeline: Arc<SqliteTimelineStore>,
+    pub(super) search: Arc<tokio::sync::Mutex<Option<super::search::SessionSearchIndex>>>,
     /// The file steps on the Session's resource node: Session files and the
     /// command output a delete removes.
     files: SessionFiles,
@@ -1108,6 +1109,7 @@ impl SessionStore {
         let files = SessionFiles::new(db, ctx, files_root, timeline.sweep_files.clone());
         Self {
             timeline,
+            search: Arc::default(),
             files,
             titles,
             ownership: Arc::new(tokio::sync::Mutex::new(())),

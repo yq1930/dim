@@ -41,7 +41,7 @@ const buttons = computed<PaneButton[]>(() => {
   const linesBusy = lines.some((line) => line.state.kind === "working" || view.value?.approvals.some((request) => request.branchId === line.id))
   return [
     { view: "details", icon: List, label: t("details.title") },
-    ...(changed > 0 || shown("changes") ? [{ view: "changes" as const, icon: FileDiff, label: t("sessionChanges.title"), command: "toggleDiff" as const, ...(changed > 0 ? { count: changed } : {}) }] : []),
+    ...(changed > 0 || view.value?.hasOlder || shown("changes") ? [{ view: "changes" as const, icon: FileDiff, label: t("sessionChanges.title"), command: "toggleDiff" as const, ...(changed > 0 ? { count: changed } : {}) }] : []),
     ...(files.readable(props.sessionId) ? [{ view: "files" as const, icon: Files, label: t("files.title"), command: "toggleFiles" as const }] : []),
     { view: "preview", icon: AppWindow, label: t("preview.title"), command: "togglePreview" },
     ...(connection.supports("terminal.open") ? [{ view: "terminal" as const, icon: SquareTerminal, label: t("terminal.title"), command: "toggleTerminal" as const }] : []),

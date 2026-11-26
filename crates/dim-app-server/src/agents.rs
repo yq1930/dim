@@ -920,6 +920,57 @@ impl AgentIndex {
             .await
     }
 
+    pub(crate) async fn search_sessions(
+        &self,
+        query: &str,
+        version: u32,
+        cancel: CancellationToken,
+    ) -> dim_agent_runtime::Result<Vec<crate::protocol::SessionSearchHit>> {
+        let store = self.session_store.as_ref().ok_or_else(|| {
+            AgentError::InvalidInput("Session search needs native storage".into())
+        })?;
+        let (hosts, closed) = self.catalog_scope();
+        let page = store
+            .catalog(
+                crate::protocol::Catalog {
+                    archived: Some(false),
+                    with_acp_sessions: true,
+                    ..Default::default()
+                },
+                None,
+                version,
+                hosts,
+                closed.into_iter().collect(),
+                cancel.clone(),
+            )
+            .await?;
+        let visible = page
+            .sessions
+            .into_iter()
+            .filter(|summary| summary.session.parent_session_id.is_none())
+            .collect();
+        store.search_transcripts(visible, query, 30, cancel).await
+    }
+
+    fn catalog_scope(&self) -> (Vec<String>, HashSet<String>) {
+        let hosts = self
+            .hosts()
+            .into_iter()
+            .map(|host| host.agent_id.clone())
+            .collect();
+        let closed = self
+            .directory
+            .inner
+            .lock()
+            .expect("agent index")
+            .sessions
+            .iter()
+            .filter(|(_, slot)| slot.closed.load(Ordering::Acquire))
+            .map(|(id, _)| id.clone())
+            .collect();
+        (hosts, closed)
+    }
+
     pub(crate) async fn session_catalog(
         &self,
         request: crate::protocol::Catalog,
@@ -932,21 +983,7 @@ impl AgentIndex {
             .session_store
             .as_ref()
             .ok_or_else(|| AgentError::InvalidInput("a catalog needs the native store".into()))?;
-        let hosts = self
-            .hosts()
-            .into_iter()
-            .map(|host| host.agent_id.clone())
-            .collect();
-        let closed: HashSet<String> = self
-            .directory
-            .inner
-            .lock()
-            .expect("agent index")
-            .sessions
-            .iter()
-            .filter(|(_, slot)| slot.closed.load(Ordering::Acquire))
-            .map(|(id, _)| id.clone())
-            .collect();
+        let (hosts, closed) = self.catalog_scope();
         let excluded: Vec<String> = if include_closed {
             Vec::new()
         } else {

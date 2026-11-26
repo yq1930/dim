@@ -20,6 +20,9 @@ const status = computed(() => memberStatus(props.member))
 function stop(): void {
   if (props.member.sessionId !== undefined) void chat.stop(props.member.sessionId, MAIN_BRANCH)
 }
+function loadOlder(): Promise<boolean> {
+  return props.member.sessionId === undefined ? Promise.resolve(false) : chat.loadOlder(props.member.sessionId)
+}
 </script>
 
 <template>
@@ -40,7 +43,10 @@ function stop(): void {
     </div>
     <TimelineView
       v-else
-      :rows="view.rows"
+      :transcript="view.transcript"
+      :load-older="view.hasOlder ? loadOlder : undefined"
+      :loading-older="view.loadingOlder"
+      :older-error="view.olderError"
       :running="view.running"
       :run-started-at="view.turnStartedAt"
       :quotable="false"

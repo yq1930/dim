@@ -655,6 +655,13 @@ How the summary is produced:
 
 ### 5.3 One compaction path (ContextPolicy)
 
+Before an automatic threshold compaction, request preparation can shorten old
+text-only tool results on the current branch. It considers up to 16 large
+results from before the running turn, keeps their first and last 2 KiB, and
+includes each call's Recall ID. It uses this request when the model estimate
+fits below the threshold. The original tool results are available in Timeline
+history, and the committed model call records the shortened request.
+
 `compact_step` is the existing compaction section of `ContextPolicy::prepare`, extracted:
 
 1. **Resident parts and retention limit.** With `B = context_window − output_tokens` (§5.1), the

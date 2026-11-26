@@ -13,7 +13,7 @@
  */
 import { GoalFold, type Goal } from "./goal"
 import { PlanningFold } from "./planning"
-import type { AskQuestion, ExecStatus, MemberOutcome, ModelId, ModelProgress, QueuedInput, SessionEvent, ToolResult } from "./rpc/protocol"
+import type { AskQuestion, DeliveredFile, ExecStatus, MemberOutcome, ModelId, ModelProgress, QueuedInput, SessionEvent, ToolResult } from "./rpc/protocol"
 
 export type BackgroundTask = {
   taskId: string
@@ -35,7 +35,7 @@ export type MemberTask = {
 
 export type TimelineRow =
   | { kind: "user"; key: string; text: string; skills?: string[]; at: number; sequence: number; cut: number }
-  | { kind: "assistant"; key: string; text: string; streaming: boolean }
+  | { kind: "assistant"; key: string; text: string; streaming: boolean; sequence?: number }
   /** `startedAt` is when the request began, which a thought under way counts from; `elapsedMs` is the time from it to the written thought. */
   | { kind: "thinking"; key: string; text: string; streaming: boolean; startedAt?: number; elapsedMs?: number }
   | { kind: "tool"; key: string; callId: string; name: string; input: Record<string, unknown>; pending: boolean; result?: ToolResult }
@@ -47,12 +47,18 @@ export type TimelineRow =
   | { kind: "error"; key: string; text: string }
   | { kind: "stopped"; key: string }
   /** A turn that completed, or that wrote files: how long it took and how many files it wrote. */
-  | { kind: "turn-summary"; key: string; turnId: string; outcome: "completed" | "failed" | "cancelled"; files: number; durationMs?: number }
+  | { kind: "turn-summary"; key: string; turnId: string; outcome: "completed" | "failed" | "cancelled"; files: number; durationMs?: number; deliveries?: readonly DeliveredFile[] }
   | { kind: "files-rewound"; key: string; count: number }
   /** A member's result came back: the request it answers, by the task's first line. */
   | { kind: "member-result"; key: string; requestId: string; task: string; status: MemberOutcome }
 
 type UserRow = Extract<TimelineRow, { kind: "user" }>
+
+export type TranscriptRows = {
+  settled: readonly TimelineRow[]
+  active: readonly TimelineRow[]
+  readonly rows: readonly TimelineRow[]
+}
 
 /** A request's reasoning or answer while it is still arriving. */
 type Stream = {
@@ -67,6 +73,10 @@ type Stream = {
 
 export class Projection {
   rows: TimelineRow[] = []
+  readonly messageHistory: string[] = []
+  private settledLength = 0
+  private settledRows: readonly TimelineRow[] = []
+  private transcriptView: TranscriptRows | undefined
   readonly backgroundTasks = new Map<string, BackgroundTask>()
   /** Work handed to team members, by request event id. */
   readonly members = new Map<string, MemberTask>()
@@ -80,9 +90,13 @@ export class Projection {
   private answers = new Map<string, Stream>()
   private thoughts = new Map<string, Stream>()
   private requestStarts = new Map<string, number>()
+  private answerParts = new Map<string, number>()
+  private thoughtParts = new Map<string, number>()
   private tools = new Map<string, number>()
   /** The files `write` and `edit` changed in the turn under way. */
   private turnWrites = new Set<string>()
+  private turnDeliveries = new Map<string, DeliveredFile>()
+  private presentCalls = new Set<string>()
   /**
    * The turn under way and when its `turn/start` came. Inputs mark no start: an
    * appended one, such as the client snapshot written on attach, opens no turn.
@@ -130,7 +144,7 @@ export class Projection {
   }
 
   /** Applies one event; false when it was already applied. */
-  apply(event: SessionEvent): boolean {
+  apply(event: SessionEvent, visible = true): boolean {
     if (event.sequence <= this.cursor) return false
     this.cursor = event.sequence
     this.goalFold.apply(event)
@@ -168,7 +182,7 @@ export class Projection {
         const task = this.members.get(content.requestEventId)
         const text = content.reason === undefined ? content.text : `${content.reason}\n${content.text}`.trim()
         if (task !== undefined) this.members.set(content.requestEventId, { ...task, sessionId: content.sessionId, finish: { at: event.createAt, status: content.status, text } })
-        this.push({ kind: "member-result", key: `member-result-${event.sequence}`, requestId: content.requestEventId, task: firstLine(task?.prompt ?? ""), status: content.status })
+        if (visible) this.push({ kind: "member-result", key: `member-result-${event.sequence}`, requestId: content.requestEventId, task: firstLine(task?.prompt ?? ""), status: content.status })
         break
       }
       case "input":
@@ -191,7 +205,10 @@ export class Projection {
       case "input-applied": {
         const entry = this.held.get(content.inputId)
         this.held.delete(content.inputId)
-        if (entry !== undefined) this.push(entry.row)
+        if (entry !== undefined) {
+          if (entry.row.text.trim() !== "") this.messageHistory.push(entry.row.text)
+          if (visible) this.push(entry.row)
+        }
         break
       }
       case "input-deleted":
@@ -199,10 +216,11 @@ export class Projection {
         break
       case "source-input": {
         const notice = branchNotice(content.text, content.mode) ?? rewindNotice(content.text)
-        if (notice !== undefined) this.push({ ...notice, key: `notice-${event.sequence}` })
+        if (visible && notice !== undefined) this.push({ ...notice, key: `notice-${event.sequence}` })
         break
       }
       case "branch-create": {
+        if (!visible) break
         const at = content.at ?? event.sequence
         const message = this.rows.find((row) => row.kind === "user" && row.cut === at)
         const before = message?.kind === "user" ? clipFirstLine(message.text) : undefined
@@ -221,6 +239,7 @@ export class Projection {
         break
       }
       case "branch-end": {
+        if (!visible) break
         const ancestor = content.ancestor
         this.push({
           kind: "line-ended",
@@ -243,8 +262,9 @@ export class Projection {
       case "text": {
         this.closeThinking(content.requestId)
         const answer = this.openAnswer(content.requestId)
+        const row = this.rows[answer.index]
         commit(answer, content.delta)
-        this.update(answer.index, { text: shown(answer) })
+        this.update(answer.index, { text: shown(answer), ...(row?.kind === "assistant" && row.sequence === undefined ? { sequence: event.sequence } : {}) })
         break
       }
       case "tool-use":
@@ -252,6 +272,7 @@ export class Projection {
         this.closeAnswer(content.requestId)
         this.requestStarts.delete(content.requestId)
         this.tools.set(content.callId, this.push({ kind: "tool", key: `tool-${content.callId}`, callId: content.callId, name: content.name, input: content.input, pending: true }))
+        if (content.name === "present") this.presentCalls.add(content.callId)
         break
       case "tool-call":
         for (const ask of content.asks) this.asks.push({ requestId: content.requestId, callId: ask.callId, questions: ask.questions })
@@ -261,7 +282,12 @@ export class Projection {
         this.completeTool(content.callId, content.result)
         break
       case "tool-result":
-        for (const result of content.results) this.completeTool(result.callId, result.result)
+        for (const result of content.results) {
+          this.completeTool(result.callId, result.result)
+          if (this.presentCalls.delete(result.callId) && !result.result.isError) {
+            for (const file of result.result.deliveredFiles ?? []) this.turnDeliveries.set(file.path, file)
+          }
+        }
         this.asks = this.asks.filter((ask) => ask.requestId !== content.requestId || !content.results.some((result) => result.callId === ask.callId))
         this.plans = this.plans.filter((plan) => plan.requestId !== content.requestId || !content.results.some((result) => result.callId === plan.callId))
         break
@@ -281,20 +307,26 @@ export class Projection {
         for (const requestId of [...this.thoughts.keys()]) this.closeThinking(requestId)
         for (const requestId of [...this.answers.keys()]) this.closeAnswer(requestId)
         this.requestStarts.clear()
-        if (content.outcome === "failed") this.push({ kind: "error", key: `error-${event.sequence}`, text: content.error ?? "" })
-        if (content.outcome === "cancelled") this.push({ kind: "stopped", key: `stopped-${event.sequence}` })
-        if (content.outcome === "completed" || this.turnWrites.size > 0) {
+        this.answerParts.clear()
+        this.thoughtParts.clear()
+        if (visible && content.outcome === "failed") this.push({ kind: "error", key: `error-${event.sequence}`, text: content.error ?? "" })
+        if (visible && content.outcome === "cancelled") this.push({ kind: "stopped", key: `stopped-${event.sequence}` })
+        if (visible && (content.outcome === "completed" || this.turnWrites.size > 0 || this.turnDeliveries.size > 0)) {
           this.push({
             kind: "turn-summary",
             key: `turn-summary-${event.sequence}`,
             turnId: content.turnId,
             outcome: content.outcome,
             files: this.turnWrites.size,
+            ...(this.turnDeliveries.size === 0 ? {} : { deliveries: [...this.turnDeliveries.values()] }),
             ...(startedAt === undefined ? {} : { durationMs: event.createAt - startedAt }),
           })
         }
         this.turnWrites.clear()
+        this.turnDeliveries.clear()
+        this.presentCalls.clear()
         this.turnStart = undefined
+        this.settledLength = this.rows.length
         break
       }
       case "context-configured":
@@ -323,20 +355,41 @@ export class Projection {
     }
   }
 
+  restoreProgress(progress: ModelProgress): void {
+    if (progress.requestId !== undefined && this.requestStarts.has(progress.requestId)) this.progress(progress)
+  }
+
   private push(row: TimelineRow): number {
+    this.transcriptView = undefined
     this.rows.push(row)
     return this.rows.length - 1
   }
 
   private update(index: number, patch: Partial<TimelineRow>): void {
+    this.transcriptView = undefined
     this.rows[index] = { ...this.rows[index]!, ...patch } as TimelineRow
+    if (index < this.settledLength) this.settledRows = []
+  }
+
+  transcript(): TranscriptRows {
+    if (this.transcriptView !== undefined) return this.transcriptView
+    if (this.settledRows.length !== this.settledLength) this.settledRows = this.rows.slice(0, this.settledLength)
+    const settled = this.settledRows
+    const active = this.rows.slice(this.settledLength)
+    let combined: readonly TimelineRow[] | undefined
+    return this.transcriptView = {
+      settled, active,
+      get rows() { return combined ??= settled.length === 0 ? active : active.length === 0 ? settled : settled.concat(active) },
+    }
   }
 
   private openThinking(requestId: string): Stream {
     let thought = this.thoughts.get(requestId)
     if (thought === undefined) {
       const startedAt = this.requestStarts.get(requestId)
-      thought = { index: this.push({ kind: "thinking", key: `thinking-${requestId}-${this.rows.length}`, text: "", streaming: true, ...(startedAt === undefined ? {} : { startedAt }) }), written: "", writtenChars: 0 }
+      const part = this.thoughtParts.get(requestId) ?? 0
+      this.thoughtParts.set(requestId, part + 1)
+      thought = { index: this.push({ kind: "thinking", key: `thinking-${requestId}-${part}`, text: "", streaming: true, ...(startedAt === undefined ? {} : { startedAt }) }), written: "", writtenChars: 0 }
       this.thoughts.set(requestId, thought)
     }
     return thought
@@ -345,7 +398,9 @@ export class Projection {
   private openAnswer(requestId: string): Stream {
     let answer = this.answers.get(requestId)
     if (answer === undefined) {
-      answer = { index: this.push({ kind: "assistant", key: `assistant-${requestId}-${this.rows.length}`, text: "", streaming: true }), written: "", writtenChars: 0 }
+      const part = this.answerParts.get(requestId) ?? 0
+      this.answerParts.set(requestId, part + 1)
+      answer = { index: this.push({ kind: "assistant", key: `assistant-${requestId}-${part}`, text: "", streaming: true }), written: "", writtenChars: 0 }
       this.answers.set(requestId, answer)
     }
     return answer

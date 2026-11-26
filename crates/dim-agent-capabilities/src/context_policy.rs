@@ -46,6 +46,9 @@ const CUT_PAGE: u64 = 64;
 
 /// Events one page of a cut window keeps.
 const WINDOW_PAGE: u64 = 256;
+const TOOL_RESULT_PRUNE_ABOVE: usize = 12 * 1024;
+const TOOL_RESULT_KEEP: usize = 4 * 1024;
+const TOOL_RESULT_PRUNE_LIMIT: usize = 16;
 
 pub(crate) struct ContextPolicy {
     pub timeline: Arc<Timeline>,
@@ -840,7 +843,18 @@ impl ContextPolicy {
             .resolve(view.prepared.clone(), cancel.clone())
             .await?;
         check_cancel(&cancel)?;
-        let estimate = self.estimate(&view.prepared, model.as_ref(), &view.events)?;
+        let mut estimate = self.estimate(&view.prepared, model.as_ref(), &view.events)?;
+        let mut ready = view.prepared.clone();
+        if source.recovery.is_none()
+            && estimate.input >= model.threshold_tokens()
+            && let Some(pruned) = self.pruned_request(&view, &source.turn_id, &cancel).await?
+        {
+            let pruned_estimate = self.estimate(&pruned, model.as_ref(), &view.events)?;
+            if pruned_estimate.input < model.threshold_tokens() {
+                ready = pruned;
+                estimate = pruned_estimate;
+            }
+        }
         self.timeline
             .append(
                 EventKind::ContextBudget(ContextBudgetData {
@@ -868,7 +882,7 @@ impl ContextPolicy {
         });
         let recovery = provider_budget.is_some();
         if !recovery && estimate.input < model.threshold_tokens() {
-            return Ok((view.prepared, estimate.input));
+            return Ok((ready, estimate.input));
         }
         if !recovery && !self.regrown(&view, model.as_ref()).await? {
             return Ok((view.prepared, estimate.input));
@@ -919,6 +933,123 @@ impl ContextPolicy {
             ),
             _ => Ok((view.prepared, estimate.input)),
         }
+    }
+
+    async fn pruned_request(
+        &self,
+        view: &View,
+        turn_id: &str,
+        cancel: &CancellationToken,
+    ) -> Result<Option<Arc<ModelRequest>>, HostError> {
+        if !view.prepared.tools.as_ref().is_some_and(|tools| {
+            tools
+                .iter()
+                .any(|tool| tool.name == crate::recall::RECALL_TOOL)
+        }) {
+            return Ok(None);
+        }
+        let appended = view.request.messages.len() - view.prefix_len;
+        let first = view.prepared.messages.len() - appended - view.history.len();
+        let mut large: Vec<_> = view
+            .history
+            .iter()
+            .enumerate()
+            .filter_map(|(index, entry)| {
+                if entry.tool_context || entry.message.role != Role::ToolResult {
+                    return None;
+                }
+                let MessageContent::Parts(parts) = &entry.message.content else {
+                    return None;
+                };
+                let [
+                    MessagePart::ToolResult {
+                        tool_use_id,
+                        content: ToolContent::Text(text),
+                        structured_content,
+                        is_error,
+                    },
+                ] = parts.as_slice()
+                else {
+                    return None;
+                };
+                (text.len() > TOOL_RESULT_PRUNE_ABOVE).then_some((
+                    first + index,
+                    &entry.position,
+                    tool_use_id,
+                    text,
+                    structured_content,
+                    is_error,
+                ))
+            })
+            .collect();
+        if large.is_empty() {
+            return Ok(None);
+        }
+        let mut query = newest_chain(
+            Some("turn/start"),
+            Some(view.through),
+            Some(TimelineQueryPredicate {
+                path: "turn_id".into(),
+                value: json!(turn_id),
+            }),
+            1,
+        );
+        query.scope = TimelineQueryScope::Branch;
+        let turn = self
+            .timeline
+            .query(query)
+            .await
+            .map_err(|error| HostError::failed(error.to_string()))?;
+        let Some(start) = turn.positions.first() else {
+            return Ok(None);
+        };
+        large.retain(|(_, position, ..)| {
+            position.branch_id == start.branch_id && position.sequence < start.sequence
+        });
+        large.sort_unstable_by_key(|(index, _, _, text, _, _)| {
+            (std::cmp::Reverse(text.len()), *index)
+        });
+        let mut pruned = None;
+        for (index, position, tool_use_id, text, structured_content, is_error) in
+            large.into_iter().take(TOOL_RESULT_PRUNE_LIMIT)
+        {
+            check_cancel(cancel)?;
+            let mut query = newest_chain(
+                Some("step/tool-use-start"),
+                Some(position.sequence),
+                Some(TimelineQueryPredicate {
+                    path: "call_id".into(),
+                    value: json!(tool_use_id),
+                }),
+                1,
+            );
+            query.scope = TimelineQueryScope::Branch;
+            let calls = self
+                .timeline
+                .query(query)
+                .await
+                .map_err(|error| HostError::failed(error.to_string()))?;
+            let Some(call) = calls.events.first() else {
+                continue;
+            };
+            let head_and_tail = truncate_middle(text, TOOL_RESULT_KEEP);
+            let content = format!(
+                "{head_and_tail}\nUse recall with open=\"{}\" to read the complete tool result.",
+                call.id
+            );
+            let request = pruned.get_or_insert_with(|| view.prepared.as_ref().clone());
+            request.messages[index] = Arc::new(Message {
+                role: Role::ToolResult,
+                content: MessageContent::Parts(vec![MessagePart::ToolResult {
+                    tool_use_id: tool_use_id.clone(),
+                    content: ToolContent::Text(content),
+                    structured_content: structured_content.clone(),
+                    is_error: *is_error,
+                }]),
+            });
+        }
+        check_cancel(cancel)?;
+        Ok(pruned.map(Arc::new))
     }
 
     /// The one compaction path, for the automatic trigger in preparation and

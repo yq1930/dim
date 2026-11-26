@@ -55,7 +55,8 @@ fn main() {
             commands::choose_workspace,
             commands::notify_attention,
             commands::open_workspace_path,
-            preview::show_preview
+            preview::show_preview,
+            commands::workspace_boot_failed
         ])
         .on_menu_event(menu::handle)
         .setup(|app| {

@@ -24,4 +24,9 @@ void Promise.all([exchangeBootstrapToken(), setAppLocale(useAppearanceStore(pini
   useConnectionStore(pinia).client.start()
   createApp(AppRoot).use(pinia).use(i18n).use(router).directive("tooltip", vTooltip).mount("#app")
   setTimeout(() => void loadMarkdownRenderer(), 0)
+}).catch((cause: unknown) => {
+  console.error(cause)
+  const host = document.querySelector("#app")
+  if (host) host.textContent = i18n.global.t("connection.workspaceBootFailed")
+  void window.__TAURI__?.core.invoke("workspace_boot_failed").catch(() => undefined)
 })

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, provide, ref, watch } from "vue"
+import { computed, nextTick, provide, ref, watch } from "vue"
 import { RouterLink, useRoute, useRouter } from "vue-router"
 import { useI18n } from "vue-i18n"
 import { ArrowLeftRight, Menu, X } from "lucide-vue-next"
@@ -34,7 +34,7 @@ import { usePanesStore } from "../../stores/panes"
 import { useUiStore, type Pane } from "../../stores/ui"
 
 /** A Session's transcript and composer; `pane` is "split" for the one shown beside the routed Session. */
-const props = defineProps<{ sessionId: string; pane?: Pane }>()
+const props = defineProps<{ sessionId: string; pane?: Pane; message?: unknown }>()
 const { t } = useI18n()
 const models = useModelsStore()
 const chat = useChatStore()
@@ -53,6 +53,24 @@ const drafts = useComposerDrafts()
 watch(() => props.sessionId, (id) => chat.open(id), { immediate: true })
 
 const view = computed(() => chat.views[props.sessionId])
+const transcript = ref<InstanceType<typeof TimelineView>>()
+const messageTarget = computed(() => {
+  const value = props.message
+  if (props.pane === "split" || typeof value !== "string" || !/^\d+$/.test(value)) return undefined
+  const sequence = Number(value)
+  if (Number.isSafeInteger(sequence) && sequence > 0) return sequence
+})
+watch([messageTarget, () => view.value?.status, transcript], async ([sequence, status, timeline], _, onCleanup) => {
+  if (sequence === undefined || status !== "ready" || timeline === undefined) return
+  let stale = false
+  onCleanup(() => { stale = true })
+  if (timeline.jumpToMessage(sequence)) return
+  const loaded = await chat.loadOlder(props.sessionId, sequence)
+  await nextTick()
+  if (!stale && (!loaded || !timeline.jumpToMessage(sequence))) {
+    toast.push({ tone: "danger", title: t("timeline.messageUnavailable") })
+  }
+}, { flush: "post" })
 const summary = computed(() => sessions.byId.get(props.sessionId))
 provide(LINK_CONTEXT, computed(() => summary.value === undefined ? undefined : { sessionId: props.sessionId, base: summary.value.cwd, filePane: props.pane !== "split" }))
 const title = computed(() => summary.value?.title ?? summary.value?.preview ?? t("sidebar.untitled"))
@@ -73,7 +91,7 @@ const changesDialog = ref<InstanceType<typeof TurnChangesDialog>>()
 const split = computed(() => props.pane === "split")
 /** The main line's messages, oldest first and the queued ones last, for the composer's ↑ recall. */
 const sentMessages = computed(() => [
-  ...(view.value?.rows ?? []).flatMap((row) => row.kind === "user" ? [row.text] : []),
+  ...(view.value?.messageHistory ?? []),
   ...(view.value?.queued ?? []).map((input) => input.text),
 ].filter((text) => text.trim() !== ""))
 /** The App Server serves the permission methods on the connection; a Session may also list them. */
@@ -249,7 +267,11 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
       </header>
     </div>
     <TimelineView
-      :rows="view.rows"
+      ref="transcript"
+      :transcript="view.transcript"
+      :load-older="view.hasOlder ? () => chat.loadOlder(sessionId) : undefined"
+      :loading-older="view.loadingOlder"
+      :older-error="view.olderError"
       :running="view.running"
       :run-started-at="view.turnStartedAt"
       :session-id="sessionId"

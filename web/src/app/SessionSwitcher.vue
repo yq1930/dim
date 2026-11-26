@@ -2,11 +2,14 @@
 import { computed, nextTick, ref, useId, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import { useI18n } from "vue-i18n"
-import { LoaderCircle, Search } from "lucide-vue-next"
+import { LoaderCircle, MessageSquare, Search } from "lucide-vue-next"
 import { useSessionState } from "../features/sidebar/session-state"
 import { formatRelativeTimeShort } from "../features/session/transcript/timeline-time"
 import { useSessionsStore } from "../stores/sessions"
+import { useConnectionStore } from "../stores/connection"
 import { useUiStore } from "../stores/ui"
+import type { SessionSearchHit, SessionSummary } from "../rpc/protocol"
+import { readSessionSearch } from "../rpc/read"
 
 /**
  * Jumps to a Session, as Claude Code's ⌘K: the latest first, narrowed by what is typed of a title
@@ -18,6 +21,7 @@ const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const sessions = useSessionsStore()
+const connection = useConnectionStore()
 const ui = useUiStore()
 const stateOf = useSessionState()
 const id = useId()
@@ -27,15 +31,29 @@ const list = ref<HTMLElement>()
 const query = ref("")
 const active = ref(0)
 const nowMs = ref(Date.now())
+const matches = ref<SessionSearchHit[]>([])
+const searching = ref(false)
+const searchError = ref(false)
+let inFlight: Promise<SessionSearchHit[]> | undefined
+const bodySearch = computed(() => connection.supports("session.search"))
 
 const current = computed(() => typeof route.params.sessionId === "string" ? route.params.sessionId : undefined)
-const rows = computed(() => {
+const sessionsByRecency = computed(() => sessions.workspaces
+  .flatMap((workspace) => workspace.sessions.map((session) => ({ session, workspace: workspace.name, search: `${session.title ?? ""} ${session.preview ?? ""} ${workspace.name} ${session.cwd}`.toLocaleLowerCase() })))
+  .sort((left, right) => right.session.updatedAt - left.session.updatedAt))
+const sessionsById = computed(() => new Map(sessionsByRecency.value.map((item) => [item.session.sessionId, item])))
+type Row = { key: string; session: SessionSummary; workspace: string; hit?: SessionSearchHit }
+const rows = computed<Row[]>(() => {
   const words = query.value.trim().toLocaleLowerCase().split(/\s+/).filter((word) => word !== "")
-  return sessions.workspaces
-    .flatMap((workspace) => workspace.sessions.map((session) => ({ session, workspace: workspace.name, search: `${session.title ?? ""} ${session.preview ?? ""} ${workspace.name} ${session.cwd}`.toLocaleLowerCase() })))
+  const local = sessionsByRecency.value
     .filter((row) => words.every((word) => row.search.includes(word)))
-    .sort((left, right) => right.session.updatedAt - left.session.updatedAt)
     .slice(0, LIMIT)
+    .map(({ session, workspace }) => ({ key: session.sessionId, session, workspace }))
+  const matching = matches.value.flatMap((hit) => {
+    const known = sessionsById.value.get(hit.sessionId)
+    return known ? [{ key: `${hit.sessionId}-${hit.sequence}`, session: known.session, workspace: known.workspace, hit }] : []
+  })
+  return [...local, ...matching]
 })
 const picked = computed(() => rows.value[Math.min(active.value, rows.value.length - 1)])
 
@@ -43,6 +61,32 @@ function reset(): void {
   active.value = Math.max(0, rows.value.findIndex((row) => row.session.sessionId !== current.value))
 }
 watch(query, reset)
+
+watch([query, () => ui.switcherOpen, bodySearch, () => connection.phase], ([text, open, available, phase], _, onCleanup) => {
+  matches.value = []
+  searchError.value = false
+  searching.value = false
+  const value = text.trim()
+  if (!open || !available || phase !== "connected" || value === "") return
+  searching.value = true
+  let stale = false
+  const timer = setTimeout(async () => {
+    if (inFlight !== undefined) await inFlight.catch(() => undefined)
+    if (stale) return
+    const pending = connection.client.call("session.search", { query: value }, readSessionSearch, 60_000)
+    inFlight = pending
+    try {
+      const result = await pending
+      if (!stale) matches.value = result
+    } catch {
+      if (!stale) searchError.value = true
+    } finally {
+      if (inFlight === pending) inFlight = undefined
+      if (!stale) searching.value = false
+    }
+  }, 240)
+  onCleanup(() => { stale = true; clearTimeout(timer) })
+})
 
 watch(() => ui.switcherOpen, async (open) => {
   await nextTick()
@@ -64,10 +108,15 @@ function move(step: 1 | -1): void {
   void nextTick(() => list.value?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" }))
 }
 
-function go(sessionId: string): void {
+function go(row: Row): void {
   dialog.value?.close()
   ui.drawerOpen = false
-  if (sessionId !== current.value) void router.push({ name: "chat-session", params: { sessionId } })
+  const sessionId = row.session.sessionId
+  if (row.hit !== undefined) {
+    void router.push({ name: "chat-session", params: { sessionId }, query: { message: String(row.hit.sequence) } })
+  } else if (sessionId !== current.value) {
+    void router.push({ name: "chat-session", params: { sessionId } })
+  }
 }
 
 function onKeydown(event: KeyboardEvent): void {
@@ -77,7 +126,7 @@ function onKeydown(event: KeyboardEvent): void {
     move(event.key === "ArrowDown" ? 1 : -1)
   } else if (event.key === "Enter") {
     event.preventDefault()
-    if (picked.value !== undefined) go(picked.value.session.sessionId)
+    if (picked.value !== undefined) go(picked.value)
   }
 }
 
@@ -100,12 +149,13 @@ function onClick(event: MouseEvent): void {
         class="ui-field"
         data-size="md"
         type="search"
+        maxlength="128"
         role="combobox"
         aria-autocomplete="list"
         aria-expanded="true"
         :aria-controls="id"
-        :aria-activedescendant="picked ? `${id}-${picked.session.sessionId}` : undefined"
-        :placeholder="t('switcher.title')"
+        :aria-activedescendant="picked ? `${id}-${picked.key}` : undefined"
+        :placeholder="t(bodySearch ? 'switcher.search' : 'switcher.title')"
         :aria-label="t('switcher.title')"
         @keydown="onKeydown"
       >
@@ -113,24 +163,31 @@ function onClick(event: MouseEvent): void {
     <div :id="id" ref="list" class="switcher-list" role="listbox" :aria-label="t('switcher.title')">
       <button
         v-for="(row, index) in rows"
-        :id="`${id}-${row.session.sessionId}`"
-        :key="row.session.sessionId"
+        :id="`${id}-${row.key}`"
+        :key="row.key"
         type="button"
         role="option"
         class="ui-menu-item"
+        :class="{ 'message-match': row.hit }"
         tabindex="-1"
         :aria-selected="row === picked"
         :data-highlighted="row === picked ? '' : undefined"
         @pointermove="active = index"
-        @click="go(row.session.sessionId)"
+        @click="go(row)"
       >
-        <LoaderCircle v-if="stateOf(row.session) === 'running'" class="is-spinning" aria-hidden="true" />
+        <MessageSquare v-if="row.hit" class="match-icon" aria-hidden="true" />
+        <LoaderCircle v-else-if="stateOf(row.session) === 'running'" class="is-spinning" aria-hidden="true" />
         <span v-else class="status-dot" :data-state="stateOf(row.session)" aria-hidden="true" />
-        <span>{{ row.session.title ?? row.session.preview ?? t("sidebar.untitled") }}</span>
+        <span class="switcher-label">
+          <span>{{ row.session.title ?? row.session.preview ?? t("sidebar.untitled") }}</span>
+          <small v-if="row.hit" class="switcher-snippet">{{ row.hit.snippet }}</small>
+        </span>
         <small class="switcher-workspace">{{ row.workspace }}</small>
         <small class="timestamp">{{ formatRelativeTimeShort(new Date(row.session.updatedAt), nowMs) }}</small>
       </button>
-      <p v-if="rows.length === 0" class="menu-empty" role="status">{{ t("switcher.none") }}</p>
+      <p v-if="searching" class="menu-empty" role="status">{{ t("switcher.searching") }}</p>
+      <p v-else-if="searchError" class="menu-empty" role="status">{{ t("switcher.searchFailed") }}</p>
+      <p v-else-if="rows.length === 0" class="menu-empty" role="status">{{ t("switcher.none") }}</p>
     </div>
   </dialog>
 </template>
@@ -147,4 +204,9 @@ function onClick(event: MouseEvent): void {
 .switcher-list .status-dot[data-state="idle"] { visibility: hidden; }
 .switcher-list small { flex: none; color: var(--muted-foreground); font-size: var(--text-xs); font-weight: var(--weight-ui); }
 .switcher-workspace { max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.switcher-label { display: grid; min-width: 0; flex: 1; }
+.switcher-label > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.switcher-list .message-match { height: auto; min-height: var(--space-12); padding-block: var(--space-2); }
+.match-icon { flex: none; color: var(--muted-foreground); }
+.switcher-list .switcher-snippet { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

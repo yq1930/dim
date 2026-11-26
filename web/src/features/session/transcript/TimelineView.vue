@@ -2,12 +2,13 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch, type ComponentPublicInstance } from "vue"
 import { useI18n } from "vue-i18n"
 import { useVirtualizer } from "@tanstack/vue-virtual"
-import { ChevronDown, CircleCheck, FileDiff, GitBranch, LoaderCircle, Users } from "lucide-vue-next"
-import type { TimelineRow } from "../../../projection"
+import { ChevronDown, ChevronUp, CircleCheck, FileDiff, GitBranch, LoaderCircle, Users } from "lucide-vue-next"
+import type { TimelineRow, TranscriptRows } from "../../../projection"
 import ChatMarkdown from "../../../components/ChatMarkdown.vue"
 import MessageContextMenu from "./MessageContextMenu.vue"
 import TimelineUserMessage from "./TimelineUserMessage.vue"
 import TimelineWorkRow from "./TimelineWorkRow.vue"
+import TurnDeliverables from "./TurnDeliverables.vue"
 import { groupRows, type WorkItem } from "./work"
 import { usePanesStore } from "../../../stores/panes"
 import { RAIL_MIN_MARKERS, timelineMarkers } from "../../../timeline-markers"
@@ -24,7 +25,11 @@ import { formatElapsedSeconds, TIMELINE_NOW } from "./timeline-time"
  * thought; verbose gives each step a row and opens it.
  */
 const props = defineProps<{
-  rows: readonly TimelineRow[]
+  rows?: readonly TimelineRow[]
+  transcript?: TranscriptRows
+  loadOlder?: () => Promise<boolean>
+  loadingOlder?: boolean
+  olderError?: string
   running: boolean
   /** When the turn under way started, so its elapsed time survives a reload or a switch of Session. */
   runStartedAt?: number
@@ -50,7 +55,15 @@ const expandedItems = ref<Record<string, boolean>>({})
 const panes = usePanesStore()
 const view = computed(() => props.sessionId === undefined ? "normal" : panes.transcriptOf(props.sessionId))
 
-const display = computed(() => groupRows(props.rows, view.value))
+const emptyRows: readonly TimelineRow[] = []
+const settledRows = computed(() => props.transcript?.settled ?? emptyRows)
+const settled = computed(() => groupRows(settledRows.value, view.value))
+const activeRows = computed(() => props.transcript?.active ?? props.rows ?? emptyRows)
+const active = computed(() => groupRows(activeRows.value, view.value))
+const count = computed(() => settled.value.length + active.value.length)
+function rowAt(index: number) {
+  return index < settled.value.length ? settled.value[index]! : active.value[index - settled.value.length]!
+}
 watch(view, () => { expandedItems.value = {} })
 
 function itemExpanded(item: WorkItem): boolean {
@@ -87,11 +100,11 @@ function onBranch(row: TimelineRow, text: string): void {
 }
 
 const virtualizer = useVirtualizer(computed(() => ({
-  count: display.value.length,
+  count: count.value,
   getScrollElement: () => viewport.value ?? null,
   estimateSize: () => 72,
   overscan: 6,
-  getItemKey: (index: number) => display.value[index]!.key,
+  getItemKey: (index: number) => rowAt(index).key,
 })))
 // TanStack decides whether a resized row sits above the reader from
 // measurementsCache, which it rebuilds only on the next getMeasurements, against
@@ -131,7 +144,10 @@ const virtualRows = computed(() => virtualizer.value.getVirtualItems())
 const totalSize = computed(() => virtualizer.value.getTotalSize())
 
 /** The rail's markers, one per user message; the rail lists them top to bottom. */
-const markers = computed(() => timelineMarkers(display.value))
+const settledMarkers = computed(() => timelineMarkers(settled.value))
+const markers = computed(() => settledMarkers.value.concat(timelineMarkers(active.value).map((marker) => ({
+  ...marker, index: marker.index + settled.value.length,
+}))))
 const showRail = computed(() => props.variant !== "panel" && markers.value.length >= RAIL_MIN_MARKERS)
 const RAIL_HEIGHT_PX = 420
 /** Markers stay within the rail height; a long history packs them closer. */
@@ -140,12 +156,40 @@ const jumpTarget = ref<number>()
 let jumpTimer: ReturnType<typeof setTimeout> | undefined
 
 /** Scrolls the message at `index` into the middle of the view and marks it for a moment. */
-function jumpTo(index: number): void {
+function jumpTo(index: number, behavior: "smooth" | "auto" = "smooth"): void {
   following.value = false
-  virtualizer.value.scrollToIndex(index, { align: "center", behavior: "smooth" })
+  virtualizer.value.scrollToIndex(index, { align: "center", behavior })
   jumpTarget.value = index
   clearTimeout(jumpTimer)
   jumpTimer = setTimeout(() => { jumpTarget.value = undefined }, 1600)
+}
+
+function jumpToMessage(sequence: number): boolean {
+  for (let index = 0; index < count.value; index++) {
+    const entry = rowAt(index)
+    if (entry.kind === "row" && (entry.row.kind === "user" || entry.row.kind === "assistant") && entry.row.sequence === sequence) {
+      jumpTo(index, "auto")
+      return true
+    }
+  }
+  return false
+}
+defineExpose({ jumpToMessage })
+
+async function showOlder(): Promise<void> {
+  const element = viewport.value
+  const offset = (element?.scrollTop ?? 0) - (list.value?.offsetTop ?? 0)
+  const anchor = virtualizer.value.getVirtualItems().find((item) => item.end > offset)
+  following.value = false
+  if (!await props.loadOlder?.() || anchor === undefined) return
+  await nextTick()
+  const index = settled.value.findIndex((row) => row.key === anchor.key)
+  const activeIndex = index === -1 ? active.value.findIndex((row) => row.key === anchor.key) : -1
+  const position = index >= 0 ? index : activeIndex < 0 ? -1 : settled.value.length + activeIndex
+  if (position === -1) return
+  virtualizer.value.getTotalSize()
+  const start = virtualizer.value.measurementsCache[position]?.start
+  if (start !== undefined && element !== undefined) element.scrollTop = start + offset - anchor.start + (list.value?.offsetTop ?? 0)
 }
 
 function measure(element: Element | ComponentPublicInstance | null): void {
@@ -170,7 +214,7 @@ function jumpToLatest(): void {
 }
 
 // New rows and rows that grow as they stream keep the end in view while following.
-watch([() => display.value.length, totalSize, () => props.rows.at(-1), () => props.running], () => {
+watch([count, totalSize, () => active.value.at(-1) ?? settled.value.at(-1), () => props.running], () => {
   if (following.value) void toEnd()
 })
 onMounted(() => void toEnd())
@@ -178,8 +222,16 @@ onMounted(() => void toEnd())
 
 <template>
   <div class="timeline-shell" :data-variant="variant ?? 'main'" :data-view="view">
+    <div v-if="loadOlder" class="timeline-history">
+      <button type="button" class="ui-button" data-variant="ghost" data-size="sm" :disabled="loadingOlder" @click="showOlder">
+        <LoaderCircle v-if="loadingOlder" class="is-spinning" aria-hidden="true" />
+        <ChevronUp v-else aria-hidden="true" />
+        {{ t(loadingOlder ? "timeline.loadingOlder" : "timeline.loadOlder") }}
+      </button>
+      <span v-if="olderError" role="alert">{{ t("timeline.olderFailed") }}</span>
+    </div>
     <div ref="viewport" class="timeline app-scroll-viewport" @scroll.passive="onScroll">
-      <p v-if="display.length === 0 && !running" class="timeline-empty">{{ empty ?? t("chat.emptyTimeline") }}</p>
+      <p v-if="count === 0 && !running" class="timeline-empty">{{ empty ?? t("chat.emptyTimeline") }}</p>
       <div ref="list" class="virtual-timeline" :style="{ height: `${totalSize}px`, position: 'relative' }">
         <div
           v-for="item in virtualRows"
@@ -190,7 +242,7 @@ onMounted(() => void toEnd())
           :data-index="item.index"
           :style="{ position: 'absolute', top: `${item.start}px`, left: 0, width: '100%' }"
         >
-          <template v-for="entry in [display[item.index]!]" :key="entry.key">
+          <template v-for="entry in [rowAt(item.index)]" :key="entry.key">
             <TimelineWorkRow
               v-if="entry.kind === 'work'"
               :items="entry.items"
@@ -242,10 +294,11 @@ onMounted(() => void toEnd())
                 <FileDiff :size="14" aria-hidden="true" />
                 <span>{{ t("timeline.turnFiles", { count: entry.row.files }, entry.row.files) }}</span>
               </button>
-              <span v-if="nextSteps && !running && entry.row.files > 0 && item.index === display.length - 1" class="turn-next-steps">
+              <span v-if="nextSteps && !running && entry.row.files > 0 && item.index === count - 1" class="turn-next-steps">
                 <button type="button" class="ui-button" data-variant="secondary" data-size="sm" @click="emit('review')">{{ t("timeline.reviewChanges") }}</button>
                 <button type="button" class="ui-button" data-variant="secondary" data-size="sm" @click="emit('commit')">{{ t("timeline.commitChanges") }}</button>
               </span>
+              <TurnDeliverables v-if="entry.row.deliveries" :files="entry.row.deliveries" />
             </div>
             <p v-else-if="entry.row.kind === 'files-rewound'" class="timeline-notice">{{ t("timeline.filesRewound", { count: entry.row.count }, entry.row.count) }}</p>
             <p v-else class="timeline-notice">{{ t("timeline.noticeStopped") }}</p>
@@ -280,6 +333,7 @@ onMounted(() => void toEnd())
 </template>
 
 <style scoped>
+.timeline-history { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: var(--space-2); padding-block: var(--space-1); color: var(--muted-foreground); font-size: var(--text-sm); }
 .timeline-rail { position: absolute; top: var(--space-4); right: var(--space-2); z-index: 2; width: 26px; height: 420px; }
 .timeline-marker { position: absolute; right: 0; width: 14px; height: 2px; padding: 0; border: 0; border-radius: 1px; background: var(--muted-foreground); opacity: 0.45; cursor: pointer; }
 .timeline-marker:hover, .timeline-marker:focus-visible { width: 22px; background: var(--foreground); opacity: 1; }
@@ -292,6 +346,7 @@ onMounted(() => void toEnd())
 .turn-summary-status { display: inline-flex; align-items: center; gap: var(--space-1); }
 .turn-next-steps { display: inline-flex; flex-wrap: wrap; gap: var(--space-2); }
 .virtual-timeline-row.is-jump-target :deep(.user-bubble) { box-shadow: var(--focus-ring); transition: box-shadow var(--duration-popover) var(--ease-out); }
+.virtual-timeline-row.is-jump-target :deep(.timeline-row[data-role="assistant"]) { box-shadow: var(--focus-ring); border-radius: var(--radius-lg); }
 
 .jump-latest-enter-from { opacity: 0; transform: translateY(4px); }
 @media (prefers-reduced-motion: reduce) {

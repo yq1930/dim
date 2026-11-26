@@ -7,7 +7,7 @@ The WorkspaceTools plugin registers WorkspaceTools in every Session and FileRead
 Owner: [workspace_tools/mod.rs](../../../../crates/dim-agent-capabilities/src/workspace_tools/mod.rs),
 [files.rs](../../../../crates/dim-agent-capabilities/src/workspace_tools/files.rs),
 [exec.rs](../../../../crates/dim-agent-capabilities/src/workspace_tools/exec.rs).
-Provides ToolHost for read, write, edit, glob, grep, exec and exec_stop, and registers the
+Provides ToolHost for read, write, edit, glob, grep, present, exec and exec_stop, and registers the
 leaf namespace `session.exec.output` with `sessionMethods` for the active
 command's bounded tail preview. It also registers the namespace `session.files`
 with `sessionMethods`: `session.files.search` returns the files of the Session's
@@ -116,6 +116,14 @@ within 50 KiB on UTF-8 boundaries. `pump` reads one pipe through its own
 decoder into an `OutputSink` (exec's sink also offloads to the output file) and
 keeps reading for the 100 ms grace after the root exits. These are the existing
 output rules, exposed without changing their behavior.
+
+### Presenting files
+
+`present` validates up to eight existing regular files in the canonical
+workspace or Session output directory. Its successful tool result carries the
+absolute paths and optional descriptions in `structuredContent.dimDeliveredFiles`.
+The result text names the same paths for the model. Clients can show file
+actions from this result when its turn ends.
 
 ### read results and images
 

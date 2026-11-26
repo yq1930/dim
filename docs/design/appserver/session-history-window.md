@@ -120,6 +120,15 @@ turn consumed.
 
 ## 4. Contract
 
+A native v3 daemon advertising `session.history.stateBefore` accepts
+`stateBefore` with the forward `after` cursor. The exclusive sequence selects
+state facts before the visible turn at the same `through` watermark. The reply
+pages input, branch, model configuration, turn, background task, and
+collaboration facts with `nextAfter` and `done`. Workspace clients fold these
+facts for queued input, plan and goal state, and the line tree. The visible
+transcript uses the turn window. Clients paired with older daemons use the
+forward history read.
+
 ### 4.1 Request
 
 | Field | Meaning |

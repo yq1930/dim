@@ -37,6 +37,16 @@ pub(crate) fn in_local_workspace(app: &AppHandle, window: &WebviewWindow) -> Res
     Ok(window.label() == window::MAIN && app.state::<Arc<Desktop>>().service.in_workspace(&url))
 }
 
+#[tauri::command]
+pub fn workspace_boot_failed(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
+    if in_local_workspace(&app, &window)? {
+        app.state::<Arc<Desktop>>()
+            .service
+            .workspace_boot_failed(&app);
+    }
+    Ok(())
+}
+
 /// Notifies the user when the window is not in front, and counts the
 /// request on the Dock badge until the window is in front again.
 #[tauri::command]

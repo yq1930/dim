@@ -375,8 +375,11 @@ impl Connection {
                 "Connection request limit reached",
             ));
         }
-        let cancel = matches!(request.call, Call::Catalog(_) | Call::Summaries(_))
-            .then(|| self.closed.child_token());
+        let cancel = matches!(
+            request.call,
+            Call::Catalog(_) | Call::Summaries(_) | Call::SessionSearch(_)
+        )
+        .then(|| self.closed.child_token());
         ids.insert(request.id.clone(), cancel);
         Ok(Inflight {
             connection: self.clone(),
@@ -393,6 +396,15 @@ impl Connection {
         *self.version.get().expect("handshake precedes requests")
     }
     fn validate_call(&self, rpc: &RpcService, call: &Call) -> Result<(), RpcError> {
+        if matches!(call, Call::SessionSearch(_))
+            && (self.entry != Entry::Web || self.protocol_version() < 3)
+        {
+            return Err(RpcError::app(
+                -32601,
+                "unknown_method",
+                "Session search needs the local web workspace",
+            ));
+        }
         if call.is_web_entry() || call.is_ui_host() {
             if self.protocol_version() < 3 {
                 return Err(RpcError::app(
@@ -788,6 +800,29 @@ impl Connection {
                     )),
                     Err(error) => Err(RpcError::from(error)),
                 }
+            }
+            Call::SessionSearch(params) => {
+                if params.query.chars().count() > 128 || params.query.contains('\0') {
+                    return Some(Err(RpcError::invalid(
+                        "Session search accepts at most 128 characters",
+                    )));
+                }
+                let query = params
+                    .query
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                if query.is_empty() {
+                    return Some(Ok(Reply::SessionSearch(Vec::new())));
+                }
+                let cancel = self.ids.lock().expect("request identities")[&id]
+                    .clone()
+                    .expect("search reads have cancellation");
+                rpc.index
+                    .search_sessions(&query, self.protocol_version(), cancel)
+                    .await
+                    .map(Reply::SessionSearch)
+                    .map_err(RpcError::from)
             }
             Call::Summaries(Summaries {
                 agent_id, archived, ..

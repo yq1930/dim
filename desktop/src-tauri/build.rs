@@ -8,6 +8,7 @@ fn main() {
             "open_in_app",
             "open_workspace_path",
             "show_preview",
+            "workspace_boot_failed",
         ]),
     ))
     .expect("Cannot build desktop permissions");

@@ -46,8 +46,11 @@ export type HistoryPage = {
   events: SessionEvent[]
   through: number
   nextAfter: number
+  nextBefore?: number
   done: boolean
 }
+
+export type SessionSearchHit = { sessionId: string; sequence: number; snippet: string }
 
 export type ModelUpdateResult = { model: ModelId; outcome: string }
 
@@ -79,6 +82,8 @@ export type BranchSource =
   | { kind: "tool"; turnId: string; requestId: string; callId: string }
   | { kind: "host"; operationId: string }
 
+export type DeliveredFile = { path: string; description?: string }
+
 export type ToolResult = {
   /** Text the model read; image blocks are dropped at the boundary. */
   text: string
@@ -89,6 +94,7 @@ export type ToolResult = {
   approved?: boolean
   /** The files the call declared writing (`fileWritten` effects). */
   filesWritten?: string[]
+  deliveredFiles?: DeliveredFile[]
 }
 
 export type ExecStatus = "completed" | "failed" | "cancelled"

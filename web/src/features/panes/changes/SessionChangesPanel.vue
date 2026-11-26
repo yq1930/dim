@@ -35,6 +35,9 @@ const draftText = ref("")
 const draftField = ref<HTMLTextAreaElement[]>()
 const fileMenu = ref<InstanceType<typeof FileContextMenu>>()
 watch(() => props.sessionId, () => { folded.value = {}; drafting.value = undefined })
+watch(() => [props.sessionId, view.value?.status] as const, ([sessionId, status]) => {
+  if (status === "ready" && view.value?.hasOlder) void chat.loadOlder(sessionId, 1)
+}, { immediate: true })
 
 function noteKey(edit: FileEdit, index: number): string {
   return `${edit.key}:${index}`
@@ -95,7 +98,10 @@ function putIntoComposer(): void {
     </header>
 
     <div class="changes-body app-scroll-viewport">
-      <div v-if="!view || view.status === 'loading'" class="changes-empty" role="status">{{ t("common.loading") }}</div>
+      <div v-if="!view || view.status === 'loading' || view.loadingOlder" class="changes-empty" role="status">{{ t("common.loading") }}</div>
+      <div v-else-if="view.hasOlder && view.olderError" class="changes-empty" role="alert">
+        <button type="button" class="ui-button" data-variant="secondary" data-size="sm" @click="chat.loadOlder(sessionId, 1)">{{ t("timeline.olderFailed") }}</button>
+      </div>
       <p v-else-if="files.length === 0" class="changes-empty">{{ t("sessionChanges.empty") }}</p>
       <section v-for="file in files" :key="file.path" class="changes-file">
         <button type="button" class="changes-file-toggle" :aria-expanded="!folded[file.path]" :title="file.path" @click="folded[file.path] = !folded[file.path]" @contextmenu.prevent="fileMenu?.open($event, { path: file.path, label: workspacePath(file.path, cwd), dir: false })">

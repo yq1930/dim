@@ -1,7 +1,7 @@
 //! Workspace tools, see `docs/architecture/rust-agent/plugins/WorkspaceTools.md`.
 //!
 //! `WorkspaceToolsPlugin` (Session) provides `S:ToolHost` executing `read`
-//! `write` `edit` `glob` `grep` `exec` `exec_stop`. Branch parts are looked up per call on
+//! `write` `edit` `glob` `grep` `present` `exec` `exec_stop`. Branch parts are looked up per call on
 //! the calling branch: `FileReads` for file tools and `BackgroundExec` for a
 //! command that moves to the background. Admission happened before a call
 //! reaches execution; `resolve_write` only prepares its target before admission.
@@ -33,7 +33,16 @@ use std::{path::PathBuf, sync::Arc};
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 
 /// Host tools this capability provides.
-pub const TOOL_NAMES: [&str; 7] = ["read", "write", "edit", "glob", "grep", "exec", "exec_stop"];
+pub const TOOL_NAMES: [&str; 8] = [
+    "read",
+    "write",
+    "edit",
+    "glob",
+    "grep",
+    "present",
+    "exec",
+    "exec_stop",
+];
 const OUTPUT_METHOD: &str = "session.exec.output";
 /// The `session.files` namespace: the files an `@` mention offers, a file
 /// shown to the operator, the folders and lines its file tree and search
@@ -131,6 +140,8 @@ impl WorkspaceTools {
                 exec::execute(self, &branch, &call, &context, combined.clone()).await
             } else if call.name == "exec_stop" {
                 exec::stop(&branch, &call, &combined).await
+            } else if call.name == "present" {
+                files::present::run(&self.files, &call.input, combined.clone()).await
             } else if FileTools::handles(&call.name) {
                 let reads = branch.service::<FileReads>().map_err(host_error)?;
                 self.files.execute(&call, &reads, combined.clone()).await
@@ -324,6 +335,7 @@ impl ToolDriver for WorkspaceTools {
         let mut definitions = FileTools::definitions();
         definitions.push(exec::definition_for(&self.platform));
         definitions.push(exec::stop_definition());
+        definitions.push(files::present::definition());
         definitions
     }
     fn resolve_write(

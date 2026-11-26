@@ -3,6 +3,7 @@ mod codec;
 mod export;
 mod files;
 mod metadata;
+mod search;
 mod sqlite;
 mod timeline;
 

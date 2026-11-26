@@ -4,6 +4,17 @@ The browser frontend that `dimcode web` opens: a Vue 3 + Vite app that speaks Ap
 
 Use the Node version in [`.node-version`](../.node-version) and npm.
 
+## Preview with hot reload in one command
+
+From the repository root:
+
+```sh
+node scripts/web-preview.mjs              # opens the preview in the default browser
+node scripts/web-preview.mjs --no-open    # prints the link only
+```
+
+The script builds `target/release/dimcode` (about a second when the Rust code is unchanged; `--backend PATH` uses another binary), installs the frontend dependencies when `node_modules` is missing, opens a `dimcode web` entry on an isolated home (`~/.dimcode-preview`, or `--home DIR`; keep the path short for the daemon's Unix socket) and starts the dev server described below in front of it, on port 5173 or another free one (`--port N` prefers N). It prints `http://localhost:<port>/#bootstrap=<token>`; saving a frontend file updates the open page. Ctrl+C stops the dev server and the entry, then the home's daemon. A second preview of the same home is refused while one runs.
+
 ## Develop against a running entry
 
 1. Open the web entry from the CLI: `dimcode web --no-open`. It prints the address (default `http://127.0.0.1:43201/`); the link it would open carries `#bootstrap=<token>`.

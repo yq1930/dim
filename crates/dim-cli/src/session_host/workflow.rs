@@ -124,7 +124,7 @@ impl Worker {
                     }
                 }
             }
-            EventContent::Input(data) => {
+            EventContent::Input { data, .. } => {
                 for block in &data.blocks {
                     let dim_agent_types::InputBlock::Raw { text, .. } = block;
                     observed.extend(workflow_report(text));

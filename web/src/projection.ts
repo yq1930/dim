@@ -110,7 +110,7 @@ export class Projection {
    * Each enters the transcript at its `input/applied`, as the TUI's does, so the
    * transcript keeps the order the model reads and a withdrawn one never shows.
    */
-  private held = new Map<string, { input: QueuedInput; row: UserRow }>()
+  private held = new Map<string, { input: QueuedInput; row: UserRow; position: number }>()
   /** The branch's goal, folded from its events (goal.ts). */
   readonly goalFold = new GoalFold()
   /** The branch's task list and plan mode, folded from its events (planning.ts). */
@@ -130,7 +130,7 @@ export class Projection {
 
   /** The messages still queued on this branch, oldest first. */
   queued(): readonly QueuedInput[] {
-    return [...this.held.values()].map((entry) => entry.input)
+    return [...this.held.values()].sort((left, right) => left.position - right.position).map((entry) => entry.input)
   }
 
   /** The waiting `ask_user` calls of this branch: named by batch `requestId` and call id. */
@@ -190,6 +190,7 @@ export class Projection {
           const text = content.text ?? ""
           this.held.set(event.id, {
             input: { id: event.id, text, skills: content.skills, user: content.user },
+            position: event.queuePosition ?? event.sequence,
             row: {
               kind: "user",
               key: `user-${event.sequence}`,

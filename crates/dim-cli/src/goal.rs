@@ -99,7 +99,7 @@ impl Fold {
             // The line's own opening: what came before it is inherited or
             // copied and never contributes a goal (Goal §2, A11).
             EventContent::BranchStart(_) | EventContent::SessionForked(_) => self.blocks.clear(),
-            EventContent::Input(data) => {
+            EventContent::Input { data, .. } => {
                 for block in &data.blocks {
                     let InputBlock::Raw { text, key, retire } = block;
                     let Some(key) = key

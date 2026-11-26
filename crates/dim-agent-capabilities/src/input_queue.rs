@@ -16,16 +16,28 @@ use std::{
 };
 use tokio_util::sync::CancellationToken;
 
+const EDIT_DOMAIN: &str = "input-queue";
+const EDIT_NAME: &str = "edit";
+const EDIT_KEY: &str = "input-queue/edit";
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Edit {
+    input_id: String,
+    replacement_id: String,
+    replacement: InputMessageData,
+}
+
 /// What InputQueue writes for an input it decided on.
-#[derive(Debug, Clone, PartialEq, Eq)]
 enum Decision {
     Apply(String, InputMode),
     Delete(String),
+    Replace(Edit, u64),
 }
 impl Decision {
     fn input_id(&self) -> &str {
         match self {
             Self::Apply(id, _) | Self::Delete(id) => id,
+            Self::Replace(edit, _) => &edit.input_id,
         }
     }
 }
@@ -43,6 +55,8 @@ pub enum Withdrawal {
 struct Entry {
     id: String,
     mode: InputMode,
+    user: bool,
+    position: u64,
     /// This queue decided to write its `input/applied`.
     released: bool,
 }
@@ -60,13 +74,18 @@ struct QueueState {
 }
 impl QueueState {
     /// Folds one event; returns the decisions to write now, in order.
-    fn step(&mut self, event: &AgentEvent) -> Vec<Decision> {
-        match &event.kind {
+    fn step(&mut self, event: &AgentEvent) -> Result<Vec<Decision>> {
+        Ok(match &event.kind {
             EventKind::InputMessage(data) => {
+                if self.entries.iter().any(|entry| entry.id == event.id) {
+                    return Ok(Vec::new());
+                }
                 let mode = data.effective_mode();
                 self.entries.push(Entry {
                     id: event.id.clone(),
                     mode,
+                    user: data.user.is_some(),
+                    position: event.sequence,
                     released: false,
                 });
                 let held_queue = self.entries.iter().any(|entry| {
@@ -117,8 +136,24 @@ impl QueueState {
                     None => Vec::new(),
                 }
             }
+            EventKind::Extension(data) if data.key() == EDIT_KEY => {
+                let edit: Edit = serde_json::from_value(data.data().clone())
+                    .map_err(|error| AgentError::fault("InputQueue", error.to_string()))?;
+                match self.entries.iter_mut().find(|entry| {
+                    entry.id == edit.input_id
+                        && entry.mode == InputMode::Queue
+                        && entry.user
+                        && !entry.released
+                }) {
+                    Some(entry) => {
+                        entry.id.clone_from(&edit.replacement_id);
+                        vec![Decision::Replace(edit, entry.position)]
+                    }
+                    None => Vec::new(),
+                }
+            }
             _ => Vec::new(),
-        }
+        })
     }
     /// Releases one input. One that drives a turn while none runs makes a
     /// turn about to start.
@@ -144,8 +179,7 @@ pub struct InputQueue {
     state: Mutex<QueueState>,
     observable: Arc<StateCell<InputSnapshot>>,
     timeline: Arc<Timeline>,
-    /// Answers to `input/withdraw` commands by their sequence, until the
-    /// withdrawal that wrote each one collects it.
+    /// Answers to input commands, until the caller collects them.
     answers: Mutex<HashMap<u64, Withdrawal>>,
     answered: tokio::sync::Notify,
     /// Ends waits when this generation unloads.
@@ -177,6 +211,19 @@ impl InputQueue {
                         .append(EventKind::InputDeleted(InputDeletedData { input_id }).into())?;
                     deleted = Some(event.sequence);
                 }
+                Decision::Replace(edit, position) => {
+                    let mut replacement =
+                        EventDraft::new(EventKind::InputMessage(edit.replacement))
+                            .with_id(edit.replacement_id);
+                    replacement.tags = Some(vec![format!("{QUEUE_POSITION_TAG}{position}")]);
+                    let result = EventKind::InputDeleted(InputDeletedData {
+                        input_id: edit.input_id,
+                    });
+                    let events = self
+                        .timeline
+                        .append_batch_registered(vec![replacement, result.into()], |_| Ok(()))?;
+                    deleted = Some(events[1].sequence);
+                }
             }
         }
         Ok(deleted)
@@ -198,7 +245,7 @@ impl InputQueue {
                     }
                     _ => {}
                 }
-                decided.extend(state.step(event));
+                decided.extend(state.step(event)?);
             }
             self.publish(&state);
             decided
@@ -206,7 +253,7 @@ impl InputQueue {
                 .filter(|decision| !written.contains(decision.input_id()))
                 .filter(|decision| match decision {
                     Decision::Apply(id, _) => state.entries.iter().any(|entry| entry.id == *id),
-                    Decision::Delete(_) => true,
+                    Decision::Delete(_) | Decision::Replace(..) => true,
                 })
                 .collect::<Vec<_>>()
         };
@@ -216,12 +263,12 @@ impl InputQueue {
     fn on_event(&self, event: Arc<AgentEvent>) -> Result<()> {
         let decisions = {
             let mut state = self.state.lock().unwrap();
-            let decisions = state.step(&event);
+            let decisions = state.step(&event)?;
             self.publish(&state);
             decisions
         };
         let deleted = self.write(decisions)?;
-        if matches!(event.kind, EventKind::InputWithdraw(_)) {
+        if matches!(event.kind, EventKind::InputWithdraw(_)) || event.kind.key() == EDIT_KEY {
             let answer = match deleted {
                 Some(sequence) => Withdrawal::Deleted { sequence },
                 None => Withdrawal::NotHeld,
@@ -257,11 +304,31 @@ impl InputQueue {
         }
         let mut events = self.timeline.append_batch_registered(drafts, |_| Ok(()))?;
         let replacement = (events.len() > 1).then(|| events.remove(1));
-        let sequence = events[0].sequence;
+        let answer = self.wait_for_answer(events[0].sequence).await?;
+        Ok((answer, replacement))
+    }
+
+    async fn edit(&self, input_id: String, replacement: InputMessageData) -> Result<Withdrawal> {
+        replacement
+            .validate()
+            .map_err(|reason| AgentError::InvalidInput(reason.into()))?;
+        let data = serde_json::to_value(Edit {
+            input_id,
+            replacement_id: uuid::Uuid::new_v4().to_string(),
+            replacement,
+        })
+        .map_err(|error| AgentError::fault("InputQueue", error.to_string()))?;
+        let command = ExtensionEvent::new(EDIT_DOMAIN, EDIT_NAME, data)
+            .map_err(|error| AgentError::fault("InputQueue", error))?;
+        let event = self.timeline.append(EventKind::Extension(command).into())?;
+        self.wait_for_answer(event.sequence).await
+    }
+
+    async fn wait_for_answer(&self, sequence: u64) -> Result<Withdrawal> {
         loop {
             let answered = self.answered.notified();
             if let Some(answer) = self.answers.lock().unwrap().remove(&sequence) {
-                return Ok((answer, replacement));
+                return Ok(answer);
             }
             tokio::select! {
                 _ = answered => {}
@@ -318,6 +385,7 @@ impl DynPlugin for InputQueuePlugin {
                         "input/message",
                         "input/consumed",
                         "input/withdraw",
+                        EDIT_KEY,
                         "turn/start",
                         "turn/end",
                         "stop/interrupt",
@@ -334,6 +402,7 @@ impl DynPlugin for InputQueuePlugin {
                                     "input/message",
                                     "input/consumed",
                                     "input/withdraw",
+                                    EDIT_KEY,
                                     "input/applied",
                                     "input/deleted",
                                     "turn/start",
@@ -500,7 +569,36 @@ struct WithdrawParams {
     steer: Option<UserInput>,
 }
 
-/// Serves `session.input.withdraw` for every branch of its Session through
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct EditParams {
+    #[serde(rename = "sessionId")]
+    _session_id: String,
+    branch_id: String,
+    input_id: String,
+    user: UserInput,
+}
+
+async fn checked_replacement(
+    checks: &SubmitChecks,
+    mut request: SubmitCheckRequest,
+    cancel: &CancellationToken,
+) -> std::result::Result<InputMessageData, RpcError> {
+    match checks.check(&request, cancel).await {
+        Err(CheckInterrupted) => return Err(RpcError::interrupted()),
+        Ok(SubmitCheckReply::Block { message }) => {
+            return Err(RpcError::app(-32000, "input_blocked", message));
+        }
+        Ok(SubmitCheckReply::Proceed { blocks }) => append_blocks(&mut request.user, blocks),
+    }
+    Ok(InputMessageData {
+        user: request.user,
+        mode: Some(request.mode),
+        ..Default::default()
+    })
+}
+
+/// Serves `session.input` for every branch of its Session through
 /// the branch's InputQueue, so Rpc names no owning service.
 pub struct InputMethodsPlugin {
     tree: Key<TreeCommands>,
@@ -532,48 +630,51 @@ impl DynPlugin for InputMethodsPlugin {
             methods.register(
                 ctx,
                 INPUT_METHODS,
-                vec![MethodDecl::new(
-                    "session.input.withdraw",
-                    true,
-                    Interruption::Report,
-                )],
-                Arc::new(move |_, value, cancel, _| {
+                vec![
+                    MethodDecl::new("session.input.withdraw", true, Interruption::Report),
+                    MethodDecl::new("session.input.edit", true, Interruption::Report),
+                ],
+                Arc::new(move |method, value, cancel, _| {
                     let tree = tree.clone();
                     let checks = checks.clone();
                     Box::pin(async move {
+                        if method == "session.input.edit" {
+                            let p: EditParams = params(value)?;
+                            if p.input_id.is_empty() {
+                                return Err(RpcError::invalid("inputId must not be empty"));
+                            }
+                            let queue = tree.get(&p.branch_id)?.service::<InputQueue>()?;
+                            let replacement = checked_replacement(
+                                &checks,
+                                SubmitCheckRequest {
+                                    entry: SubmitEntry::Submit,
+                                    branch_id: p.branch_id,
+                                    user: Some(p.user),
+                                    mode: InputMode::Queue,
+                                },
+                                &cancel,
+                            ).await?;
+                            let outcome = queue.edit(p.input_id, replacement).await?;
+                            return reply(match outcome {
+                                Withdrawal::Deleted { sequence } => serde_json::json!({"status": "edited", "sequence": sequence}),
+                                Withdrawal::NotHeld => serde_json::json!({"status": "notHeld"}),
+                            });
+                        }
                         let p: WithdrawParams = params(value)?;
                         let queue = tree.get(&p.branch_id)?.service::<InputQueue>()?;
-                        let mut steer = p.steer.map(|user| InputMessageData {
-                            user: Some(user),
-                            mode: Some(InputMode::Steer),
-                            ..Default::default()
-                        });
-                        if let Some(input) = &steer {
-                            // A blocked steer writes neither the withdrawal nor
-                            // the new input (Hooks A.6.2).
-                            match checks
-                                .check(
-                                    &SubmitCheckRequest {
-                                        entry: SubmitEntry::Steer,
-                                        branch_id: p.branch_id.clone(),
-                                        user: input.user.clone(),
-                                        mode: InputMode::Steer,
-                                    },
-                                    &cancel,
-                                )
-                                .await
-                            {
-                                Err(CheckInterrupted) => return Err(RpcError::interrupted()),
-                                Ok(SubmitCheckReply::Block { message }) => {
-                                    return Err(RpcError::app(-32000, "input_blocked", message));
-                                }
-                                Ok(SubmitCheckReply::Proceed { blocks }) => {
-                                    if let Some(steer) = &mut steer {
-                                        append_blocks(&mut steer.user, blocks);
-                                    }
-                                }
-                            }
-                        }
+                        let steer = match p.steer {
+                            Some(user) => Some(checked_replacement(
+                                &checks,
+                                SubmitCheckRequest {
+                                    entry: SubmitEntry::Steer,
+                                    branch_id: p.branch_id,
+                                    user: Some(user),
+                                    mode: InputMode::Steer,
+                                },
+                                &cancel,
+                            ).await?),
+                            None => None,
+                        };
                         let (answer, replacement) = queue
                             .withdraw(
                                 InputWithdrawData {

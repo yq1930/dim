@@ -37,7 +37,10 @@ pub enum EventContent {
     /// The fork's own opening: the facts before it are copied from the parent.
     SessionForked(SessionForkedData),
     Configuration(Configuration),
-    Input(InputMessageData),
+    Input {
+        data: InputMessageData,
+        queue_position: Option<u64>,
+    },
     /// InputQueue released the input to the turn.
     InputApplied(InputAppliedData),
     /// InputQueue dropped a held input, on withdrawal.
@@ -87,6 +90,8 @@ impl<'de> Deserialize<'de> for Event {
             r#type: String,
             name: String,
             data: serde_json::Value,
+            #[serde(default)]
+            tags: Option<Vec<String>>,
         }
         let wire = Wire::deserialize(deserializer)?;
         if wire.sequence > JS_MAX_SAFE_INTEGER {
@@ -116,9 +121,22 @@ impl<'de> Deserialize<'de> for Event {
             ("context", "configured") => EventContent::Configuration(
                 serde_json::from_value(wire.data).map_err(serde::de::Error::custom)?,
             ),
-            ("input", "message") => EventContent::Input(
-                serde_json::from_value(wire.data).map_err(serde::de::Error::custom)?,
-            ),
+            ("input", "message") => EventContent::Input {
+                data: serde_json::from_value(wire.data).map_err(serde::de::Error::custom)?,
+                queue_position: wire
+                    .tags
+                    .iter()
+                    .flatten()
+                    .find_map(|tag| tag.strip_prefix(QUEUE_POSITION_TAG))
+                    .map(|position| {
+                        position
+                            .parse::<u64>()
+                            .ok()
+                            .filter(|position| (1..=wire.sequence).contains(position))
+                            .ok_or_else(|| serde::de::Error::custom("Invalid input queue position"))
+                    })
+                    .transpose()?,
+            },
             ("input", "applied") => EventContent::InputApplied(
                 serde_json::from_value(wire.data).map_err(serde::de::Error::custom)?,
             ),

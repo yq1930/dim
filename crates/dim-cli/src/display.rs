@@ -125,7 +125,7 @@ impl Display {
             EventContent::Configuration(data) => {
                 self.model = Some(data);
             }
-            EventContent::Input(data) if history => {
+            EventContent::Input { data, .. } if history => {
                 if let Some(user) = data.user {
                     let text = user
                         .content

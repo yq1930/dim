@@ -2034,7 +2034,7 @@ impl Gateway {
         let mut finish = None;
         if let Some(prompt) = &mut session.prompt {
             match &notice.event.content {
-                EventContent::Input(data)
+                EventContent::Input { data, .. }
                     if data.submission_id.as_deref() == Some(&prompt.submission) =>
                 {
                     finish = prompt.accepted(notice.event.id.clone());

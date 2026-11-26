@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from "vue"
+import { computed, nextTick, ref } from "vue"
 import { RouterLink } from "vue-router"
 import { useI18n } from "vue-i18n"
-import { ChevronRight, Copy, Folder, FolderOpen, Loader2, Plus, X } from "lucide-vue-next"
+import { ChevronRight, Copy, Folder, FolderOpen, GripVertical, Loader2, Plus, X } from "lucide-vue-next"
 import { useSessionsStore, type Workspace } from "../../stores/sessions"
 import type { SessionSummary } from "../../rpc/protocol"
 import RowActionMenu from "../../components/RowActionMenu.vue"
@@ -10,8 +10,8 @@ import SidebarSessionRow from "./SidebarSessionRow.vue"
 import { useSessionState } from "./session-state"
 
 /** One workspace (a working directory, or none: an empty `cwd`) and its sessions, most recent first; `hasPinned` marks one whose other sessions sit pinned above. */
-const props = defineProps<{ workspace: Workspace; expanded: boolean; activeSessionId?: string; nowMs: number; busy?: boolean; hasPinned?: boolean }>()
-const emit = defineEmits<{ toggle: []; navigate: []; action: [kind: "rename" | "archive" | "delete", session: SessionSummary]; copy: [path: string] }>()
+const props = defineProps<{ workspace: Workspace; expanded: boolean; activeSessionId?: string; nowMs: number; busy?: boolean; hasPinned?: boolean; reorderable: boolean; dragging?: boolean; dropSide?: "before" | "after" }>()
+const emit = defineEmits<{ toggle: []; navigate: []; action: [kind: "rename" | "archive" | "delete", session: SessionSummary]; copy: [path: string]; reorderStart: [event: PointerEvent]; move: [offset: -1 | 1] }>()
 const { t } = useI18n()
 const sessions = useSessionsStore()
 const stateOf = useSessionState()
@@ -25,6 +25,13 @@ const hasMore = computed(() => props.workspace.sessions.length > limit.value)
 const running = computed(() => !props.expanded && props.workspace.sessions.some((session) => session.running))
 const newLabel = computed(() => props.workspace.cwd ? t("sidebar.newInWorkspace", { name: props.workspace.name }) : t("sidebar.newSession"))
 const waiting = computed(() => !props.expanded && props.workspace.sessions.some((session) => stateOf(session) === "waiting"))
+const grip = ref<HTMLButtonElement>()
+
+async function move(offset: -1 | 1): Promise<void> {
+  emit("move", offset)
+  await nextTick()
+  grip.value?.focus()
+}
 
 function toggleReveal(): void {
   limit.value = hasMore.value ? limit.value + STEP : FIRST
@@ -32,7 +39,7 @@ function toggleReveal(): void {
 </script>
 
 <template>
-  <section class="workspace-group">
+  <section class="workspace-group" :data-workspace-cwd="workspace.cwd" :data-dragging="dragging || undefined" :data-drop-side="dropSide">
     <div class="workspace-row" @click="emit('toggle')">
       <button
         class="workspace-toggle"
@@ -54,6 +61,14 @@ function toggleReveal(): void {
       <span v-if="waiting" class="workspace-running" aria-hidden="true"><span class="status-dot" data-state="waiting" /></span>
       <span v-else-if="running" class="workspace-running" aria-hidden="true"><Loader2 :size="14" class="is-spinning" /></span>
       <div class="workspace-row-actions" @click.stop>
+        <button
+          v-if="reorderable" ref="grip" type="button" class="ui-icon-button workspace-grip"
+          data-variant="ghost" data-size="sm"
+          :aria-label="t('workspace.reorder', { name: workspace.name })" aria-keyshortcuts="ArrowUp ArrowDown"
+          v-tooltip="t('workspace.reorderHint')"
+          @pointerdown="emit('reorderStart', $event)"
+          @keydown.up.prevent.stop="move(-1)" @keydown.down.prevent.stop="move(1)"
+        ><GripVertical aria-hidden="true" /></button>
         <RouterLink
           class="ui-icon-button workspace-add" data-variant="ghost" data-size="sm"
           :to="{ name: 'chat-new', query: { cwd: workspace.cwd } }"
@@ -91,6 +106,13 @@ function toggleReveal(): void {
 </template>
 
 <style scoped>
+.workspace-group { position: relative; }
+.workspace-group[data-dragging] { opacity: 0.55; }
+.workspace-group[data-drop-side]::after { position: absolute; z-index: 1; inset-inline: 0; height: 2px; border-radius: var(--radius-pill); background: var(--primary); pointer-events: none; content: ""; }
+.workspace-group[data-drop-side="before"]::after { top: -2px; }
+.workspace-group[data-drop-side="after"]::after { bottom: -2px; }
+.workspace-grip { cursor: grab; touch-action: none; }
+.workspace-group[data-dragging] .workspace-grip { cursor: grabbing; }
 .workspace-row { position: relative; cursor: pointer; }
 /* The disclosure is a fixed 14px slot where the folder icon cross-fades into a chevron. */
 .workspace-disclosure { position: relative; display: block; width: 14px; height: 14px; flex: none; }

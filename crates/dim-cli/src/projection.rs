@@ -32,6 +32,13 @@ struct OpenThought {
     written: String,
 }
 
+struct HeldInput {
+    id: String,
+    submitted: u64,
+    position: u64,
+    user: UserInput,
+}
+
 #[derive(Default)]
 pub struct Projection {
     owner: String,
@@ -64,7 +71,7 @@ pub struct Projection {
     /// sees and a withdrawn input never becomes a row; the queue strip shows
     /// them while a turn runs. Withdrawal re-submits the kept `UserInput` as
     /// Steer. Each keeps its input id and the sequence it was submitted at.
-    held: Vec<(String, u64, UserInput)>,
+    held: Vec<HeldInput>,
     /// The row each written user message draws in, by input id, until its
     /// `input/consumed` settles that row.
     input_rows: HashMap<String, usize>,
@@ -111,7 +118,7 @@ impl Projection {
     /// (design §14).
     fn lines(&mut self, parent: &str, event: &Event) {
         match &event.content {
-            EventContent::Input(data) if data.user.is_some() => {
+            EventContent::Input { data, .. } if data.user.is_some() => {
                 self.messages
                     .entry(parent.to_owned())
                     .or_default()
@@ -219,9 +226,24 @@ impl Projection {
         self.goal.apply(event);
         let sequence = event.sequence;
         match &event.content {
-            EventContent::Input(data) => {
+            EventContent::Input {
+                data,
+                queue_position,
+            } => {
                 if let Some(user) = &data.user {
-                    self.held.push((event.id.clone(), sequence, user.clone()));
+                    let position = queue_position.unwrap_or(sequence);
+                    let index = self
+                        .held
+                        .partition_point(|entry| entry.position <= position);
+                    self.held.insert(
+                        index,
+                        HeldInput {
+                            id: event.id.clone(),
+                            submitted: sequence,
+                            position,
+                            user: user.clone(),
+                        },
+                    );
                 } else if let Some(text) = data.blocks.iter().find_map(|block| {
                     let dim_agent_types::InputBlock::Raw { text, .. } = block;
                     ShellRun::parse(text).is_some().then(|| text.clone())
@@ -235,13 +257,13 @@ impl Projection {
                 }
             }
             EventContent::InputApplied(data) => {
-                if let Some(index) = self.held.iter().position(|(id, _, _)| *id == data.input_id) {
-                    let (id, submitted, user) = self.held.remove(index);
-                    self.push_user(&id, sequence, submitted, &user);
+                if let Some(index) = self.held.iter().position(|entry| entry.id == data.input_id) {
+                    let entry = self.held.remove(index);
+                    self.push_user(&entry.id, sequence, entry.submitted, &entry.user);
                 }
             }
             EventContent::InputDeleted(data) => {
-                self.held.retain(|(id, _, _)| *id != data.input_id);
+                self.held.retain(|entry| entry.id != data.input_id);
             }
             EventContent::BranchCreate(data) => {
                 let id = data.branch.get(..8).unwrap_or(&data.branch);
@@ -700,8 +722,8 @@ impl Projection {
     pub fn held_input(&self, input_id: &str) -> Option<&UserInput> {
         self.held
             .iter()
-            .find(|(id, _, _)| id == input_id)
-            .map(|(_, _, user)| user)
+            .find(|entry| entry.id == input_id)
+            .map(|entry| &entry.user)
     }
 
     pub fn add_approval(
@@ -775,10 +797,10 @@ impl Projection {
             queued: if self.running {
                 self.held
                     .iter()
-                    .map(|(id, _, user)| QueuedInput {
-                        id: id.clone(),
-                        text: text_of(&user.content),
-                        display: user_display(&user.content),
+                    .map(|entry| QueuedInput {
+                        id: entry.id.clone(),
+                        text: text_of(&entry.user.content),
+                        display: user_display(&entry.user.content),
                     })
                     .collect()
             } else {

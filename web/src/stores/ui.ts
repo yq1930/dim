@@ -66,11 +66,12 @@ type Persisted = {
   splitSessionId: string | undefined
   sidebarGroupBy: SidebarGroupBy
   sidebarSortBy: SidebarSortBy
+  workspaceOrder: string[]
 }
 
 /** localStorage is outside the app: read it once, keeping only well-formed fields. */
 function readPersisted(): Persisted {
-  const fallback: Persisted = { sidebarCollapsed: false, collapsedWorkspaces: [], lastSessionId: undefined, detailWidth: 420, pinnedSessions: [], coordinatorSessions: [], splitSessionId: undefined, sidebarGroupBy: "project", sidebarSortBy: "recency" }
+  const fallback: Persisted = { sidebarCollapsed: false, collapsedWorkspaces: [], lastSessionId: undefined, detailWidth: 420, pinnedSessions: [], coordinatorSessions: [], splitSessionId: undefined, sidebarGroupBy: "project", sidebarSortBy: "recency", workspaceOrder: [] }
   try {
     const value: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null")
     if (value === null || typeof value !== "object") return fallback
@@ -88,6 +89,7 @@ function readPersisted(): Persisted {
       splitSessionId: typeof stored.splitSessionId === "string" ? stored.splitSessionId : undefined,
       sidebarGroupBy: GROUP_BY.find((value) => value === stored.sidebarGroupBy) ?? fallback.sidebarGroupBy,
       sidebarSortBy: SORT_BY.find((value) => value === stored.sidebarSortBy) ?? fallback.sidebarSortBy,
+      workspaceOrder: Array.isArray(stored.workspaceOrder) ? [...new Set(stored.workspaceOrder.filter((item): item is string => typeof item === "string"))] : [],
     }
   } catch {
     return fallback
@@ -108,6 +110,7 @@ export const useUiStore = defineStore("ui", () => {
   const coordinatorSessions = ref(persisted.coordinatorSessions)
   const sidebarGroupBy = ref(persisted.sidebarGroupBy)
   const sidebarSortBy = ref(persisted.sidebarSortBy)
+  const workspaceOrder = ref(persisted.workspaceOrder)
   const newLine = ref<NewLineRequest | undefined>()
   const endingLine = ref<EndLineRequest | undefined>()
   /** The Session on screen, if any; a run that ends elsewhere leaves its Session unread. */
@@ -129,7 +132,7 @@ export const useUiStore = defineStore("ui", () => {
   /** The pane the operator last pressed or focused; it takes the keyboard's approvals. */
   const activePane = ref<Pane>("main")
 
-  watch([sidebarCollapsed, collapsedWorkspaces, lastSessionId, detailWidth, pinnedSessions, coordinatorSessions, splitSessionId, sidebarGroupBy, sidebarSortBy], () => {
+  watch([sidebarCollapsed, collapsedWorkspaces, lastSessionId, detailWidth, pinnedSessions, coordinatorSessions, splitSessionId, sidebarGroupBy, sidebarSortBy, workspaceOrder], () => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
         sidebarCollapsed: sidebarCollapsed.value,
@@ -141,6 +144,7 @@ export const useUiStore = defineStore("ui", () => {
         splitSessionId: splitSessionId.value,
         sidebarGroupBy: sidebarGroupBy.value,
         sidebarSortBy: sidebarSortBy.value,
+        workspaceOrder: workspaceOrder.value,
       }))
     } catch {
     }
@@ -273,7 +277,7 @@ export const useUiStore = defineStore("ui", () => {
     sidebarCollapsed, lastSessionId, drawerOpen, shellWidth, shellMode, setShellWidth,
     isWorkspaceExpanded, toggleWorkspace, pinnedSessions, togglePinned, unpin, coordinatorSessions, markCoordinator,
     detailWidth, newLine, endingLine, setDetailWidth,
-    sidebarGroupBy, sidebarSortBy,
+    sidebarGroupBy, sidebarSortBy, workspaceOrder,
     viewingSessionId, unread, viewSession, markUnread, setUnread, splitSessionId, splitAvailable, activePane, openSplit, closeSplit,
     reviewNotes, addReviewNote, removeReviewNote, clearReviewNotes, composerInsert, requestComposerInsert, composerMenu, requestComposerMenu, shortcutsOpen, switcherOpen,
     approvalKeyboard,

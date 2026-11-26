@@ -148,7 +148,7 @@ impl Projection {
         };
         match &event.content {
             EventContent::TurnStart(data) => self.turn = Some(data.turn_id.clone()),
-            EventContent::Input(data) => {
+            EventContent::Input { data, .. } => {
                 if let Some(user) = &data.user { self.inputs.insert(event.id.clone(), user.clone()); }
             }
             EventContent::InputConsumed(data) => {

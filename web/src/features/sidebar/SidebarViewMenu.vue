@@ -24,5 +24,9 @@ const SORTS: readonly SidebarSortBy[] = ["recency", "alpha", "created"]
       <span>{{ t(`sidebar.sort.${sort}`) }}</span>
       <Check v-if="ui.sidebarSortBy === sort" class="ui-menu-check" aria-hidden="true" />
     </button>
+    <template v-if="ui.sidebarGroupBy === 'project' && ui.workspaceOrder.length">
+      <hr class="ui-menu-separator">
+      <button type="button" role="menuitem" class="ui-menu-item" @click="ui.workspaceOrder = []">{{ t("workspace.resetOrder") }}</button>
+    </template>
   </RowActionMenu>
 </template>

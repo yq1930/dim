@@ -131,6 +131,8 @@ pub struct ExecEndedData {
     pub result: ToolResult,
 }
 
+pub const QUEUE_POSITION_TAG: &str = "dim:queue-position=";
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InputMessageData {

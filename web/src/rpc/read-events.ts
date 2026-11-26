@@ -1,5 +1,5 @@
 /** Readers for Session events and notifications, the facts the timeline folds. */
-import type { ApprovalRequest, AskCall, AskQuestion, PlanCall, MemberApprovalDetail, BranchSource, EventContent, Notification, RawBlock, SessionEvent, ToolResult, UserInput, WithdrawResult } from "./protocol"
+import type { ApprovalRequest, AskCall, AskQuestion, PlanCall, MemberApprovalDetail, BranchSource, EventContent, Notification, QueueEditResult, RawBlock, SessionEvent, ToolResult, UserInput, WithdrawResult } from "./protocol"
 import { fail, obj, arr, str, optStr, num, bool, modelId, readPermissionPolicy, type Json } from "./read-core"
 
 /** A user message's content blocks, kept as the server wrote them so a steer can resend them unchanged. */
@@ -15,6 +15,14 @@ export function readWithdrawResult(value: unknown): WithdrawResult {
   fail(`${at}.status`, "deleted or notHeld")
 }
 
+export function readQueueEditResult(value: unknown): QueueEditResult {
+  const at = "session.input.edit"
+  const status = str(obj(value, at), "status", at)
+  if (status === "edited" || status === "notHeld") return { status }
+  fail(`${at}.status`, "edited or notHeld")
+}
+
+const QUEUE_POSITION_TAG = "dim:queue-position="
 const SKILL_BLOCK = '<dim-skill name="'
 
 /** A loaded Skill's block names it after the marker (Skills §9). */
@@ -334,10 +342,16 @@ export function readEvent(value: unknown, at: string): SessionEvent {
   const source = obj(value, at)
   const type = str(source, "type", at)
   const name = str(source, "name", at)
+  const positionTag = type === "input" && name === "message" && Array.isArray(source.tags)
+    ? source.tags.find((tag): tag is string => typeof tag === "string" && tag.startsWith(QUEUE_POSITION_TAG))
+    : undefined
+  const queuePosition = positionTag === undefined ? undefined : Number(positionTag.slice(QUEUE_POSITION_TAG.length))
+  if (queuePosition !== undefined && (!Number.isSafeInteger(queuePosition) || queuePosition < 1)) fail(`${at}.tags`, "a positive queue position")
   return {
     id: str(source, "id", at),
     sequence: num(source, "sequence", at),
     createAt: num(source, "create_at", at),
+    ...(queuePosition === undefined ? {} : { queuePosition }),
     content: content(type, name, obj(source.data, `${at}.data`), `${at}.data`),
   }
 }

@@ -287,9 +287,7 @@ async function setPermission(preset: PermissionPreset): Promise<void> {
       @open-member="(requestId) => panes.openMember(sessionId, requestId)"
       @quote="composer?.quote($event)"
     />
-    <div v-if="view.running && view.queued.length" class="composer-panel">
-      <QueuedInputs :session-id="sessionId" :items="view.queued" />
-    </div>
+    <QueuedInputs :session-id="sessionId" :items="view.queued" :running="view.running" :editable="view.methods.includes('session.input.edit')" />
     <div v-if="view.todos.length" class="composer-panel">
       <TodoPanel :todos="view.todos" />
     </div>

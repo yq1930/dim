@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue"
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { RouterLink, useRoute, useRouter } from "vue-router"
 import { useI18n } from "vue-i18n"
 import { Archive, CalendarClock, FolderOpen, Keyboard, PanelLeftClose, Plus, Search, Settings } from "lucide-vue-next"
@@ -31,6 +31,7 @@ const sessions = useSessionsStore()
 const connection = useConnectionStore()
 const ui = useUiStore()
 const search = ref("")
+const workspaceScroll = ref<HTMLDivElement>()
 const workspaceDialog = ref<InstanceType<typeof WorkspaceOpenDialog>>()
 const renameDialog = ref<InstanceType<typeof SessionRenameDialog>>()
 const confirm = ref<InstanceType<typeof ConfirmDialog>>()
@@ -82,7 +83,10 @@ const visible = computed(() => {
     const matching = matched ? unpinned : unpinned.filter(titled)
     return !matched && matching.length === 0 ? [] : [{ ...workspace, sessions: matching }]
   })
-  return ui.sidebarSortBy === "alpha" ? [...groups].sort((left, right) => left.name.localeCompare(right.name)) : groups
+  if (ui.sidebarSortBy === "alpha") groups.sort((left, right) => left.name.localeCompare(right.name))
+  if (ui.sidebarGroupBy !== "project" || ui.workspaceOrder.length === 0) return groups
+  const rank = new Map(ui.workspaceOrder.map((cwd, index) => [cwd, index]))
+  return groups.sort((left, right) => (rank.get(left.cwd) ?? rank.size) - (rank.get(right.cwd) ?? rank.size))
 })
 /** The unpinned Sessions of every workspace in one list, grouped by day or state, or not at all. */
 const flat = computed(() => {
@@ -91,6 +95,108 @@ const flat = computed(() => {
   if (ui.sidebarGroupBy === "state") return groupByState(all, ui.sidebarSortBy, stateOf).map((group) => ({ key: group.key, label: t(group.label), sessions: group.sessions }))
   return [{ key: "all", label: undefined, sessions: sortSessions(all, ui.sidebarSortBy) }]
 })
+
+type Drop = { cwd: string; side: "before" | "after" }
+const reorderable = computed(() => ui.sidebarGroupBy === "project" && query.value === "" && visible.value.length > 1)
+const dragging = ref<string>()
+const drop = ref<Drop>()
+let drag: { cwd: string; id: number; handle: HTMLElement; startY: number; x: number; y: number } | undefined
+let scrollFrame: number | undefined
+
+function reorder(cwd: string, target: Drop): void {
+  if (cwd === target.cwd) return
+  const paths = visible.value.map((item) => item.cwd)
+  const from = paths.indexOf(cwd)
+  if (from < 0 || !paths.includes(target.cwd)) return
+  paths.splice(from, 1)
+  const destination = paths.indexOf(target.cwd) + (target.side === "after" ? 1 : 0)
+  if (destination === from) return
+  paths.splice(destination, 0, cwd)
+  ui.workspaceOrder = paths
+}
+
+function moveWorkspace(cwd: string, offset: -1 | 1): void {
+  if (!reorderable.value) return
+  const index = visible.value.findIndex((item) => item.cwd === cwd)
+  const adjacent = visible.value[index + offset]
+  if (index >= 0 && adjacent !== undefined) reorder(cwd, { cwd: adjacent.cwd, side: offset === -1 ? "before" : "after" })
+}
+
+function startDrag(cwd: string, event: PointerEvent): void {
+  const handle = event.currentTarget
+  if (!reorderable.value || drag !== undefined || event.button !== 0 || !event.isPrimary || !(handle instanceof HTMLElement)) return
+  handle.setPointerCapture(event.pointerId)
+  drag = { cwd, id: event.pointerId, handle, startY: event.clientY, x: event.clientX, y: event.clientY }
+}
+
+function locateDrop(): void {
+  const list = workspaceScroll.value
+  if (drag === undefined || list === undefined) return
+  const region = list.getBoundingClientRect()
+  drop.value = undefined
+  if (drag.x < region.left || drag.x > region.right || drag.y < region.top || drag.y > region.bottom) return
+  for (const group of list.querySelectorAll<HTMLElement>("[data-workspace-cwd]")) {
+    const bounds = group.getBoundingClientRect()
+    const side = drag.y < bounds.top + bounds.height / 2 ? "before" : "after"
+    drop.value = { cwd: group.dataset.workspaceCwd!, side }
+    if (side === "before") break
+  }
+}
+
+function scrollDuringDrag(): void {
+  scrollFrame = undefined
+  const list = workspaceScroll.value
+  if (dragging.value === undefined || drag === undefined || list === undefined || drop.value === undefined) return
+  const region = list.getBoundingClientRect()
+  const direction = drag.y < region.top + 28 ? -1 : drag.y > region.bottom - 28 ? 1 : 0
+  if (direction === 0) return
+  const previous = list.scrollTop
+  list.scrollTop += direction * 10
+  if (list.scrollTop === previous) return
+  locateDrop()
+  scrollFrame = requestAnimationFrame(scrollDuringDrag)
+}
+
+function dragMove(event: PointerEvent): void {
+  if (drag?.id !== event.pointerId) return
+  if (dragging.value === undefined && Math.abs(event.clientY - drag.startY) < 5) return
+  dragging.value = drag.cwd
+  drag.x = event.clientX
+  drag.y = event.clientY
+  locateDrop()
+  scrollFrame ??= requestAnimationFrame(scrollDuringDrag)
+}
+
+function clearDrag(): void {
+  const active = drag
+  drag = undefined
+  dragging.value = undefined
+  drop.value = undefined
+  if (scrollFrame !== undefined) cancelAnimationFrame(scrollFrame)
+  scrollFrame = undefined
+  if (active?.handle.hasPointerCapture(active.id)) active.handle.releasePointerCapture(active.id)
+}
+
+function endDrag(event: PointerEvent): void {
+  if (drag?.id !== event.pointerId) return
+  if (event.type === "pointerup" && dragging.value !== undefined) {
+    drag.x = event.clientX
+    drag.y = event.clientY
+    locateDrop()
+    if (drop.value !== undefined && reorderable.value) reorder(drag.cwd, drop.value)
+  }
+  clearDrag()
+}
+
+function cancelDrag(event: KeyboardEvent): void {
+  if (drag === undefined) return
+  event.preventDefault()
+  event.stopPropagation()
+  clearDrag()
+}
+
+watch(reorderable, (allowed) => { if (!allowed) clearDrag() })
+onBeforeUnmount(clearDrag)
 </script>
 
 <template>
@@ -116,7 +222,7 @@ const flat = computed(() => {
       <input v-model="search" class="ui-field" data-size="md" type="search" :placeholder="t('sidebar.searchPlaceholder')" :aria-label="t('common.search')">
     </div>
 
-    <div class="workspace-scroll app-scroll-viewport">
+    <div ref="workspaceScroll" class="workspace-scroll app-scroll-viewport" @pointermove="dragMove" @pointerup="endDrag" @pointercancel="endDrag" @lostpointercapture="endDrag" @keydown.esc="cancelDrag">
       <template v-if="pinned.length">
         <p class="section-label">{{ t("sidebar.pinned") }}</p>
         <ul class="session-list pinned-sessions">
@@ -162,10 +268,15 @@ const flat = computed(() => {
         :now-ms="nowMs"
         :busy="busy"
         :has-pinned="pinnedCwds.has(workspace.cwd)"
+        :reorderable="reorderable"
+        :dragging="dragging === workspace.cwd"
+        :drop-side="drop?.cwd === workspace.cwd && dragging !== workspace.cwd ? drop.side : undefined"
         @toggle="ui.toggleWorkspace(workspace.cwd)"
         @navigate="$emit('navigate')"
         @action="action"
         @copy="copyPath"
+        @reorder-start="startDrag(workspace.cwd, $event)"
+        @move="moveWorkspace(workspace.cwd, $event)"
       />
     </div>
 

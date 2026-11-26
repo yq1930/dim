@@ -180,6 +180,11 @@ Opening a directory adds it to the sidebar before a Session exists. The last 20 
 
 Composer drafts retain text, file mentions and unsent attachments in memory for the lifetime of the frontend application. New-Session drafts are scoped by working directory; existing drafts by Session and line. Switching pages or opening settings preserves these drafts; reloading or quitting clears them. Pending file reads and submission replies apply to the draft that started them. Successful submission clears only the submitted content; failure preserves it. Deleting a Session discards its drafts.
 
+Queued user messages have an Edit action when the Session serves it. Saving
+replaces the held message at its queue position and keeps its image blocks.
+The editor leaves the composer's unsent draft available. If the run claims
+the message before save, the editor retains the text for copying.
+
 The composer's + menu, as Claude Code's, adds files or photos and references project files. Adding files and drag-and-drop accept UTF-8 text/code files and PNG, JPEG, WebP or GIF images, including on the first message of a new Session. Text files use `attachment.put`; the message names the original filename and returned path. The frontend rejects unsupported binary files, limits each file to 10 MiB, caps the combined image base64 payload at 10 MiB and permits at most 20 attachments. JSON payload limits leave space for RPC framing. An image over the limits `read` holds one to, 2,048 px on its long edge and 500,000 bytes of base64, is scaled as `read` scales it before it is attached, since every later request of the Session carries it again. Referencing project files searches `session.files.search` and inserts the same `@` references as the inline mention picker; it does not send a message or upload the project. It is available only after a Session provides file search.
 
 ### Session titles and actions
@@ -190,7 +195,7 @@ Archive and delete actions are disabled while the Session is running. Deletion r
 
 As in Claude Code, the routed Session's title in the header opens its actions: rename, pin, copy the workspace path or the Session ID, archive and delete. A sidebar row's ⋯ menu, which a right click on the row opens at the pointer, offers the same with "Mark as unread" (or read) and the split pane.
 
-The sidebar lists pinned Sessions, then the rest under "Sessions", whose filter menu (Claude Code's) groups them by project (each workspace, the default), by day of last activity (today, yesterday, the past 7 days, older), by state (waiting on you, running, new activity, idle) or not at all, and sorts them by last activity, name or creation; outside the project grouping each row names its workspace. The choice is kept in browser storage. A row shows a spinner while its Session runs and a dot while it waits on the operator or has news. The footer holds the connection state and buttons for archived Sessions, keyboard shortcuts and Settings.
+The sidebar lists pinned Sessions, then the rest under "Sessions", whose filter menu (Claude Code's) groups them by project (each workspace, the default), by day of last activity (today, yesterday, the past 7 days, older), by state (waiting on you, running, new activity, idle) or not at all, and sorts them by last activity, name or creation; outside the project grouping each row names its workspace. The choice is kept in browser storage. In the unfiltered project view, the workspace handles support dragging and arrow-key movement. The custom workspace order is stored independently of the Session sort and can be reset from the filter menu. A row shows a spinner while its Session runs and a dot while it waits on the operator or has news. The footer holds the connection state and buttons for archived Sessions, keyboard shortcuts and Settings.
 
 ### 4.1 Lines and branch
 

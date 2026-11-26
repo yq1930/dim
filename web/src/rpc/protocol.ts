@@ -146,6 +146,7 @@ export type QueuedInput = { id: string; text: string; skills?: string[]; user: U
 
 /** `session.input.withdraw`: the queued input was removed, or the server had already adopted it. */
 export type WithdrawResult = { status: "deleted" } | { status: "notHeld" }
+export type QueueEditResult = { status: "edited" | "notHeld" }
 
 export type MemberOutcome = "completed" | "failed" | "cancelled"
 
@@ -183,6 +184,7 @@ export type EventContent =
   | { kind: "other" }
 
 export type SessionEvent = {
+  queuePosition?: number
   id: string
   sequence: number
   /** Unix milliseconds the runtime wrote the event at. */

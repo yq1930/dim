@@ -1,9 +1,9 @@
 import { alwaysCommand, alwaysRule, fileGrant, sameRule } from "../approvals"
 import { RpcError } from "../rpc/client"
 import type { GoalCall } from "../goal"
-import { MAIN_BRANCH, type ApprovalDecision, type ApprovalRequest, type DraftAttachments, type FileCandidate, type FileView, type ModelId, type PendingPlan, type PendingQuestion, type PermissionPolicy, type PermissionPreset, type QuestionAnswer, type RewindResult, type TurnChanges, type UserInput, type WithdrawResult } from "../rpc/protocol"
+import { MAIN_BRANCH, type ApprovalDecision, type ApprovalRequest, type DraftAttachments, type FileCandidate, type FileView, type ModelId, type PendingPlan, type PendingQuestion, type PermissionPolicy, type PermissionPreset, type QuestionAnswer, type QueueEditResult, type RewindResult, type TurnChanges, type UserInput, type WithdrawResult } from "../rpc/protocol"
 import { readRevision, readRules } from "../rpc/general-settings"
-import { readAck, readAttachmentPath, readBranchCreate, readCompactResult, readConfigurationOutcome, readContextUsage, readExecOutput, readFileCandidates, readFileView, readForkedSessionId, readMemberApproval, readModelUpdate, readPermissionState, readPermissionVersion, readRewindResult, readSessionMethods, readTurnChanges, readWithdrawResult } from "../rpc/read"
+import { readAck, readAttachmentPath, readBranchCreate, readCompactResult, readConfigurationOutcome, readContextUsage, readExecOutput, readFileCandidates, readFileView, readForkedSessionId, readMemberApproval, readModelUpdate, readPermissionState, readPermissionVersion, readQueueEditResult, readRewindResult, readSessionMethods, readTurnChanges, readWithdrawResult } from "../rpc/read"
 import type { PermissionOutcome, SessionView } from "./chat"
 
 /** The part of the connection's client the calls use. */
@@ -187,6 +187,10 @@ export function sessionCalls(deps: {
     return client().call("session.input.withdraw", { sessionId, branchId: MAIN_BRANCH, inputId, ...(steer === undefined ? {} : { steer }) }, readWithdrawResult)
   }
 
+  function editQueuedInput(sessionId: string, inputId: string, user: UserInput): Promise<QueueEditResult> {
+    return client().call("session.input.edit", { sessionId, branchId: MAIN_BRANCH, inputId, user }, readQueueEditResult)
+  }
+
   /** The policy of `main`, or undefined when the Session serves no permission method or the read fails. */
   async function sessionPermission(sessionId: string): Promise<PermissionPolicy | undefined> {
     if (!supports("session.permission.get")) return undefined
@@ -233,5 +237,5 @@ export function sessionCalls(deps: {
     adoptModel(sessionId, result.model)
   }
 
-  return { submit, stop, createLine, endLine, memberApproval, respond, allowAlways, allowForSession, answerQuestion, setPlanning, reviewPlan, sessionMethods, compact, writeGoal, usage, fork, searchFiles, readFile, turnChanges, rewindTurn, withdrawInput, sessionPermission, setPermission, setEffort, setModel, taskOutput, stopTask }
+  return { submit, stop, createLine, endLine, memberApproval, respond, allowAlways, allowForSession, answerQuestion, setPlanning, reviewPlan, sessionMethods, compact, writeGoal, usage, fork, searchFiles, readFile, turnChanges, rewindTurn, withdrawInput, editQueuedInput, sessionPermission, setPermission, setEffort, setModel, taskOutput, stopTask }
 }

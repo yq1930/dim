@@ -10712,8 +10712,10 @@
       "from": "dim_agent_capabilities::input_queue",
       "to": "dim_agent_capabilities::methods",
       "references": [
+        "path RpcError",
         "path RpcError::app",
         "path RpcError::interrupted",
+        "path RpcError::invalid",
         "path SessionMethods",
         "path params",
         "path reply",
@@ -10763,6 +10765,7 @@
       "to": "dim_agent_runtime::error",
       "references": [
         "path AgentError::InvalidInput",
+        "path AgentError::fault",
         "path Result",
         "use dim_agent_runtime::AgentError",
         "use dim_agent_runtime::Result"
@@ -10813,6 +10816,8 @@
       "to": "dim_agent_types::events",
       "references": [
         "path AgentEvent",
+        "path EventDraft::new",
+        "path EventKind::Extension",
         "path EventKind::InputApplied",
         "path EventKind::InputConsumed",
         "path EventKind::InputDeleted",
@@ -10821,6 +10826,7 @@
         "path EventKind::StopInterrupt",
         "path EventKind::TurnEnd",
         "path EventKind::TurnStart",
+        "path ExtensionEvent::new",
         "path InputAppliedData",
         "path InputDeletedData",
         "path InputMessageData",
@@ -40431,6 +40437,7 @@
         "path ModelOutputEndData",
         "path ModelStartData",
         "path ModelUsageData",
+        "path QUEUE_POSITION_TAG",
         "path SessionForkedData",
         "path TextData",
         "path ThinkingData",

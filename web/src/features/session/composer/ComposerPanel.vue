@@ -119,10 +119,26 @@ const composing = ref(false)
 const focused = ref(false)
 const dismissed = ref(false)
 const { images, pastes, files, empty: noAttachments, onPaste, onDrop, choose: chooseFiles, removeImage, removePaste, removeFile } = useComposerAttachments(draft, { enabled: () => props.attachments, storesPastes: () => props.storesPastes === true })
+const imageDialog = ref<HTMLDialogElement>()
+const previewId = ref<number>()
+const previewImage = computed(() => images.value.find((image) => image.id === previewId.value))
+watch(previewImage, (image) => { if (image === undefined) imageDialog.value?.close() })
+
+function showImage(id: number): void {
+  previewId.value = id
+  imageDialog.value?.showModal()
+}
 const { candidates, active: candidateActive, open: mentionOpen, shown: mentionShown, update: updateMention, accept: acceptCandidate, insert: insertFile, move: moveCandidate, dismiss: dismissMention, reset: resetMention } = useMentionPicker({ field, draft, focused, search: () => props.searchFiles, resize })
 const { recall, forget: forgetRecall } = useHistoryRecall({ field, draft, history: () => props.history ?? [], resize })
 const mentionMenuId = useId()
-watch(() => props.draftKey, () => { resetMention(); forgetRecall(); fileDialog.value?.close(); void nextTick(resize) })
+watch(() => props.draftKey, () => {
+  resetMention()
+  forgetRecall()
+  fileDialog.value?.close()
+  imageDialog.value?.close()
+  previewId.value = undefined
+  void nextTick(resize)
+})
 
 const { matches, commandMode, open: menuOpen, active: activeIndex, move: moveCommand } = useCommandMenu({
   text,
@@ -428,7 +444,9 @@ defineExpose({ focus: () => field.value?.focus(), quote, insert, openMenu })
     <div class="composer-surface" @click.self="field?.focus()" @dragover.prevent @drop="onDrop">
       <div v-if="images.length > 0 || pastes.length > 0 || files.length > 0" class="draft-attachments">
         <span v-for="image in images" :key="image.id" class="draft-chip">
-          <img :src="image.url" :alt="t('composer.imageAttachment')" class="draft-thumb">
+          <button type="button" class="draft-thumb-trigger" :aria-label="t('composer.previewImage')" aria-haspopup="dialog" v-tooltip="t('composer.previewImage')" @click="showImage(image.id)">
+            <img :src="image.url" alt="" class="draft-thumb" draggable="false">
+          </button>
           <button type="button" class="ui-icon-button" data-variant="ghost" data-size="xs" :aria-label="t('composer.removeAttachment')" @click="removeImage(image.id)"><X aria-hidden="true" /></button>
         </span>
         <span v-for="paste in pastes" :key="paste.id" class="draft-chip">
@@ -533,6 +551,12 @@ defineExpose({ focus: () => field.value?.focus(), quote, insert, openMenu })
       <div class="composer-status-start"><slot name="status" /></div>
     </div>
   </section>
+  <dialog ref="imageDialog" class="ui-dialog draft-image-preview" :aria-label="t('composer.previewImage')" @click.self="imageDialog?.close()" @keydown.esc.stop @close="previewId = undefined">
+    <div class="draft-preview-body">
+      <button type="button" class="ui-icon-button draft-preview-close" data-variant="secondary" data-size="sm" :aria-label="t('common.close')" autofocus @click="imageDialog?.close()"><X aria-hidden="true" /></button>
+      <img v-if="previewImage" :src="previewImage.url" :alt="t('composer.imageAttachment')" draggable="false">
+    </div>
+  </dialog>
   <WorkspaceFileDialog v-if="searchFiles" ref="fileDialog" :search="searchFiles" @select="insertFile" />
 </template>
 
@@ -560,6 +584,12 @@ defineExpose({ focus: () => field.value?.focus(), quote, insert, openMenu })
 .draft-attachments { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-2) var(--space-3) 0; }
 .draft-chip { display: inline-flex; min-width: 0; align-items: center; gap: var(--space-1); padding: 2px var(--space-1) 2px var(--space-2); border: 1px solid var(--border); border-radius: var(--control-sm-radius); background: var(--muted); font-size: var(--text-xs); }
 .draft-thumb { width: 36px; height: 36px; border-radius: var(--control-xs-radius); object-fit: cover; }
+.draft-thumb-trigger { display: grid; flex: none; padding: 0; border: 0; border-radius: var(--control-xs-radius); background: none; cursor: zoom-in; }
+.draft-thumb-trigger:focus-visible { box-shadow: var(--focus-ring); }
+.draft-image-preview { width: fit-content; max-width: calc(100vw - var(--space-8)); padding: var(--space-2); }
+.draft-preview-body { display: grid; min-width: var(--space-12); justify-items: center; gap: var(--space-2); }
+.draft-preview-body img { display: block; max-width: calc(100vw - var(--space-12)); max-height: calc(100dvh - var(--space-12) - var(--control-sm) - var(--space-2)); object-fit: contain; border-radius: var(--control-xs-radius); }
+.draft-preview-close { justify-self: end; }
 .command-keys { margin: var(--space-1) 0 0; padding: var(--space-2); border-top: 1px solid var(--border); color: var(--muted-foreground); font-size: var(--text-xs); }
 
 </style>

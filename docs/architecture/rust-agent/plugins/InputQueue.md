@@ -6,16 +6,16 @@ The InputQueue plugin registers InputMethods in every Session and InputQueue in 
 
 Owner: [input_queue.rs](../../../../crates/dim-agent-capabilities/src/input_queue.rs).
 Registers the namespace `session.input` with the Session's `sessionMethods`:
-`session.input.withdraw` for every branch of its Session, served through that
-branch's InputQueue. It also provides the Session table `submitChecks`
+`session.input.withdraw` and `session.input.edit` for every branch of its
+Session, served through that branch's InputQueue. It also provides the Session table `submitChecks`
 ([`SubmitChecks`](../../../../crates/dim-agent-capabilities/src/input_queue.rs)):
 Session parts register submit checks with it from their own `apply` and the
 registration is withdrawn when that part unloads. A `session.input.withdraw`
 with `steer` calls each check registered now, in name order, before its batch;
 any block fails the call with `input_blocked` and writes nothing, else the
 checks' contexts become text blocks after the steer's own content. This is
-Hooks A.6.2's generic capability; InputQueue gives the checks no meaning, and
-with none registered the withdrawal writes unchecked.
+Hooks A.6.2's generic capability; editing runs the same checks as a Queue
+submission. With no checks registered the methods proceed unchecked.
 
 ### Dependencies
 
@@ -80,6 +80,15 @@ decisions, without duplicating already committed ones, before any live event. No
 external resources. Reload reconstructs state from local history. An idle append
 is pending until a driving input; an interrupt is not permission to start a new
 turn from previously unapplied input.
+
+`session.input.edit` takes a held user input ID and the edited user content.
+InputQueue decides in Timeline order and returns `notHeld` once the original
+has been handed over or removed. On acceptance, it reserves the replacement ID
+at the original queue position, then commits the replacement `input/message`
+and original `input/deleted` together. The replacement's
+`dim:queue-position=<sequence>` event tag carries the original queue position
+for display and survives subsequent edits. The private `input-queue/edit`
+command fixes the replacement ID so replay can complete a pending edit once.
 
 ### Tests
 

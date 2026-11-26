@@ -33,6 +33,13 @@ async function move(offset: -1 | 1): Promise<void> {
   grip.value?.focus()
 }
 
+/** A mouse drags the workspace by its whole row, the + and ⋯ buttons aside; touch keeps to the grip so the list still scrolls. */
+function pressRow(event: PointerEvent): void {
+  if (!props.reorderable || event.pointerType === "touch") return
+  if (event.target instanceof Element && event.target.closest(".workspace-row-actions") !== null) return
+  emit("reorderStart", event)
+}
+
 function toggleReveal(): void {
   limit.value = hasMore.value ? limit.value + STEP : FIRST
 }
@@ -40,7 +47,7 @@ function toggleReveal(): void {
 
 <template>
   <section class="workspace-group" :data-workspace-cwd="workspace.cwd" :data-dragging="dragging || undefined" :data-drop-side="dropSide">
-    <div class="workspace-row" @click="emit('toggle')">
+    <div class="workspace-row" @click="emit('toggle')" @pointerdown="pressRow">
       <button
         class="workspace-toggle"
         type="button"
@@ -112,8 +119,7 @@ function toggleReveal(): void {
 .workspace-group[data-drop-side="before"]::after { top: -2px; }
 .workspace-group[data-drop-side="after"]::after { bottom: -2px; }
 .workspace-grip { cursor: grab; touch-action: none; }
-.workspace-group[data-dragging] .workspace-grip { cursor: grabbing; }
-.workspace-row { position: relative; cursor: pointer; }
+.workspace-row { position: relative; cursor: pointer; user-select: none; }
 /* The disclosure is a fixed 14px slot where the folder icon cross-fades into a chevron. */
 .workspace-disclosure { position: relative; display: block; width: 14px; height: 14px; flex: none; }
 .workspace-disclosure-chevron,

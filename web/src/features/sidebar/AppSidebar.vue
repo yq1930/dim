@@ -100,7 +100,8 @@ type Drop = { cwd: string; side: "before" | "after" }
 const reorderable = computed(() => ui.sidebarGroupBy === "project" && query.value === "" && visible.value.length > 1)
 const dragging = ref<string>()
 const drop = ref<Drop>()
-let drag: { cwd: string; id: number; handle: HTMLElement; startY: number; x: number; y: number } | undefined
+/** A press on a workspace row or its grip, a drag once it travels 5px; Esc cancels the drag, and its release still makes no click. */
+let drag: { cwd: string; id: number; startY: number; x: number; y: number; cancelled: boolean } | undefined
 let scrollFrame: number | undefined
 
 function reorder(cwd: string, target: Drop): void {
@@ -122,11 +123,18 @@ function moveWorkspace(cwd: string, offset: -1 | 1): void {
   if (index >= 0 && adjacent !== undefined) reorder(cwd, { cwd: adjacent.cwd, side: offset === -1 ? "before" : "after" })
 }
 
+/**
+ * Window listeners follow the press beyond the sidebar. The pointer is not
+ * captured, so a press that never becomes a drag clicks its row as usual.
+ */
 function startDrag(cwd: string, event: PointerEvent): void {
-  const handle = event.currentTarget
-  if (!reorderable.value || drag !== undefined || event.button !== 0 || !event.isPrimary || !(handle instanceof HTMLElement)) return
-  handle.setPointerCapture(event.pointerId)
-  drag = { cwd, id: event.pointerId, handle, startY: event.clientY, x: event.clientX, y: event.clientY }
+  if (!reorderable.value || drag !== undefined || event.button !== 0 || event.ctrlKey || !event.isPrimary) return
+  drag = { cwd, id: event.pointerId, startY: event.clientY, x: event.clientX, y: event.clientY, cancelled: false }
+  window.addEventListener("pointermove", dragMove)
+  window.addEventListener("pointerup", endDrag)
+  window.addEventListener("pointercancel", endDrag)
+  window.addEventListener("keydown", cancelDrag, true)
+  window.addEventListener("blur", clearDrag)
 }
 
 function locateDrop(): void {
@@ -158,7 +166,7 @@ function scrollDuringDrag(): void {
 }
 
 function dragMove(event: PointerEvent): void {
-  if (drag?.id !== event.pointerId) return
+  if (drag?.id !== event.pointerId || drag.cancelled) return
   if (dragging.value === undefined && Math.abs(event.clientY - drag.startY) < 5) return
   dragging.value = drag.cwd
   drag.x = event.clientX
@@ -168,17 +176,27 @@ function dragMove(event: PointerEvent): void {
 }
 
 function clearDrag(): void {
-  const active = drag
   drag = undefined
   dragging.value = undefined
   drop.value = undefined
   if (scrollFrame !== undefined) cancelAnimationFrame(scrollFrame)
   scrollFrame = undefined
-  if (active?.handle.hasPointerCapture(active.id)) active.handle.releasePointerCapture(active.id)
+  window.removeEventListener("pointermove", dragMove)
+  window.removeEventListener("pointerup", endDrag)
+  window.removeEventListener("pointercancel", endDrag)
+  window.removeEventListener("keydown", cancelDrag, true)
+  window.removeEventListener("blur", clearDrag)
+}
+
+/** A drag's release clicks whatever row is under the pointer; that click must not toggle or open it. */
+function swallowClick(event: MouseEvent): void {
+  event.preventDefault()
+  event.stopPropagation()
 }
 
 function endDrag(event: PointerEvent): void {
   if (drag?.id !== event.pointerId) return
+  const dragged = drag.cancelled || dragging.value !== undefined
   if (event.type === "pointerup" && dragging.value !== undefined) {
     drag.x = event.clientX
     drag.y = event.clientY
@@ -186,13 +204,19 @@ function endDrag(event: PointerEvent): void {
     if (drop.value !== undefined && reorderable.value) reorder(drag.cwd, drop.value)
   }
   clearDrag()
+  if (!dragged) return
+  // The click follows its pointerup within the same task, before the timeout removes the listener.
+  window.addEventListener("click", swallowClick, { capture: true, once: true })
+  setTimeout(() => window.removeEventListener("click", swallowClick, { capture: true }), 0)
 }
 
 function cancelDrag(event: KeyboardEvent): void {
-  if (drag === undefined) return
+  if (event.key !== "Escape" || drag === undefined || dragging.value === undefined) return
   event.preventDefault()
   event.stopPropagation()
-  clearDrag()
+  drag.cancelled = true
+  dragging.value = undefined
+  drop.value = undefined
 }
 
 watch(reorderable, (allowed) => { if (!allowed) clearDrag() })
@@ -222,7 +246,7 @@ onBeforeUnmount(clearDrag)
       <input v-model="search" class="ui-field" data-size="md" type="search" :placeholder="t('sidebar.searchPlaceholder')" :aria-label="t('common.search')">
     </div>
 
-    <div ref="workspaceScroll" class="workspace-scroll app-scroll-viewport" @pointermove="dragMove" @pointerup="endDrag" @pointercancel="endDrag" @lostpointercapture="endDrag" @keydown.esc="cancelDrag">
+    <div ref="workspaceScroll" class="workspace-scroll app-scroll-viewport" :data-reordering="dragging === undefined ? undefined : ''">
       <template v-if="pinned.length">
         <p class="section-label">{{ t("sidebar.pinned") }}</p>
         <ul class="session-list pinned-sessions">
@@ -305,4 +329,6 @@ onBeforeUnmount(clearDrag)
 .section-head .section-label { margin-block: var(--space-1); }
 .sidebar-footer { display: flex; align-items: center; gap: 2px; }
 .sidebar-footer > .connection-badge { min-width: 0; flex: 1; }
+.workspace-scroll[data-reordering],
+.workspace-scroll[data-reordering] :deep(*) { cursor: grabbing; }
 </style>
